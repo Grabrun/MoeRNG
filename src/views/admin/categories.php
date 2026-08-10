@@ -8,7 +8,7 @@
     <button class="btn btn-primary btn-sm" onclick="openModal('category-modal')">新建分类</button>
 </div>
 
-<div class="category-list">
+<div class="category-list" id="category-tree">
     <?php if (empty($categories)): ?>
     <div class="card"><p class="text-center text-muted" style="padding:40px">暂无分类，点击「新建分类」创建第一个分类</p></div>
     <?php else: ?>

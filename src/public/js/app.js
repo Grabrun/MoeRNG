@@ -520,12 +520,15 @@ function initApiKeys() {
 
 // Category deletion without navigating to the JSON endpoint
 function initCategoryActions() {
-    const container = document.getElementById('category-tree');
-    if (container) {
-        container.addEventListener('click', async function(e) {
-            const btn = e.target.closest('[data-category-delete]');
-            if (!btn) return;
-            e.preventDefault();
+    // v1.1.1-beta.4: bind at document level — the delete buttons used to be
+    // scoped to #category-tree, but the v1.1.1-beta.3 redesign renamed the
+    // container to .category-list and the handler silently never attached
+    // (clicks did nothing, no request fired). Document-level delegation is
+    // resilient to future container renames.
+    document.addEventListener('click', async function(e) {
+        const btn = e.target.closest('[data-category-delete]');
+        if (!btn) return;
+        e.preventDefault();
 
             const id = btn.dataset.categoryDelete;
             const name = btn.dataset.name || '';
@@ -544,7 +547,6 @@ function initCategoryActions() {
                 btn.disabled = false;
             }
         });
-    }
 
     // Create / edit category via AJAX. The name (and every other field) is read
     // straight from the DOM and appended to FormData explicitly, so the value can
