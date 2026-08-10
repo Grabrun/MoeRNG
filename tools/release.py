@@ -138,28 +138,19 @@ def github_release(version: str, zip_path: str, note: str = '') -> None:
     if note:
         body = note
     else:
-        # Release Notes 模板（用户规则 2026-08-10）：固定结构，逐项填写。
+        # Release Notes 模板（用户规则 2026-08-10）：
+        # - 只输出有内容的章节；无内容的章节整章删除（包括「破坏性变更：无」「本版无修复」等占位）
+        # - 必有：版本概述 + 升级指南 + 完整变更日志链接（CHANGELOG.md）
+        # - 可选（按实际内容）：🚨 破坏性变更 / 🚀 新功能 / ⬆️ 增强 / 🐛 修复 / 📚 文档 / 贡献者致谢
         cl_url = 'https://github.com/Grabrun/MoeRNG/blob/main/CHANGELOG.md'
         kind = '测试版' if prerelease else '正式版'
         body = (
             f'## v{version}\n\n'
             f'**版本概述**：{kind}版本，用于验证新功能与修复。\n\n'
-            '### 🚨 破坏性变更（Breaking Changes）\n'
-            '无\n\n'
-            '### 🚀 新功能（New Features）\n'
-            '- （本版无新增功能）\n\n'
-            '### ⬆️ 功能增强（Enhancements）\n'
-            '- （待补充）\n\n'
-            '### 🐛 Bug 修复（Bug Fixes）\n'
-            '- （本版无修复）\n\n'
-            '### 📚 文档与依赖（Documentation & Dependencies）\n'
-            '- （待补充）\n\n'
             '### 升级指南（Upgrade Guide）\n'
             '1. 下载下方 zip 资产覆盖部署（参考 README 快速开始）。\n'
             '2. 重启 PHP-FPM 触发数据库自动迁移。\n'
             '3. 运行 doctor.php 验证部署健康后删除。\n\n'
-            '### 贡献者致谢\n'
-            '- （本版无外部贡献者）\n\n'
             f'完整变更日志请查看 [CHANGELOG.md]({cl_url})。'
         )
 
