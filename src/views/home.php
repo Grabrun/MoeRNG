@@ -382,20 +382,21 @@
             </div>
         </section>
 
-        <!-- About (content editable via 系统设置 → 站点信息) -->
+        <!-- About (hardcoded; mirrors the GitHub repo About block) -->
         <section id="about" class="section reveal">
             <h2 class="section-title">关于</h2>
             <div class="about-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:16px">
                 <div class="about-card" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px">
                     <h3 class="mb-2">项目简介</h3>
-                    <p class="text-muted" style="font-size:0.92rem;line-height:1.7"><?= h($aboutDescription) ?></p>
+                    <p class="text-muted" style="font-size:0.92rem;line-height:1.7"><?= h($siteName) ?> 是一个基于 PHP 8.4 + MySQL 的随机二次元图片 API 服务，提供 JSON 结构化数据与 302 重定向双模式返回，支持多级分类、API Key 鉴权与速率限制。</p>
                 </div>
                 <div class="about-card" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px">
                     <h3 class="mb-2">技术特性</h3>
                     <ul class="text-muted" style="font-size:0.92rem;line-height:1.9;padding-left:18px;margin:0">
-                        <?php foreach (array_filter(array_map('trim', explode("\n", $aboutFeatures))) as $feature): ?>
-                        <li><?= h($feature) ?></li>
-                        <?php endforeach; ?>
+                        <li>轻量自研框架，零重型依赖</li>
+                        <li>多级分类树，指定分类随机取图</li>
+                        <li>对象存储接入：COS / OSS / AWS S3 / OBS</li>
+                        <li>内置管理后台与操作审计</li>
                     </ul>
                 </div>
                 <div class="about-card" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px">

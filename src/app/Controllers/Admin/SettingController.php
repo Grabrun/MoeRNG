@@ -44,8 +44,6 @@ class SettingController extends Controller
                 'icp_number' => ['type' => 'text', 'label' => 'ICP 备案号', 'default' => '', 'maxlength' => 64, 'rules' => ['max' => 64], 'help' => '如 粤ICP备xxxxxxxx号；留空不显示'],
                 'copyright' => ['type' => 'text', 'label' => '版权信息', 'default' => '© {year} MoeRNG. All rights reserved.', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '页脚版权文字；{year} 会自动替换为当前年份'],
                 'footer_html' => ['type' => 'textarea', 'label' => '页脚自定义信息', 'default' => '', 'maxlength' => 1000, 'rules' => ['max' => 1000], 'help' => '页脚底部追加的纯文本（自动转义），支持多行'],
-                'about_description' => ['type' => 'textarea', 'label' => '关于 · 项目简介', 'default' => '一个基于 PHP 8.4 + MySQL 的随机二次元图片 API 服务，提供 JSON 结构化数据与 302 重定向双模式返回，支持多级分类、API Key 鉴权与速率限制。', 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => '前台「关于」区块第一张卡片的内容'],
-                'about_features' => ['type' => 'textarea', 'label' => '关于 · 技术特性', 'default' => "轻量自研框架，零重型依赖\n多级分类树，指定分类随机取图\n对象存储接入：COS / OSS / AWS S3 / OBS\n内置管理后台与操作审计", 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => '前台「关于」区块第二张卡片，每行一条特性'],
                 'cdn_url' => ['type' => 'text', 'label' => 'CDN 加速域名', 'default' => '', 'maxlength' => 200, 'rules' => ['url' => true, 'max' => 200], 'help' => '配置后图片 URL 将通过 CDN 域名提供（本地与对象存储均支持）'],
                 'github_url' => ['type' => 'text', 'label' => 'GitHub 仓库地址', 'default' => '', 'maxlength' => 200, 'rules' => ['url' => true, 'max' => 200], 'help' => '填后顶部导航显示 GitHub 入口与「关于」区的开源链接；留空不显示'],
                 'per_page' => ['type' => 'number', 'label' => '每页图片数', 'default' => '20', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 100], 'help' => '后台图片列表与分类每页显示数量'],
