@@ -295,7 +295,7 @@
   "data": {
     "total_images": 1234,
     "total_categories": 15,
-    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.1.0-beta.10' ?>",
+    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.1.0' ?>",
     "storage_driver": "local"
   }
 }'>复制</button>
@@ -304,7 +304,7 @@
   "data": {
     "total_images": 1234,
     "total_categories": 15,
-    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.1.0-beta.10' ?>",
+    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.1.0' ?>",
     "storage_driver": "local"
   }
 }</code></pre>
@@ -414,7 +414,7 @@
         <!-- Footer -->
         <footer class="footer">
             <p><?= h($siteName) ?> <?= h($copyright) ?></p>
-            <p class="mt-1">MoeRNG v<?= defined('APP_VERSION') ? APP_VERSION : '1.1.0-beta.10' ?> &mdash; Open-source under MIT License</p>
+            <p class="mt-1">MoeRNG v<?= defined('APP_VERSION') ? APP_VERSION : '1.1.0' ?> &mdash; Open-source under MIT License</p>
             <?php if (!empty($icpNumber)): ?>
             <p class="mt-1"><a href="https://beian.miit.gov.cn/" target="_blank" rel="nofollow noopener" style="color:inherit;text-decoration:none"><?= h($icpNumber) ?></a></p>
             <?php endif; ?>

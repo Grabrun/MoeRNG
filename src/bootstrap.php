@@ -22,7 +22,7 @@ define('MOERNG_ROOT', __DIR__);
 
 // Release version — surfaced in the footer and the /api/v1/stats endpoint.
 if (!defined('APP_VERSION')) {
-    define('APP_VERSION', '1.1.0-beta.10');
+    define('APP_VERSION', '1.1.0');
 }
 
 /* -------------------------------------------------------------------------
