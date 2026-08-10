@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-MoeRNG 一键发版脚本（v1.1.0-beta.10 起）：bump 版本 → 打包 zip → git commit → push GitHub。
+MoeRNG 一键发版脚本（v1.1.0 起）：bump 版本 → 打包 zip → git commit → push GitHub。
 
 用法：
-  python tools/release.py 1.1.0-beta.11          # 升到指定版本并完整发版
-  python tools/release.py 1.1.0-beta.11 --no-push  # 只 bump + 打包 + commit，不推送
+  python tools/release.py 1.1.1-beta.1            # 测试版（默认）
+  python tools/release.py 1.1.1-beta.1 --no-push  # 只 bump + 打包 + commit
+  python tools/release.py 1.1.1 --stable          # 正式版（必须显式 --stable）
+
+⚠️ 发布门禁（用户规则 2026-08-10）：
+- 只有用户明确表示「发正式版」才能发布正式版（去 beta 后缀）。
+- 其余一律测试版（X.Y.Z-beta.N）。
+- 正式版格式（无 -beta 后缀）必须显式传 --stable，否则脚本拒绝执行；
+  agent 也只在用户明确要求时才会传该标志。不确定时先问用户。
 
 说明：
 - bump 同步 4 处：src/bootstrap.php / src/app/Controllers/ApiController.php /
@@ -80,15 +87,25 @@ def git(version: str, push: bool) -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print('usage: python tools/release.py <version> [--no-push]')
+        print('usage: python tools/release.py <version> [--no-push] [--stable]')
         sys.exit(1)
     version = sys.argv[1]
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?', version):
         print(f'[FAIL] invalid semver: {version}')
         sys.exit(1)
     push = '--no-push' not in sys.argv
+    stable = '--stable' in sys.argv
 
-    print(f'=== MoeRNG release v{version} ===')
+    # Release gate: a stable version (no -beta suffix) requires explicit --stable.
+    is_stable_format = 'beta' not in version
+    if is_stable_format and not stable:
+        print('[FAIL] 正式版（无 -beta 后缀）必须显式 --stable；仅用户明确要求发正式版时使用。')
+        print('       测试版请使用 X.Y.Z-beta.N 格式。')
+        sys.exit(2)
+    if not is_stable_format and stable:
+        print('[WARN] 测试版版本号带 --stable 冗余（忽略）。')
+
+    print(f'=== MoeRNG release v{version} ({("STABLE" if is_stable_format else "beta")}) ===')
     bump(version)
     z = package()
     print(f'[OK  ] zip: {os.path.basename(z)}')
