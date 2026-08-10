@@ -137,18 +137,30 @@ def github_release(version: str, zip_path: str, note: str = '') -> None:
     prerelease = 'beta' in version
     if note:
         body = note
-    elif prerelease:
-        body = (
-            f'## MoeRNG v{version} — 测试版\n\n'
-            '此版本为测试/预发布版本，用于在正式发布前验证新功能与修复。\n\n'
-            '### 安装\n下载下方 zip 资产覆盖部署（参考 README 快速开始）。部署后重启 PHP-FPM。\n\n'
-            '### 注意\n测试版可能存在未发现的问题，请勿直接用于生产环境（除非你已充分验证）。'
-        )
     else:
+        # Release Notes 模板（用户规则 2026-08-10）：固定结构，逐项填写。
+        cl_url = 'https://github.com/Grabrun/MoeRNG/blob/main/CHANGELOG.md'
+        kind = '测试版' if prerelease else '正式版'
         body = (
-            f'## MoeRNG v{version} — 正式版\n\n'
-            '随机二次元图片 API 服务（PHP 8.4 + MySQL）。\n\n'
-            '### 安装\n下载下方 zip 资产，参考 README 快速开始。'
+            f'## v{version}\n\n'
+            f'**版本概述**：{kind}版本，用于验证新功能与修复。\n\n'
+            '### 🚨 破坏性变更（Breaking Changes）\n'
+            '无\n\n'
+            '### 🚀 新功能（New Features）\n'
+            '- （本版无新增功能）\n\n'
+            '### ⬆️ 功能增强（Enhancements）\n'
+            '- （待补充）\n\n'
+            '### 🐛 Bug 修复（Bug Fixes）\n'
+            '- （本版无修复）\n\n'
+            '### 📚 文档与依赖（Documentation & Dependencies）\n'
+            '- （待补充）\n\n'
+            '### 升级指南（Upgrade Guide）\n'
+            '1. 下载下方 zip 资产覆盖部署（参考 README 快速开始）。\n'
+            '2. 重启 PHP-FPM 触发数据库自动迁移。\n'
+            '3. 运行 doctor.php 验证部署健康后删除。\n\n'
+            '### 贡献者致谢\n'
+            '- （本版无外部贡献者）\n\n'
+            f'完整变更日志请查看 [CHANGELOG.md]({cl_url})。'
         )
 
     # Create the release (idempotent-ish: fail fast if tag exists without release).
@@ -172,7 +184,7 @@ def github_release(version: str, zip_path: str, note: str = '') -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print('usage: python tools/release.py <version> [--no-push] [--stable] [--note "..."]')
+        print('usage: python tools/release.py <version> [--no-push] [--stable] [--note "..."] [--note-file path]')
         sys.exit(1)
     version = sys.argv[1]
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?', version):
@@ -185,6 +197,16 @@ def main() -> None:
         i = sys.argv.index('--note')
         if i + 1 < len(sys.argv):
             note = sys.argv[i + 1]
+    if '--note-file' in sys.argv:
+        i = sys.argv.index('--note-file')
+        if i + 1 < len(sys.argv):
+            path = sys.argv[i + 1]
+            if os.path.isfile(path):
+                with open(path, encoding='utf-8') as f:
+                    note = f.read().strip()
+            else:
+                print(f'[FAIL] --note-file 不存在: {path}')
+                sys.exit(1)
 
     # Release gate: a stable version (no -beta suffix) requires explicit --stable.
     is_stable_format = 'beta' not in version
