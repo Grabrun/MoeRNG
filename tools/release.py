@@ -51,7 +51,8 @@ def package() -> str:
         print('[FAIL] package:', r.stderr[-500:])
         sys.exit(1)
     import glob
-    zips = sorted(glob.glob(os.path.join(ROOT, 'releases', 'MoeRNG-v*.zip')))
+    # Newest by mtime — filename sort breaks on beta.10 vs beta.9 ('1'<'9').
+    zips = sorted(glob.glob(os.path.join(ROOT, 'releases', 'MoeRNG-v*.zip')), key=os.path.getmtime)
     return zips[-1]
 
 
