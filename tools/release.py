@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-MoeRNG 一键发版脚本（v1.1.0 起）：bump 版本 → 打包 zip → git commit → push GitHub。
+MoeRNG 一键发版脚本（v1.1.1-beta.3 起）：bump 版本 → 打包 zip → git commit →
+push + tag → GitHub Release（正式版和测试版都会创建，附 zip 资产）。
 
 用法：
-  python tools/release.py 1.1.1-beta.1            # 测试版（默认）
-  python tools/release.py 1.1.1-beta.1 --no-push  # 只 bump + 打包 + commit
-  python tools/release.py 1.1.1 --stable          # 正式版（必须显式 --stable）
+  python tools/release.py 1.1.1-beta.3                  # 测试版（默认）
+  python tools/release.py 1.1.1-beta.3 --no-push        # 只 bump + 打包 + commit
+  python tools/release.py 1.1.1 --stable                # 正式版（必须显式 --stable）
+  python tools/release.py 1.1.1-beta.3 --note "修复 XX" # 自定义 Release notes
 
 ⚠️ 发布门禁（用户规则 2026-08-10）：
 - 只有用户明确表示「发正式版」才能发布正式版（去 beta 后缀）。
@@ -14,23 +16,33 @@ MoeRNG 一键发版脚本（v1.1.0 起）：bump 版本 → 打包 zip → git c
 - 正式版格式（无 -beta 后缀）必须显式传 --stable，否则脚本拒绝执行；
   agent 也只在用户明确要求时才会传该标志。不确定时先问用户。
 
+📦 Release 规范（用户规则 2026-08-10）：
+- **测试版和正式版都要发布 GitHub Release**（tag + release 页面 + zip 资产）。
+- 测试版 Release 标记 prerelease: true；正式版 prerelease: false。
+- Release notes 缺省为通用模板，可用 --note 覆盖。
+
 说明：
 - bump 同步 4 处：src/bootstrap.php / src/app/Controllers/ApiController.php /
   src/views/home.php / tools/_package.py（打包文件名模板）
-- push 凭据：优先环境变量 GITHUB_TOKEN（fine-grained PAT，单次内嵌 URL，不落盘）；
-  无 token 时走普通 `git push origin`（用你本机的 git 凭据）。
+- push/release 凭据：优先环境变量 GITHUB_TOKEN（fine-grained PAT，单次内嵌 URL，
+  不落盘）；无 token 时 push 走 `git push origin` 且跳过 GitHub Release。
 - 发版后必须推送——项目规范：releases/ zip 与 GitHub 代码同步。
 
 SemVer 约定（用户规则）：
 - 测试期修 bug → X.Y.Z-beta.N+1；新增兼容功能 → MINOR+1 + beta.1；不兼容 → MAJOR+1 + beta.1
 """
+import json
 import os
 import re
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = 'Grabrun/MoeRNG'
+API = 'https://api.github.com'
+UPLOADS = 'https://uploads.github.com'
 FILES = [
     ('src/bootstrap.php', re.compile(r"(define\('APP_VERSION', ')[^']+('\))"), lambda v: r"\g<1>" + v + r"\g<2>"),
     ('src/app/Controllers/ApiController.php', re.compile(r"('version' => defined\('APP_VERSION'\) \? APP_VERSION : ')[^']+(',)"), lambda v: r"\g<1>" + v + r"\g<2>"),
@@ -77,17 +89,90 @@ def git(version: str, push: bool) -> None:
     if token:
         url = f'https://Grabrun:{token}@github.com/{REPO}.git'
         r = subprocess.run(['git', 'push', url, 'main'], cwd=ROOT, capture_output=True, text=True)
+        tag = f'v{version}'
+        r2 = subprocess.run(['git', 'tag', tag], cwd=ROOT, capture_output=True, text=True)
+        if r2.returncode != 0:
+            print(f'[WARN] tag {tag} may already exist: {r2.stderr.strip()}')
+        r3 = subprocess.run(['git', 'push', url, tag], cwd=ROOT, capture_output=True, text=True)
+        print(r3.stdout.strip() or r3.stderr.strip())
     else:
         r = subprocess.run(['git', 'push', 'origin', 'main'], cwd=ROOT, capture_output=True, text=True)
+        print(f'[WARN] no GITHUB_TOKEN — tag v{version} not pushed, GitHub Release skipped')
     print(r.stdout.strip() or r.stderr.strip())
     if r.returncode != 0:
         print('[FAIL] push — check GITHUB_TOKEN or local git credentials')
         sys.exit(1)
 
 
+def _api(method: str, url: str, token: str, payload=None, raw: bytes | None = None, content_type: str | None = None) -> dict:
+    data = None
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    if raw is not None:
+        data = raw
+        headers['Content-Type'] = content_type or 'application/octet-stream'
+    elif payload is not None:
+        data = json.dumps(payload).encode('utf-8')
+        headers['Content-Type'] = 'application/json'
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = resp.read().decode('utf-8')
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode('utf-8', errors='replace')[:300]
+        print(f'[FAIL] GitHub API {method} {url}: HTTP {e.code} {msg}')
+        sys.exit(1)
+
+
+def github_release(version: str, zip_path: str, note: str = '') -> None:
+    token = os.environ.get('GITHUB_TOKEN', '')
+    if not token:
+        print('[SKIP] GitHub Release（无 GITHUB_TOKEN）')
+        return
+    tag = f'v{version}'
+    prerelease = 'beta' in version
+    if note:
+        body = note
+    elif prerelease:
+        body = (
+            f'## MoeRNG v{version} — 测试版\n\n'
+            '此版本为测试/预发布版本，用于在正式发布前验证新功能与修复。\n\n'
+            '### 安装\n下载下方 zip 资产覆盖部署（参考 README 快速开始）。部署后重启 PHP-FPM。\n\n'
+            '### 注意\n测试版可能存在未发现的问题，请勿直接用于生产环境（除非你已充分验证）。'
+        )
+    else:
+        body = (
+            f'## MoeRNG v{version} — 正式版\n\n'
+            '随机二次元图片 API 服务（PHP 8.4 + MySQL）。\n\n'
+            '### 安装\n下载下方 zip 资产，参考 README 快速开始。'
+        )
+
+    # Create the release (idempotent-ish: fail fast if tag exists without release).
+    release = _api('POST', f'{API}/repos/{REPO}/releases', token, {
+        'tag_name': tag,
+        'name': f'MoeRNG v{version}' + ('（测试版）' if prerelease else ''),
+        'body': body,
+        'draft': False,
+        'prerelease': prerelease,
+    })
+    rid = release['id']
+    print(f'[OK  ] GitHub Release created: {release["html_url"]} (prerelease={prerelease})')
+
+    # Upload the zip asset.
+    fname = os.path.basename(zip_path)
+    url = f'{UPLOADS}/repos/{REPO}/releases/{rid}/assets?name={urllib.parse.quote(fname)}'
+    with open(zip_path, 'rb') as f:
+        asset = _api('POST', url, token, raw=f.read(), content_type='application/zip')
+    print(f'[OK  ] Asset uploaded: {asset.get("browser_download_url", fname)}')
+
+
 def main() -> None:
     if len(sys.argv) < 2:
-        print('usage: python tools/release.py <version> [--no-push] [--stable]')
+        print('usage: python tools/release.py <version> [--no-push] [--stable] [--note "..."]')
         sys.exit(1)
     version = sys.argv[1]
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?', version):
@@ -95,6 +180,11 @@ def main() -> None:
         sys.exit(1)
     push = '--no-push' not in sys.argv
     stable = '--stable' in sys.argv
+    note = ''
+    if '--note' in sys.argv:
+        i = sys.argv.index('--note')
+        if i + 1 < len(sys.argv):
+            note = sys.argv[i + 1]
 
     # Release gate: a stable version (no -beta suffix) requires explicit --stable.
     is_stable_format = 'beta' not in version
@@ -110,7 +200,9 @@ def main() -> None:
     z = package()
     print(f'[OK  ] zip: {os.path.basename(z)}')
     git(version, push)
-    print(f'=== released v{version} ({"pushed" if push else "commit-only"}) ===')
+    if push:
+        github_release(version, z, note)
+    print(f'=== released v{version} ({"pushed + release" if push else "commit-only"}) ===')
 
 
 if __name__ == '__main__':
