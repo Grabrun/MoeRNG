@@ -1,0 +1,29 @@
+# ── Deploy-time generated / sensitive ────────────────────────────────
+src/config/database.php          # DB credentials (written by the installer)
+src/public/uploads/              # uploaded images
+src/var/                        # rate-limit counters
+backups/                        # backup archives
+src/debug_session.php           # server-diagnostics tool (dev only)
+
+# ── Third-party SDKs (shipped inside release ZIPs, not the repo) ──────
+# Object-storage SDKs are bundled at release time via tools/_package.py;
+# committing 67MB of vendor code bloats the repo for no reason.
+src/sdk/
+
+# ── Build artifacts / packaging ───────────────────────────────────────
+releases/
+*.zip
+
+# ── WorkBuddy project memory (deployment & credential discussion) ─────
+.workbuddy/
+
+# ── Scratch / one-off helper scripts ──────────────────────────────────
+tools/_log_*.py
+tools/_beta*.py
+tools/_fix_*.py
+
+# ── OS / editor cruft ─────────────────────────────────────────────────
+nul
+Thumbs.db
+.DS_Store
+*.log

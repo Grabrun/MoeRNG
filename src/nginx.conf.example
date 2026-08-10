@@ -1,0 +1,132 @@
+# =============================================================================
+# MoeRNG - Nginx site configuration
+#
+# IMPORTANT: .htaccess is an Apache-only file and is completely IGNORED by
+# Nginx. Without the rules below, /install, /admin and /api/v1/random will all
+# return 404 even though the PHP code is correct.
+#
+# Baota (宝塔) users: paste the location blocks into
+#   Website -> Settings -> Configuration File
+# or paste the "PSEUDO-STATIC" section at the bottom into
+#   Website -> Settings -> URL Rewrite (伪静态)
+# =============================================================================
+
+server {
+    listen       80;
+    listen       443 ssl http2;
+    server_name  images.grabrun.top;
+
+    root         /www/wwwroot/images.grabrun.top;
+    index        index.php index.html;
+
+    charset      utf-8;
+
+    # ssl_certificate     /www/server/panel/vhost/cert/images.grabrun.top/fullchain.pem;
+    # ssl_certificate_key /www/server/panel/vhost/cert/images.grabrun.top/privkey.pem;
+
+    # Image uploads: keep in sync with php.ini upload_max_filesize / post_max_size
+    client_max_body_size 50m;
+
+    access_log /www/wwwlogs/images.grabrun.top.log;
+    error_log  /www/wwwlogs/images.grabrun.top.error.log;
+
+    # -------------------------------------------------------------------------
+    # Denied paths. These MUST appear before the "\.php$" block, because regex
+    # locations are evaluated in the order they are declared.
+    # -------------------------------------------------------------------------
+    location ~ ^/(config|app|views|releases)/ {
+        deny all;
+        return 404;
+    }
+
+    location ~* \.(sql|md|log|ini|lock|yml|yaml)$ {
+        deny all;
+        return 404;
+    }
+
+    location ~ /\. {
+        deny all;
+        return 404;
+    }
+
+    # -------------------------------------------------------------------------
+    # Uploaded files: serve statically, never execute as PHP.
+    # "^~" stops regex evaluation so an uploaded shell.php can't be run.
+    # -------------------------------------------------------------------------
+    location ^~ /public/uploads/ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options "nosniff";
+
+        location ~ \.php$ {
+            deny all;
+            return 403;
+        }
+    }
+
+    # Static assets
+    location ^~ /public/ {
+        expires 7d;
+        add_header Cache-Control "public";
+        try_files $uri =404;
+    }
+
+    # -------------------------------------------------------------------------
+    # Front controllers.
+    #
+    # These are PREFIX locations (no "^~"), so the regex "\.php$" block still
+    # wins for the actual .php files. That is what makes the internal redirect
+    # from try_files get executed by PHP-FPM instead of served as source code.
+    #
+    # REQUEST_URI is preserved across the internal redirect, so the Router still
+    # sees /api/v1/random rather than /api.php.
+    # -------------------------------------------------------------------------
+    location /api {
+        try_files $uri /api.php$is_args$args;
+    }
+
+    location /admin {
+        try_files $uri /admin.php$is_args$args;
+    }
+
+    location /install {
+        try_files $uri /install.php$is_args$args;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php$is_args$args;
+    }
+
+    # -------------------------------------------------------------------------
+    # PHP-FPM
+    # Adjust the socket path to your installed version:
+    #   Baota PHP 8.4 -> unix:/tmp/php-cgi-84.sock
+    #   Generic       -> unix:/run/php/php8.4-fpm.sock
+    # -------------------------------------------------------------------------
+    location ~ \.php$ {
+        try_files $uri =404;
+
+        fastcgi_pass   unix:/tmp/php-cgi-84.sock;
+        fastcgi_index  index.php;
+        fastcgi_param  SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include        fastcgi_params;
+
+        fastcgi_read_timeout 120s;
+        fastcgi_buffer_size 128k;
+        fastcgi_buffers 4 256k;
+    }
+}
+
+# =============================================================================
+# PSEUDO-STATIC ONLY (宝塔 伪静态 输入框，粘贴以下内容即可)
+# =============================================================================
+#
+# location ~ ^/(config|app|views|releases)/ { deny all; return 404; }
+# location ~* \.(sql|md|log|ini)$ { deny all; return 404; }
+# location ^~ /public/uploads/ { location ~ \.php$ { deny all; } }
+# location /api     { try_files $uri /api.php$is_args$args; }
+# location /admin   { try_files $uri /admin.php$is_args$args; }
+# location /install { try_files $uri /install.php$is_args$args; }
+# location /        { try_files $uri $uri/ /index.php$is_args$args; }
+#
+# =============================================================================

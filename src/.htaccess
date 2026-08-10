@@ -1,0 +1,51 @@
+# =============================================================================
+# APACHE ONLY.
+#
+# Nginx completely ignores this file. If your server runs Nginx (including
+# Baota / 宝塔 panel installs under /www/wwwroot/), none of these rules apply
+# and every route except "/" will return 404. Use nginx.conf.example instead.
+# =============================================================================
+
+RewriteEngine On
+
+# -----------------------------------------------------------------------------
+# Deny rules MUST come before the catch-all rewrite below, otherwise the
+# catch-all matches first and these are never evaluated.
+# -----------------------------------------------------------------------------
+RewriteRule ^(config|app|views|releases)/ - [F,L]
+RewriteRule ^\. - [F,L]
+
+<FilesMatch "\.(env|sql|md|log|ini|lock|ya?ml)$">
+    Require all denied
+</FilesMatch>
+
+# Never execute PHP inside the upload directory
+<Directory "public/uploads">
+    <FilesMatch "\.php$">
+        Require all denied
+    </FilesMatch>
+</Directory>
+
+# -----------------------------------------------------------------------------
+# Front controllers
+# -----------------------------------------------------------------------------
+
+# Existing files and directories are served as-is
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+RewriteRule ^api(/.*)?$     api.php     [QSA,L]
+RewriteRule ^admin(/.*)?$   admin.php   [QSA,L]
+RewriteRule ^install(/.*)?$ install.php [QSA,L]
+
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# -----------------------------------------------------------------------------
+# PHP settings (mod_php only; on PHP-FPM set these in php.ini / pool config)
+# -----------------------------------------------------------------------------
+<IfModule mod_php.c>
+    php_value upload_max_filesize 50M
+    php_value post_max_size 55M
+    php_value max_execution_time 120
+</IfModule>
