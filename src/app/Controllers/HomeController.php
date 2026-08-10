@@ -50,6 +50,9 @@ class HomeController extends Controller
             'footerHtml' => Config::get('settings.footer_html', ''),
             // v1.1.0-beta.8: GitHub repo link (nav + about), configured in 系统设置.
             'githubUrl' => Config::get('settings.github_url', ''),
+            // v1.1.0-beta.9: about section content, editable via 系统设置.
+            'aboutDescription' => Config::get('settings.about_description', '一个基于 PHP 8.4 + MySQL 的随机二次元图片 API 服务，提供 JSON 结构化数据与 302 重定向双模式返回，支持多级分类、API Key 鉴权与速率限制。'),
+            'aboutFeatures' => Config::get('settings.about_features', "轻量自研框架，零重型依赖\n多级分类树，指定分类随机取图\n对象存储接入：COS / OSS / AWS S3 / OBS\n内置管理后台与操作审计"),
         ]);
     }
 }
