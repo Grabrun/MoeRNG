@@ -53,12 +53,25 @@
         .site-nav-links a.active { color: var(--primary); font-weight: 600; }
         .site-nav .theme-toggle-float { position: static; border-radius: var(--radius-sm); box-shadow: none; }
         html { scroll-padding-top: 76px; }
+        /* v1.1.1: nav wraps on small screens so all items stay reachable */
         @media (max-width: 640px) {
-            .site-nav { gap: 10px; padding: 0 12px; }
+            .site-nav { gap: 8px; padding: 8px 12px; height: auto; min-height: 52px; flex-wrap: wrap; }
             .site-nav-brand { font-size: 1rem; }
             .site-nav-brand img { max-height: 28px; max-width: 120px; }
-            .site-nav-links a { padding: 6px 8px; font-size: 0.85rem; }
+            .site-nav-links { order: 3; width: 100%; margin-left: 0; justify-content: flex-start; padding: 4px 0 2px; overflow-x: auto; }
+            .site-nav-links a { padding: 5px 10px; font-size: 0.85rem; flex-shrink: 0; }
+            .site-nav .theme-toggle-float { margin-left: auto; }
         }
+        /* v1.1.1: hero hierarchy polish */
+        .hero h1 { font-weight: 800; letter-spacing: -0.02em; }
+        .hero .stats { gap: 40px; }
+        .hero .stat .num { font-size: 2.2rem; font-weight: 800; }
+        .hero .stat { transition: transform var(--transition); }
+        .hero .stat:hover { transform: translateY(-2px); }
+        .site-logo { filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); }
+        /* v1.1.1: docs & tester polish */
+        .section-title { letter-spacing: -0.01em; }
+        #tester .api-tester { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
         @media (max-width: 768px) {
             .hero h1 { font-size: 2.5rem; }
             .hero { padding: 60px 16px 40px; }
@@ -295,7 +308,7 @@
   "data": {
     "total_images": 1234,
     "total_categories": 15,
-    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.1.0' ?>",
+    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.1.1-beta.1' ?>",
     "storage_driver": "local"
   }
 }'>复制</button>
@@ -304,7 +317,7 @@
   "data": {
     "total_images": 1234,
     "total_categories": 15,
-    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.1.0' ?>",
+    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.1.1-beta.1' ?>",
     "storage_driver": "local"
   }
 }</code></pre>
@@ -414,7 +427,7 @@
         <!-- Footer -->
         <footer class="footer">
             <p><?= h($siteName) ?> <?= h($copyright) ?></p>
-            <p class="mt-1">MoeRNG v<?= defined('APP_VERSION') ? APP_VERSION : '1.1.0' ?> &mdash; Open-source under MIT License</p>
+            <p class="mt-1">MoeRNG v<?= defined('APP_VERSION') ? APP_VERSION : '1.1.1-beta.1' ?> &mdash; Open-source under MIT License</p>
             <?php if (!empty($icpNumber)): ?>
             <p class="mt-1"><a href="https://beian.miit.gov.cn/" target="_blank" rel="nofollow noopener" style="color:inherit;text-decoration:none"><?= h($icpNumber) ?></a></p>
             <?php endif; ?>

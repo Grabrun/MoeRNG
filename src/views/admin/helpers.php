@@ -20,7 +20,12 @@ function admin_header($title) { ?>
         .sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
         .sidebar-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: all var(--transition); }
         .sidebar-nav a:hover, .sidebar-nav a.active { background: var(--bg-input); color: var(--text); }
-        .sidebar-nav a.active { color: var(--primary); }
+        .sidebar-nav a.active { color: var(--primary); position: relative; }
+        /* v1.1.1: active item gets a left accent bar */
+        .sidebar-nav a.active::before {
+            content: ''; position: absolute; left: -16px; top: 20%; bottom: 20%;
+            width: 3px; border-radius: 2px; background: var(--primary);
+        }
         .sidebar-nav a span { line-height: 1; }
         .sidebar-footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
         .sidebar-footer a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: all var(--transition); }
