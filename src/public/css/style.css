@@ -794,6 +794,46 @@ body.modal-open { overflow: hidden; }
 .copy-wrap pre { max-height: 320px; overflow: auto; }
 .copy-wrap .copy-btn { position: absolute; top: 10px; right: 10px; z-index: 2; }
 
+/* v1.1.1-beta.3: category management — one card per root, tree connector */
+.category-list { display: flex; flex-direction: column; gap: 16px; }
+.cat-root-card { padding: 0; overflow: hidden; }
+.cat-root-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 18px 20px; border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-card) 60%, transparent);
+}
+.cat-root-info { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; min-width: 0; }
+.cat-name { font-size: 1.05rem; }
+.cat-root-card .cat-desc { padding: 12px 20px 0; font-size: 0.92rem; }
+.cat-children { padding: 8px 12px 14px 20px; display: flex; flex-direction: column; gap: 2px; position: relative; }
+.cat-child {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 8px 10px; border-radius: var(--radius-sm);
+    transition: background var(--transition);
+    position: relative;
+}
+.cat-child:hover { background: var(--bg-input); }
+.cat-child-info { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; min-width: 0; }
+.cat-child-info .cat-name { font-size: 0.95rem; }
+.cat-child-info .cat-desc { width: 100%; padding-top: 4px; font-size: 0.85rem; }
+.cat-child .actions { opacity: 0; transition: opacity var(--transition); flex-shrink: 0; }
+.cat-child:hover .actions, .cat-root-card:hover .cat-root-header .actions { opacity: 1; }
+.cat-children::before {
+    content: ''; position: absolute; left: 32px; top: 12px; bottom: 18px;
+    width: 2px; background: var(--border); border-radius: 2px; opacity: 0.6;
+}
+.cat-child::before {
+    content: ''; position: absolute; left: -8px; top: 18px;
+    width: 10px; height: 2px; background: var(--border); opacity: 0.6;
+}
+.cat-grandchildren { margin-left: 24px; padding-left: 4px; border-left: 1px dashed var(--border); }
+.cat-grandchildren .cat-child::before { display: none; }
+@media (max-width: 640px) {
+    .cat-root-header { flex-direction: column; align-items: flex-start; }
+    .cat-root-card .actions, .cat-child .actions { opacity: 1; }
+    .cat-children::before { left: 20px; }
+}
+
 /* Toast: slide-in + stacking depth */
 .toast { animation: toast-in 0.22s ease; box-shadow: var(--shadow); }
 @keyframes toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }

@@ -38,7 +38,7 @@ def aws_allowed(rel):
 SKIP = {'config','releases','.workbuddy','node_modules','uploads','.git','.vscode','.idea','.github','tests','bin','sample'}
 SKIP_FILE = {'debug_session.php','_package.py','_check_api.py','_check_zip_aws.py','_check_aws_refs.js','_check_zip_aws.js','_fix_memory.py','_check_frontend.py','_note_version.py','_log_today.py','_fix_memory_line.py','_cleanup_root2.py','_log_cleanup.py','_cleanup_root.py'}
 stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-zip_path = os.path.join(DST, 'MoeRNG-v1.1.1-beta.2-{}.zip'.format(stamp))
+zip_path = os.path.join(DST, 'MoeRNG-v1.1.1-beta.3-{}.zip'.format(stamp))
 n = 0
 skipped = 0
 with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as z:

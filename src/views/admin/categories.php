@@ -8,53 +8,74 @@
     <button class="btn btn-primary btn-sm" onclick="openModal('category-modal')">新建分类</button>
 </div>
 
-<div class="card">
-    <div class="category-tree" id="category-tree">
-        <?php
-        // Flatten the tree into an id -> name map so each item can show its
-        // parent's display name instead of a raw parent_id.
-        $parentNames = [];
-        $moerng_collect = function($nodes) use (&$moerng_collect, &$parentNames) {
-            foreach ($nodes as $n) {
-                $parentNames[$n['id']] = $n['name'];
-                if (!empty($n['children'])) $moerng_collect($n['children']);
-            }
+<div class="category-list">
+    <?php if (empty($categories)): ?>
+    <div class="card"><p class="text-center text-muted" style="padding:40px">暂无分类，点击「新建分类」创建第一个分类</p></div>
+    <?php else: ?>
+    <?php foreach ($categories as $root): ?>
+    <?php
+        // Count total descendants for the root badge.
+        $moerng_count = function ($n) use (&$moerng_count) {
+            $c = 0;
+            foreach ($n['children'] ?? [] as $ch) { $c += 1 + $moerng_count($ch); }
+            return $c;
         };
-        $moerng_collect($categories);
-        ?>
-        <?php function renderTree($nodes) { ?>
-            <?php foreach ($nodes as $node): ?>
-            <div class="category-tree-item">
-                <div class="cat-info" style="flex:1;min-width:0">
-                    <div class="cat-head">
-                        <span class="cat-name"><?= h($node['name']) ?></span>
-                        <small class="text-muted">(<?= h($node['slug']) ?>)</small>
-                        <span class="text-muted">· 排序 <?= (int)($node['sort_order'] ?? 0) ?></span>
-                    </div>
-                    <?php if (!empty($node['description'])): ?>
-                    <div class="cat-desc text-muted"><?= h($node['description']) ?></div>
-                    <?php endif; ?>
-                    <div class="cat-meta text-muted">
-                        父类：<?= ($node['parent_id'] ?? null) ? h($parentNames[$node['parent_id']] ?? '未知') : '顶级分类' ?>
-                    </div>
-                </div>
-                <div class="actions">
-                    <button class="btn btn-outline btn-sm" onclick="editCategory(<?= $node['id'] ?>, '<?= h($node['name']) ?>', '<?= h($node['slug']) ?>', '<?= h($node['description'] ?? '') ?>', '<?= $node['parent_id'] ?? '' ?>', '<?= $node['sort_order'] ?? 0 ?>')">编辑</button>
-                    <button type="button" class="btn btn-danger btn-sm" data-category-delete="<?= $node['id'] ?>" data-name="<?= h($node['name']) ?>">删除</button>
-                </div>
+        $descCount = $moerng_count($root);
+        $kids = $root['children'] ?? [];
+    ?>
+    <div class="card cat-root-card">
+        <div class="cat-root-header">
+            <div class="cat-root-info">
+                <strong class="cat-name"><?= h($root['name']) ?></strong>
+                <small class="text-muted">(<?= h($root['slug']) ?>)</small>
+                <span class="badge badge-info" style="margin-left:6px">顶级分类</span>
+                <?php if ($descCount > 0): ?>
+                <span class="text-muted" style="margin-left:6px">· <?= $descCount ?> 个子分类</span>
+                <?php endif; ?>
+                <span class="text-muted" style="margin-left:6px">· 排序 <?= (int)($root['sort_order'] ?? 0) ?></span>
             </div>
-            <?php if (!empty($node['children'])): ?>
-            <div style="padding-left:24px">
-                <?php renderTree($node['children']); ?>
+            <div class="actions">
+                <button class="btn btn-outline btn-sm" onclick="editCategory(<?= $root['id'] ?>, '<?= h($root['name']) ?>', '<?= h($root['slug']) ?>', '<?= h($root['description'] ?? '') ?>', '<?= $root['parent_id'] ?? '' ?>', '<?= $root['sort_order'] ?? 0 ?>')">编辑</button>
+                <button type="button" class="btn btn-danger btn-sm" data-category-delete="<?= $root['id'] ?>" data-name="<?= h($root['name']) ?>">删除</button>
             </div>
-            <?php endif; ?>
-            <?php endforeach; ?>
-        <?php } ?>
-        <?php renderTree($categories); ?>
-        <?php if (empty($categories)): ?>
-        <p class="text-center text-muted" style="padding:40px">暂无分类，点击「新建分类」创建第一个分类</p>
+        </div>
+        <?php if (!empty($root['description'])): ?>
+        <div class="cat-desc text-muted"><?= h($root['description']) ?></div>
+        <?php endif; ?>
+
+        <?php if (!empty($kids)): ?>
+        <div class="cat-children">
+            <?php
+            $moerng_render = function ($nodes, $depth) use (&$moerng_render) {
+                foreach ($nodes as $n) {
+                    echo '<div class="cat-child cat-depth-' . $depth . '">';
+                    echo '<div class="cat-child-info">';
+                    echo '<span class="cat-name">' . h($n['name']) . '</span>';
+                    echo '<small class="text-muted">(' . h($n['slug']) . ')</small>';
+                    echo '<span class="text-muted">· 排序 ' . (int)($n['sort_order'] ?? 0) . '</span>';
+                    if (!empty($n['description'])) {
+                        echo '<div class="cat-desc text-muted">' . h($n['description']) . '</div>';
+                    }
+                    echo '</div>';
+                    echo '<div class="actions">';
+                    echo '<button class="btn btn-outline btn-sm" onclick="editCategory(' . (int)$n['id'] . ', \'' . h($n['name']) . '\', \'' . h($n['slug']) . '\', \'' . h($n['description'] ?? '') . '\', \'' . ($n['parent_id'] ?? '') . '\', \'' . ($n['sort_order'] ?? 0) . '\')">编辑</button>';
+                    echo '<button type="button" class="btn btn-danger btn-sm" data-category-delete="' . (int)$n['id'] . '" data-name="' . h($n['name']) . '">删除</button>';
+                    echo '</div>';
+                    echo '</div>';
+                    if (!empty($n['children'])) {
+                        echo '<div class="cat-grandchildren">';
+                        $moerng_render($n['children'], $depth + 1);
+                        echo '</div>';
+                    }
+                }
+            };
+            $moerng_render($kids, 1);
+            ?>
+        </div>
         <?php endif; ?>
     </div>
+    <?php endforeach; ?>
+    <?php endif; ?>
 </div>
 
 <!-- Category Modal -->
