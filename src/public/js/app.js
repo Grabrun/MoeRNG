@@ -25,15 +25,37 @@ function createToastContainer() {
 // Modal
 window.openModal = function(id) {
     document.getElementById(id).classList.add('active');
+    // v1.1.1-beta.2: lock background scroll while a modal is open.
+    document.body.classList.add('modal-open');
 };
 window.closeModal = function(id) {
     document.getElementById(id).classList.remove('active');
+    // v1.1.1-beta.2: release scroll lock when no overlay stays open.
+    if (!document.querySelector('.modal-overlay.active')) {
+        document.body.classList.remove('modal-open');
+    }
 };
 
 // Close modal on overlay click
 document.addEventListener('click', function(e) {
     if (e.target.classList.contains('modal-overlay')) {
         e.target.classList.remove('active');
+        if (!document.querySelector('.modal-overlay.active')) {
+            document.body.classList.remove('modal-open');
+        }
+    }
+});
+
+// v1.1.1-beta.2: ESC closes the topmost open modal.
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var open = document.querySelector('.modal-overlay.active');
+        if (open) {
+            open.classList.remove('active');
+            if (!document.querySelector('.modal-overlay.active')) {
+                document.body.classList.remove('modal-open');
+            }
+        }
     }
 });
 
@@ -631,11 +653,21 @@ function initDropZone() {
         if (progressBar && progressFill) {
             progressBar.style.display = 'block';
             progressFill.style.width = '0%';
+            // v1.1.1-beta.2: show a live percentage label next to the bar.
+            var progressText = progressBar.querySelector('.progress-text');
+            if (!progressText) {
+                progressText = document.createElement('span');
+                progressText.className = 'progress-text';
+                progressBar.appendChild(progressText);
+            }
+            progressText.textContent = '0%';
 
             const xhr = new XMLHttpRequest();
             xhr.upload.onprogress = function(e) {
                 if (e.lengthComputable) {
-                    progressFill.style.width = (e.loaded / e.total * 100) + '%';
+                    var pct = Math.round(e.loaded / e.total * 100);
+                    progressFill.style.width = pct + '%';
+                    if (progressText) progressText.textContent = pct + '%';
                 }
             };
             // v1.0.22 tried `status >= 200 && < 400 -> reload`. That was wrong:
