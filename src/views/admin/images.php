@@ -101,10 +101,12 @@
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="drop-zone" id="drop-zone">
+            <div class="drop-zone" id="drop-zone"
+                 data-post-max="<?= h(ini_get('post_max_size')) ?>"
+                 data-upload-max="<?= h(ini_get('upload_max_filesize')) ?>">
                 <div class="icon"><?= icon('upload', 40) ?></div>
                 <p>拖拽图片到此处或点击上传</p>
-                <p class="text-muted"><small>支持 JPG, PNG, GIF, WebP, BMP, SVG</small></p>
+                <p class="text-muted"><small>支持 JPG, PNG, GIF, WebP, BMP, SVG · 单文件 ≤ <?= h(ini_get('upload_max_filesize')) ?> · 单次请求 ≤ <?= h(ini_get('post_max_size')) ?></small></p>
                 <input type="file" name="images[]" multiple accept="image/*" style="display:none">
             </div>
         </form>

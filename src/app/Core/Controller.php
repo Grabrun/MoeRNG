@@ -61,9 +61,56 @@ abstract class Controller
     protected function validateCsrf(): void
     {
         $token = $_POST['_csrf_token'] ?? '';
-        if (!Session::verifyCsrf($token)) {
-            $this->json(['error' => 'CSRF token validation failed.'], 419);
+        if (Session::verifyCsrf($token)) {
+            return;
         }
+        // v1.2.0 迭代: a missing token on a huge POST usually means PHP dropped
+        // the whole body because post_max_size was exceeded ($_POST comes back
+        // empty). Answer with a clear 413 instead of a confusing 419.
+        if ($token === '' && $this->requestLikelyExceededPostMax()) {
+            $this->json([
+                'error' => '上传请求超过服务器限制（post_max_size = ' . ini_get('post_max_size')
+                    . '，单文件限制 ' . ini_get('upload_max_filesize')
+                    . '），请分批上传（建议一次 5-10 张）。',
+            ], 413);
+        }
+        $this->json(['error' => 'CSRF token validation failed.'], 419);
+    }
+
+    /** Whether this request's body was very likely dropped by post_max_size. */
+    private function requestLikelyExceededPostMax(): bool
+    {
+        $cl = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+        $max = $this->iniBytes(ini_get('post_max_size'));
+        if ($cl > 0 && $max > 0 && $cl > $max) {
+            return true;
+        }
+        foreach (($_FILES ?? []) as $f) {
+            $errs = isset($f['error']) ? (is_array($f['error']) ? $f['error'] : [$f['error']]) : [];
+            foreach ($errs as $e) {
+                if ((int) $e === UPLOAD_ERR_INI_SIZE) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Convert an ini size like "8M"/"1G" to bytes (0 when unparseable). */
+    private function iniBytes(string $val): int
+    {
+        $val = trim($val);
+        if ($val === '') {
+            return 0;
+        }
+        $unit = strtolower(substr($val, -1));
+        $num = (int) $val;
+        return match ($unit) {
+            'g' => $num * 1073741824,
+            'm' => $num * 1048576,
+            'k' => $num * 1024,
+            default => $num,
+        };
     }
 
     protected function isPost(): bool

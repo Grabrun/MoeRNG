@@ -616,6 +616,37 @@ function initDropZone() {
 
     function handleFiles(files) {
         if (!files.length) return;
+
+        // v1.2.0 迭代: pre-flight size check — a batch bigger than PHP
+        // post_max_size makes the server drop the whole body and answer 419
+        // (CSRF). Tell the user up front instead of failing mid-upload.
+        function parseSize(s) {
+            if (!s) return 0;
+            var m = String(s).trim().match(/^([\d.]+)\s*([kmg]?)b?$/i);
+            if (!m) return 0;
+            var n = parseFloat(m[1]);
+            switch ((m[2] || '').toLowerCase()) {
+                case 'g': return n * 1073741824;
+                case 'm': return n * 1048576;
+                case 'k': return n * 1024;
+                default: return n;
+            }
+        }
+        function fmtSize(b) {
+            if (b >= 1073741824) return (b / 1073741824).toFixed(1) + 'GB';
+            if (b >= 1048576) return (b / 1048576).toFixed(1) + 'MB';
+            if (b >= 1024) return (b / 1024).toFixed(0) + 'KB';
+            return b + 'B';
+        }
+        var total = 0;
+        for (var fi = 0; fi < files.length; fi++) total += files[fi].size || 0;
+        var postMax = parseSize(zone.dataset.postMax || '');
+        if (postMax > 0 && total > postMax) {
+            showToast('所选文件共 ' + fmtSize(total) + '，超过单次上传限制 ' + fmtSize(postMax)
+                + '（' + zone.dataset.postMax + '），请分批上传（建议一次 5-10 张）', 'error', 8000);
+            return;
+        }
+
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = '/admin/images/upload';
