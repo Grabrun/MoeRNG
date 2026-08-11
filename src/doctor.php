@@ -491,6 +491,14 @@ try {
     check('Settings orphan keys', false, 'cannot inspect settings: ' . $e->getMessage());
 }
 
+// v1.2.0 迭代: signed links — local files now go through the /files endpoint;
+// object storage uses short-lived presigned URLs. No server-side proxying.
+check('Signed links (short-lived)', is_file(__DIR__ . '/app/Controllers/FileController.php')
+        && is_file(__DIR__ . '/app/Storage/SignedUrl.php'),
+    (is_file(__DIR__ . '/app/Controllers/FileController.php') && is_file(__DIR__ . '/app/Storage/SignedUrl.php'))
+        ? 'present — local /files endpoint + object-storage presign (no proxy)'
+        : 'MISSING — file URLs would fall back to permanent links', true);
+
 /* ------------------------------------------------------------------ */
 section('Session persistence');
 

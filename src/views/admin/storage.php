@@ -145,6 +145,10 @@
                         <label class="pv-label">CDN 加速域名（可选）</label><span class="pv-req" style="color:var(--danger)"> *</span>
                         <input type="text" name="cfg_cdn" id="profile-cfg-cdn" class="form-control" placeholder="https://cdn.example.com">
                     </div>
+                    <div class="form-group pv-field" data-field="signed_ttl">
+                        <label class="pv-label">签名链接有效期（秒）</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <input type="text" name="cfg_signed_ttl" id="profile-cfg-signed-ttl" class="form-control" placeholder="300（默认 5 分钟）">
+                    </div>
                 </div>
             </div>
 
@@ -175,27 +179,27 @@
         cos:   { key:{l:'SecretId', p:'AKID 开头', r:true}, secret:{l:'SecretKey', p:'', r:true},
                  region:{l:'Region', p:'ap-guangzhou / ap-shanghai…', r:true},
                  bucket:{l:'Bucket', p:'mybucket-1250000000（需带 APPID）', r:true}, endpoint:null,
-                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false}, signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
         oss:   { key:{l:'AccessKeyId', p:'LTAI 开头', r:true}, secret:{l:'AccessKeySecret', p:'', r:true},
                  region:{l:'Region', p:'cn-hangzhou / oss-cn-…', r:true},
                  bucket:{l:'Bucket', p:'mybucket', r:true}, endpoint:null,
-                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false}, signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
         aws:   { key:{l:'Access Key ID', p:'AKIA 开头', r:true}, secret:{l:'Secret Access Key', p:'', r:true},
                  region:{l:'Region', p:'us-east-1 / ap-southeast-1…', r:true},
                  bucket:{l:'Bucket', p:'mybucket', r:true}, endpoint:null,
-                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false}, signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
         obs:   { key:{l:'Access Key', p:'', r:true}, secret:{l:'Secret Key', p:'', r:true}, region:null,
                  bucket:{l:'Bucket', p:'mybucket', r:true},
                  endpoint:{l:'Endpoint', p:'https://obs.cn-north-4.myhuaweicloud.com', r:true},
-                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false}, signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
         upyun: { bucket:{l:'服务名（Service = Bucket）', p:'mybucket', r:true},
                  key:{l:'操作员名（Operator）', p:'', r:true}, secret:{l:'操作员密码（Password）', p:'', r:true},
                  region:null, endpoint:null,
-                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false}, signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
         qiniu: { key:{l:'Access Key', p:'', r:true}, secret:{l:'Secret Key', p:'', r:true},
                  region:{l:'区域（Region）', p:'z0(华东) / z1(华北) / z2(华南) / z3(华东2) / as0(新加坡) / na0(北美)', r:true},
                  bucket:{l:'空间名（Bucket）', p:'mybucket', r:true}, endpoint:null,
-                 cdn:{l:'CDN 下载域名（可选）', p:'https://cdn.example.com', r:false} },
+                 cdn:{l:'CDN 下载域名（可选）', p:'https://cdn.example.com', r:false}, signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
     };
 
     function applyProvider(pv) {
@@ -242,6 +246,7 @@
         document.getElementById('profile-cfg-bucket').value = cfg.bucket || '';
         document.getElementById('profile-cfg-endpoint').value = cfg.endpoint || '';
         document.getElementById('profile-cfg-cdn').value = cfg.cdn || '';
+        document.getElementById('profile-cfg-signed-ttl').value = cfg.signed_ttl || '';
         document.getElementById('profile-is-default').checked = row ? row.dataset.default === '1' : false;
 
         toggleFields();
@@ -268,6 +273,7 @@
             cfg_bucket: document.getElementById('profile-cfg-bucket').value.trim(),
             cfg_endpoint: document.getElementById('profile-cfg-endpoint').value.trim(),
             cfg_cdn: document.getElementById('profile-cfg-cdn').value.trim(),
+            cfg_signed_ttl: document.getElementById('profile-cfg-signed-ttl').value.trim(),
             cfg_path: document.getElementById('profile-cfg-path').value.trim(),
             is_default: document.getElementById('profile-is-default').checked ? '1' : '0'
         };

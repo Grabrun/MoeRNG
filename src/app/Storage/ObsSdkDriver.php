@@ -30,6 +30,7 @@ class ObsSdkDriver implements StorageInterface
     private string $endpoint;
     private string $bucket;
     private string $cdnUrl;
+    private int $signedTtl = 300;
     private ?\Obs\ObsClient $client = null;
 
     public function __construct(
@@ -37,13 +38,15 @@ class ObsSdkDriver implements StorageInterface
         string $secretKey,
         string $endpoint,
         string $bucket,
-        string $cdnUrl = ''
+        string $cdnUrl = '',
+        int $signedTtl = 300
     ) {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
         $this->endpoint  = $endpoint;
         $this->bucket    = $bucket;
         $this->cdnUrl    = $cdnUrl;
+        $this->signedTtl = max(1, $signedTtl);
     }
 
     /**
@@ -153,7 +156,7 @@ class ObsSdkDriver implements StorageInterface
                 'Method'  => 'GET',
                 'Bucket'  => $this->bucket,
                 'Key'     => ltrim($remotePath, '/'),
-                'Expires' => 7 * 86400, // seconds
+                'Expires' => $this->signedTtl, // seconds
             ]);
             return (string) ($model['SignedUrl'] ?? '');
         } catch (\Throwable) {

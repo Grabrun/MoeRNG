@@ -20,6 +20,7 @@ class OssSdkDriver implements StorageInterface
     private string $region;
     private string $bucket;
     private string $cdnUrl;
+    private int $signedTtl = 300;
     private ?\AlibabaCloud\Oss\V2\Client $client = null;
 
     public function __construct(
@@ -27,13 +28,15 @@ class OssSdkDriver implements StorageInterface
         string $secretKey,
         string $region,
         string $bucket,
-        string $cdnUrl = ''
+        string $cdnUrl = '',
+        int $signedTtl = 300
     ) {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
         $this->region    = $region;
         $this->bucket    = $bucket;
         $this->cdnUrl    = $cdnUrl;
+        $this->signedTtl = max(1, $signedTtl);
     }
 
     /**
@@ -119,7 +122,7 @@ class OssSdkDriver implements StorageInterface
             // GET so the image actually loads without exposing the key.
             $result = $this->client()->presign(
                 new \AlibabaCloud\Oss\V2\Models\GetObjectRequest($this->bucket, ltrim($remotePath, '/')),
-                ['expires' => \DateInterval::createFromDateString('7 days')]
+                ['expires' => new \DateInterval('PT' . $this->signedTtl . 'S')]
             );
             return (string) ($result->url ?? '');
         } catch (\Throwable) {

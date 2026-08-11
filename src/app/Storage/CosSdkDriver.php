@@ -26,6 +26,7 @@ class CosSdkDriver implements StorageInterface
     private string $region;
     private string $bucket;
     private string $cdnUrl;
+    private int $signedTtl = 300;
     private ?\Qcloud\Cos\Client $client = null;
 
     public function __construct(
@@ -33,13 +34,15 @@ class CosSdkDriver implements StorageInterface
         string $secretKey,
         string $region,
         string $bucket,
-        string $cdnUrl = ''
+        string $cdnUrl = '',
+        int $signedTtl = 300
     ) {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
         $this->region    = $region;
         $this->bucket    = $bucket;
         $this->cdnUrl    = $cdnUrl;
+        $this->signedTtl = max(1, $signedTtl);
     }
 
     /**
@@ -141,7 +144,7 @@ class CosSdkDriver implements StorageInterface
         if ($this->cdnUrl !== '') {
             return rtrim($this->cdnUrl, '/') . '/' . ltrim($remotePath, '/');
         }
-        // COS buckets are private by default — hand back a 7-day presigned GET.
+        // COS buckets are private by default — short-lived presigned GET.
         try {
             $signed = $this->client()->getPresignedUrl(
                 'getObject',
@@ -149,7 +152,7 @@ class CosSdkDriver implements StorageInterface
                     'Bucket' => $this->bucket,
                     'Key'    => ltrim($remotePath, '/'),
                 ],
-                '+7 days'
+                '+' . $this->signedTtl . ' seconds'
             );
             return (string) $signed;
         } catch (\Throwable) {

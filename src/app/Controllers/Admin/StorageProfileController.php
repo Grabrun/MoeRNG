@@ -193,6 +193,7 @@ class StorageProfileController extends Controller
                 'bucket'   => trim((string) $request->input('cfg_bucket', '')),
                 'endpoint' => trim((string) $request->input('cfg_endpoint', '')),
                 'cdn'      => trim((string) $request->input('cfg_cdn', '')),
+                'signed_ttl' => trim((string) $request->input('cfg_signed_ttl', '300')),
             ];
             if ($config['key'] === '' || $config['secret'] === '' || $config['bucket'] === '') {
                 throw new \RuntimeException('对象存储实例需填写完整的 AccessKey / SecretKey / Bucket');

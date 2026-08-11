@@ -18,14 +18,16 @@ class QiniuSdkDriver implements StorageInterface
     private string $bucket;
     private string $region;
     private string $cdnUrl;
+    private int $signedTtl = 300;
 
-    public function __construct(string $accessKey, string $secretKey, string $bucket, string $region = 'z0', string $cdnUrl = '')
+    public function __construct(string $accessKey, string $secretKey, string $bucket, string $region = 'z0', string $cdnUrl = '', int $signedTtl = 300)
     {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
         $this->bucket = $bucket;
         $this->region = $region !== '' ? $region : 'z0';
         $this->cdnUrl = rtrim($cdnUrl, '/');
+        $this->signedTtl = max(1, $signedTtl);
     }
 
     public static function available(): bool
@@ -100,7 +102,13 @@ class QiniuSdkDriver implements StorageInterface
         if ($this->cdnUrl !== '') {
             return $this->cdnUrl . '/' . str_replace('%2F', '/', rawurlencode($key));
         }
-        return 'https://' . $this->bucket . '.qiniudns.com/' . str_replace('%2F', '/', rawurlencode($key));
+        // v1.2.0 迭代: 七牛私有空间下载签名（?e={expires}&token={ak}:{urlsafe-b64(hmac-sha1)}），
+        // 短时链接，不经服务器代理。
+        $base = 'https://' . $this->bucket . '.qiniudns.com/' . str_replace('%2F', '/', rawurlencode($key));
+        $expires = time() + $this->signedTtl;
+        $signData = $base . '?e=' . $expires;
+        $sign = rtrim(strtr(base64_encode(hash_hmac('sha1', $signData, $this->secretKey, true)), '+/', '-_'), '=');
+        return $signData . '&token=' . $this->accessKey . ':' . $sign;
     }
 
     public function testConnection(): bool

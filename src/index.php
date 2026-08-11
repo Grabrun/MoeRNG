@@ -18,6 +18,8 @@ $app = \App\Core\Application::create(__DIR__);
 $router = $app->router();
 
 $router->get('/', [\App\Controllers\HomeController::class, 'index']);
+// v1.2.0 迭代: signed download endpoint for local storage (short-lived links).
+$router->get('/files', [\App\Controllers\FileController::class, 'show']);
 
 // Run
 $app->run();

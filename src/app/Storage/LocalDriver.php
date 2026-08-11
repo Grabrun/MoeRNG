@@ -10,19 +10,24 @@ class LocalDriver implements StorageInterface
     private string $uploadDir;
     private string $baseUrl;
     private string $cdnOverride;
+    private int $signedTtl;
 
     /**
      * v1.0.35: path/cdn are ALWAYS injected from the owning StorageProfile —
      * there is no settings fallback anymore (profiles are the single source
      * of truth).
+     * v1.2.0 迭代: $signedTtl — local files are served through the signed
+     * /files endpoint (default 300s) instead of a permanent static URL.
      *
-     * @param string $path Relative (to project root) or absolute upload dir.
-     * @param string $cdn  Optional CDN base URL for this instance.
+     * @param string $path     Relative (to project root) or absolute upload dir.
+     * @param string $cdn      Optional CDN base URL for this instance.
+     * @param int    $signedTtl Signed link lifetime in seconds.
      */
-    public function __construct(string $path = '', string $cdn = '')
+    public function __construct(string $path = '', string $cdn = '', int $signedTtl = 300)
     {
         $root = dirname(__DIR__, 2);
         $this->cdnOverride = $cdn;
+        $this->signedTtl = max(1, $signedTtl);
 
         $configuredDir = trim($path);
         if ($configuredDir === '') {
@@ -134,15 +139,14 @@ class LocalDriver implements StorageInterface
             return '';
         }
 
-        // Support CDN domain (only when actually configured — an empty string
-        // must not win over the local base URL).
-        $cdnUrl = $this->cdnOverride;
-        if ($cdnUrl !== '') {
-            return rtrim($cdnUrl, '/') . '/' . $remotePath;
+        // v1.2.0 迭代: CDN keeps its permanent URL; otherwise hand back a
+        // short-lived signed link served by the /files endpoint (no more
+        // permanent static URLs for local files).
+        if ($this->cdnOverride !== '') {
+            return rtrim($this->cdnOverride, '/') . '/' . $remotePath;
         }
 
-        $base = $this->baseUrl !== '' ? $this->baseUrl : '/' . self::DEFAULT_REL_DIR;
-        return $base . '/' . $remotePath;
+        return SignedUrl::url($remotePath, $this->signedTtl);
     }
 
     public function exists(string $remotePath): bool

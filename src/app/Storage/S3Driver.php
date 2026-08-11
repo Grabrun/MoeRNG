@@ -31,6 +31,7 @@ class S3Driver implements StorageInterface
     private string $region;
     private string $endpoint;
     private string $cdnUrl;
+    private int $signedTtl = 300;
 
     /**
      * v1.0.35: profiles are the single source of truth. Constructing an
@@ -98,6 +99,7 @@ class S3Driver implements StorageInterface
         $this->bucket    = (string) ($cfg['bucket'] ?? '');
         $this->endpoint  = (string) ($cfg['endpoint'] ?? '');
         $this->cdnUrl    = (string) ($cfg['cdn'] ?? '');
+        $this->signedTtl = max(1, (int) ($cfg['signed_ttl'] ?? 300));
         return $this;
     }
 
@@ -167,7 +169,7 @@ class S3Driver implements StorageInterface
         if (!CosSdkDriver::available()) {
             throw $this->sdkMissing('cos');
         }
-        return new CosSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl);
+        return new CosSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl);
     }
 
     private function ossSdk(): ?OssSdkDriver
@@ -178,7 +180,7 @@ class S3Driver implements StorageInterface
         if (!OssSdkDriver::available()) {
             throw $this->sdkMissing('oss');
         }
-        return new OssSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl);
+        return new OssSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl);
     }
 
     private function awsSdk(): ?AwsSdkDriver
@@ -189,7 +191,7 @@ class S3Driver implements StorageInterface
         if (!AwsSdkDriver::available()) {
             throw $this->sdkMissing('aws');
         }
-        return new AwsSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->endpoint, $this->cdnUrl);
+        return new AwsSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->endpoint, $this->cdnUrl, $this->signedTtl);
     }
 
     private function obsSdk(): ?ObsSdkDriver
@@ -200,7 +202,7 @@ class S3Driver implements StorageInterface
         if (!ObsSdkDriver::available()) {
             throw $this->sdkMissing('obs');
         }
-        return new ObsSdkDriver($this->accessKey, $this->secretKey, $this->endpoint, $this->bucket, $this->cdnUrl);
+        return new ObsSdkDriver($this->accessKey, $this->secretKey, $this->endpoint, $this->bucket, $this->cdnUrl, $this->signedTtl);
     }
 
     private function upyunSdk(): ?UpyunSdkDriver
@@ -212,7 +214,7 @@ class S3Driver implements StorageInterface
             throw $this->sdkMissing('upyun');
         }
         // 又拍云：service=bucket、operator=key、password=secret
-        return new UpyunSdkDriver($this->bucket, $this->accessKey, $this->secretKey, $this->cdnUrl);
+        return new UpyunSdkDriver($this->bucket, $this->accessKey, $this->secretKey, $this->cdnUrl, $this->signedTtl);
     }
 
     private function qiniuSdk(): ?QiniuSdkDriver
@@ -223,7 +225,7 @@ class S3Driver implements StorageInterface
         if (!QiniuSdkDriver::available()) {
             throw $this->sdkMissing('qiniu');
         }
-        return new QiniuSdkDriver($this->accessKey, $this->secretKey, $this->bucket, $this->region, $this->cdnUrl);
+        return new QiniuSdkDriver($this->accessKey, $this->secretKey, $this->bucket, $this->region, $this->cdnUrl, $this->signedTtl);
     }
 
     public function upload(string $localPath, string $remotePath, string $contentType): string

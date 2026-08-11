@@ -21,6 +21,7 @@ class AwsSdkDriver implements StorageInterface
     private string $bucket;
     private string $endpoint;
     private string $cdnUrl;
+    private int $signedTtl = 300;
     private ?\Aws\S3\S3Client $client = null;
 
     public function __construct(
@@ -29,7 +30,8 @@ class AwsSdkDriver implements StorageInterface
         string $region,
         string $bucket,
         string $endpoint = '',
-        string $cdnUrl = ''
+        string $cdnUrl = '',
+        int $signedTtl = 300
     ) {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
@@ -37,6 +39,7 @@ class AwsSdkDriver implements StorageInterface
         $this->bucket    = $bucket;
         $this->endpoint  = $endpoint;
         $this->cdnUrl    = $cdnUrl;
+        $this->signedTtl = max(1, $signedTtl);
     }
 
     public static function available(): bool
@@ -143,7 +146,7 @@ class AwsSdkDriver implements StorageInterface
                 'Bucket' => $this->bucket,
                 'Key'    => ltrim($remotePath, '/'),
             ]);
-            $request = $this->client()->createPresignedRequest($cmd, '+7 days');
+            $request = $this->client()->createPresignedRequest($cmd, '+' . $this->signedTtl . ' seconds');
             return (string) $request->getUri();
         } catch (\Throwable) {
             // Fall back to a bare public URL (works for public-read buckets).

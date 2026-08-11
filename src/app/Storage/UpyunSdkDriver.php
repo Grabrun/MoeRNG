@@ -17,14 +17,16 @@ class UpyunSdkDriver implements StorageInterface
     private string $operator;
     private string $password;
     private string $cdnUrl;
+    private int $signedTtl = 300;
     private ?\Upyun\Upyun $upyun = null;
 
-    public function __construct(string $service, string $operator, string $password, string $cdnUrl = '')
+    public function __construct(string $service, string $operator, string $password, string $cdnUrl = '', int $signedTtl = 300)
     {
         $this->service = $service;
         $this->operator = $operator;
         $this->password = $password;
         $this->cdnUrl = rtrim($cdnUrl, '/');
+        $this->signedTtl = max(1, $signedTtl);
     }
 
     public static function available(): bool
@@ -88,8 +90,12 @@ class UpyunSdkDriver implements StorageInterface
         if ($this->cdnUrl !== '') {
             return $this->cdnUrl . '/' . rawurlencode($key);
         }
-        // 又拍云 USS 默认下载域名：{service}.b0.upaiyun.com（可换行分隔符）
-        return 'https://' . $this->service . '.b0.upaiyun.com/' . str_replace('%2F', '/', rawurlencode($key));
+        // v1.2.0 迭代: 又拍云 USS 防盗链 token 签名（_up_t = {expires}_{md5(operator:password:expires)}），
+        // 私有空间短时链接，不经服务器代理。
+        $expires = time() + $this->signedTtl;
+        $sign = md5("{$this->operator}:{$this->password}:{$expires}");
+        $base = 'https://' . $this->service . '.b0.upaiyun.com/' . str_replace('%2F', '/', rawurlencode($key));
+        return $base . '?_up_t=' . $expires . '_' . $sign;
     }
 
     public function testConnection(): bool
