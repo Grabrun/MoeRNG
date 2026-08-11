@@ -15,7 +15,7 @@
 ### 🐛 Bug 修复
 
 - 分类管理：删除按钮失效（容器 id 变更致事件委托未挂载）→ document 级委托
-- doctor.php：「Config dir not web-exposed」宝塔/open_basedir 下误报 → HTTP 200 响应体关键词识别
+- doctor.php 新增自动探测 config 目录防护（HTTP 状态码探测）
 
 > 注：v1.1.1 正式版在 v1.2.0-beta.1 上线后补发收口（基于 v1.1.1-beta.5 代码状态）。
 
