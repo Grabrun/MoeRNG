@@ -671,15 +671,22 @@ pre code { background: none; color: var(--text); padding: 0; }
 /* --- Image grid hover actions --- */
 .image-item .quick-actions {
     position: absolute; top: 8px; right: 8px; z-index: 3;
-    display: flex; gap: 6px; opacity: 0; transition: opacity var(--transition);
+    display: flex; gap: 8px; opacity: 0; transition: opacity var(--transition);
 }
 .image-item:hover .quick-actions { opacity: 1; }
 .image-item .quick-actions button {
-    width: 28px; height: 28px; border-radius: 6px; border: none; cursor: pointer;
+    width: 30px; height: 30px; border-radius: 6px; border: none; cursor: pointer;
     background: rgba(0,0,0,0.55); color: #fff; display: flex; align-items: center; justify-content: center;
+    padding: 0; gap: 0;
     transition: all var(--transition);
 }
 .image-item .quick-actions button:hover { background: var(--primary); transform: scale(1.08); }
+/* v1.2.0 迭代: reset .copy-btn global absolute positioning so the two
+   quick-actions buttons sit side-by-side instead of stacking on top. */
+.image-item .quick-actions .copy-btn {
+    position: static; top: auto; right: auto; z-index: auto;
+    display: flex; font-size: 0; border: none;
+}
 .image-item img.lb-failed { opacity: 0.25; filter: grayscale(1); }
 
 /* --- Mobile drawer sidebar --- */
