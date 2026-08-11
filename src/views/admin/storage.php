@@ -121,30 +121,28 @@
             <!-- Object storage fields -->
             <div id="profile-s3-fields" class="hidden">
                 <div class="grid grid-2">
-                    <div class="form-group">
-                        <label>Access Key (SecretId)</label>
+                    <div class="form-group pv-field" data-field="key">
+                        <label class="pv-label">Access Key</label><span class="pv-req" style="color:var(--danger)"> *</span>
                         <input type="text" name="cfg_key" id="profile-cfg-key" class="form-control" placeholder="" autocomplete="off">
                     </div>
-                    <div class="form-group">
-                        <label>Secret Key (SecretKey)</label>
+                    <div class="form-group pv-field" data-field="secret">
+                        <label class="pv-label">Secret Key</label><span class="pv-req" style="color:var(--danger)"> *</span>
                         <input type="password" name="cfg_secret" id="profile-cfg-secret" class="form-control" placeholder="" autocomplete="new-password">
                     </div>
-                    <div class="form-group">
-                        <label>Region</label>
-                        <input type="text" name="cfg_region" id="profile-cfg-region" class="form-control" placeholder="cos:ap-guangzhou / oss:cn-hangzhou / aws:us-east-1 / 七牛:z0 / obs:cn-north-4 / 又拍云无需填写">
+                    <div class="form-group pv-field" data-field="region">
+                        <label class="pv-label">Region</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <input type="text" name="cfg_region" id="profile-cfg-region" class="form-control" placeholder="">
                     </div>
-                    <div class="form-group">
-                        <label>Bucket</label>
-                        <input type="text" name="cfg_bucket" id="profile-cfg-bucket" class="form-control" placeholder="COS 需带 APPID，如 mybucket-1250000000">
+                    <div class="form-group pv-field" data-field="bucket">
+                        <label class="pv-label">Bucket</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <input type="text" name="cfg_bucket" id="profile-cfg-bucket" class="form-control" placeholder="">
                     </div>
-                </div>
-                <div class="grid grid-2">
-                    <div class="form-group">
-                        <label>自定义 Endpoint（可选）</label>
-                        <input type="text" name="cfg_endpoint" id="profile-cfg-endpoint" class="form-control" placeholder="COS: 域名后缀；AWS S3 兼容网关如 MinIO 填完整地址">
+                    <div class="form-group pv-field" data-field="endpoint">
+                        <label class="pv-label">Endpoint</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <input type="text" name="cfg_endpoint" id="profile-cfg-endpoint" class="form-control" placeholder="">
                     </div>
-                    <div class="form-group">
-                        <label>CDN 加速域名（可选）</label>
+                    <div class="form-group pv-field" data-field="cdn">
+                        <label class="pv-label">CDN 加速域名（可选）</label><span class="pv-req" style="color:var(--danger)"> *</span>
                         <input type="text" name="cfg_cdn" id="profile-cfg-cdn" class="form-control" placeholder="https://cdn.example.com">
                     </div>
                 </div>
@@ -170,11 +168,61 @@
     const submitBtn = document.getElementById('profile-submit');
     const title = document.getElementById('profile-modal-title');
 
+    // v1.2.0 迭代: per-provider field defs — the S3 form is a single shared
+    // form; fields, labels, placeholders and required marks adapt to the
+    // selected provider. null = field hidden for that provider.
+    const PV_FIELDS = {
+        cos:   { key:{l:'SecretId', p:'AKID 开头', r:true}, secret:{l:'SecretKey', p:'', r:true},
+                 region:{l:'Region', p:'ap-guangzhou / ap-shanghai…', r:true},
+                 bucket:{l:'Bucket', p:'mybucket-1250000000（需带 APPID）', r:true}, endpoint:null,
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+        oss:   { key:{l:'AccessKeyId', p:'LTAI 开头', r:true}, secret:{l:'AccessKeySecret', p:'', r:true},
+                 region:{l:'Region', p:'cn-hangzhou / oss-cn-…', r:true},
+                 bucket:{l:'Bucket', p:'mybucket', r:true}, endpoint:null,
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+        aws:   { key:{l:'Access Key ID', p:'AKIA 开头', r:true}, secret:{l:'Secret Access Key', p:'', r:true},
+                 region:{l:'Region', p:'us-east-1 / ap-southeast-1…', r:true},
+                 bucket:{l:'Bucket', p:'mybucket', r:true}, endpoint:null,
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+        obs:   { key:{l:'Access Key', p:'', r:true}, secret:{l:'Secret Key', p:'', r:true}, region:null,
+                 bucket:{l:'Bucket', p:'mybucket', r:true},
+                 endpoint:{l:'Endpoint', p:'https://obs.cn-north-4.myhuaweicloud.com', r:true},
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+        upyun: { bucket:{l:'服务名（Service = Bucket）', p:'mybucket', r:true},
+                 key:{l:'操作员名（Operator）', p:'', r:true}, secret:{l:'操作员密码（Password）', p:'', r:true},
+                 region:null, endpoint:null,
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false} },
+        qiniu: { key:{l:'Access Key', p:'', r:true}, secret:{l:'Secret Key', p:'', r:true},
+                 region:{l:'区域（Region）', p:'z0(华东) / z1(华北) / z2(华南) / z3(华东2) / as0(新加坡) / na0(北美)', r:true},
+                 bucket:{l:'空间名（Bucket）', p:'mybucket', r:true}, endpoint:null,
+                 cdn:{l:'CDN 下载域名（可选）', p:'https://cdn.example.com', r:false} },
+    };
+
+    function applyProvider(pv) {
+        const def = PV_FIELDS[pv] || PV_FIELDS.cos;
+        document.querySelectorAll('.pv-field').forEach(function(el) {
+            const f = el.dataset.field;
+            const d = def[f];
+            if (!d) { el.classList.add('hidden'); return; }
+            el.classList.remove('hidden');
+            const label = el.querySelector('.pv-label');
+            const req = el.querySelector('.pv-req');
+            const input = el.querySelector('input');
+            if (label) label.textContent = d.l;
+            if (req) req.style.display = d.r ? 'inline' : 'none';
+            if (input && !input.value) input.placeholder = d.p || '';
+        });
+    }
+    document.getElementById('profile-provider').addEventListener('change', function() {
+        applyProvider(this.value);
+    });
+
     function toggleFields() {
         const isS3 = document.getElementById('profile-driver').value === 's3';
         document.getElementById('profile-local-fields').classList.toggle('hidden', isS3);
         document.getElementById('profile-s3-fields').classList.toggle('hidden', !isS3);
         document.getElementById('profile-provider-group').classList.toggle('hidden', !isS3);
+        if (isS3) applyProvider(document.getElementById('profile-provider').value);
     }
     document.getElementById('profile-driver').addEventListener('change', toggleFields);
 
