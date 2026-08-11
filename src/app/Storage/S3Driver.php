@@ -24,7 +24,7 @@ use App\Core\Config;
  */
 class S3Driver implements StorageInterface
 {
-    private string $provider;     // aws | obs | oss | cos
+    private string $provider;     // aws | obs | oss | cos | upyun | qiniu
     private string $accessKey;
     private string $secretKey;
     private string $bucket;
@@ -126,6 +126,8 @@ class S3Driver implements StorageInterface
             'oss' => 'sdk/oss/',
             'aws' => 'sdk/aws/',
             'obs' => 'sdk/obs/',
+            'upyun' => 'sdk/upyun/',
+            'qiniu' => 'sdk/qiniu/',
             default => 'sdk/',
         };
         return new \RuntimeException(
@@ -144,6 +146,8 @@ class S3Driver implements StorageInterface
             // OBS signs against the endpoint (V2 signature, no region needed),
             // so endpoint is the required field — region is optional.
             if ($this->endpoint === '') $missing[] = 'Endpoint';
+        } elseif ($this->provider === 'upyun') {
+            // 又拍云 USS：service(=bucket) + operator(=key) + password(=secret)，无 region。
         } elseif ($this->region === '') {
             $missing[] = 'Region';
         }
@@ -199,6 +203,29 @@ class S3Driver implements StorageInterface
         return new ObsSdkDriver($this->accessKey, $this->secretKey, $this->endpoint, $this->bucket, $this->cdnUrl);
     }
 
+    private function upyunSdk(): ?UpyunSdkDriver
+    {
+        if ($this->provider !== 'upyun') {
+            return null;
+        }
+        if (!UpyunSdkDriver::available()) {
+            throw $this->sdkMissing('upyun');
+        }
+        // 又拍云：service=bucket、operator=key、password=secret
+        return new UpyunSdkDriver($this->bucket, $this->accessKey, $this->secretKey, $this->cdnUrl);
+    }
+
+    private function qiniuSdk(): ?QiniuSdkDriver
+    {
+        if ($this->provider !== 'qiniu') {
+            return null;
+        }
+        if (!QiniuSdkDriver::available()) {
+            throw $this->sdkMissing('qiniu');
+        }
+        return new QiniuSdkDriver($this->accessKey, $this->secretKey, $this->bucket, $this->region, $this->cdnUrl);
+    }
+
     public function upload(string $localPath, string $remotePath, string $contentType): string
     {
         $this->assertCredentials();
@@ -213,6 +240,12 @@ class S3Driver implements StorageInterface
             return $sdk->upload($localPath, $remotePath, $contentType);
         }
         if (($sdk = $this->obsSdk()) !== null) {
+            return $sdk->upload($localPath, $remotePath, $contentType);
+        }
+        if (($sdk = $this->upyunSdk()) !== null) {
+            return $sdk->upload($localPath, $remotePath, $contentType);
+        }
+        if (($sdk = $this->qiniuSdk()) !== null) {
             return $sdk->upload($localPath, $remotePath, $contentType);
         }
         throw new \RuntimeException("未知存储服务商: {$this->provider}");
@@ -232,6 +265,12 @@ class S3Driver implements StorageInterface
         if (($sdk = $this->obsSdk()) !== null) {
             return $sdk->delete($remotePath);
         }
+        if (($sdk = $this->upyunSdk()) !== null) {
+            return $sdk->delete($remotePath);
+        }
+        if (($sdk = $this->qiniuSdk()) !== null) {
+            return $sdk->delete($remotePath);
+        }
         throw new \RuntimeException("未知存储服务商: {$this->provider}");
     }
 
@@ -247,6 +286,12 @@ class S3Driver implements StorageInterface
             return $sdk->exists($remotePath);
         }
         if (($sdk = $this->obsSdk()) !== null) {
+            return $sdk->exists($remotePath);
+        }
+        if (($sdk = $this->upyunSdk()) !== null) {
+            return $sdk->exists($remotePath);
+        }
+        if (($sdk = $this->qiniuSdk()) !== null) {
             return $sdk->exists($remotePath);
         }
         throw new \RuntimeException("未知存储服务商: {$this->provider}");
@@ -266,6 +311,12 @@ class S3Driver implements StorageInterface
         if (($sdk = $this->obsSdk()) !== null) {
             return $sdk->url($remotePath);
         }
+        if (($sdk = $this->upyunSdk()) !== null) {
+            return $sdk->url($remotePath);
+        }
+        if (($sdk = $this->qiniuSdk()) !== null) {
+            return $sdk->url($remotePath);
+        }
         throw new \RuntimeException("未知存储服务商: {$this->provider}");
     }
 
@@ -283,6 +334,12 @@ class S3Driver implements StorageInterface
         if (($sdk = $this->obsSdk()) !== null) {
             return $sdk->testConnection();
         }
+        if (($sdk = $this->upyunSdk()) !== null) {
+            return $sdk->testConnection();
+        }
+        if (($sdk = $this->qiniuSdk()) !== null) {
+            return $sdk->testConnection();
+        }
         throw new \RuntimeException("未知存储服务商: {$this->provider}");
     }
 
@@ -296,6 +353,8 @@ class S3Driver implements StorageInterface
             'oss' => '阿里云 OSS',
             'aws' => 'AWS S3',
             'obs' => '华为云 OBS',
+            'upyun' => '又拍云 USS',
+            'qiniu' => '七牛云 Kodo',
         ];
     }
 
@@ -303,10 +362,10 @@ class S3Driver implements StorageInterface
     public static function providerFieldDefs(): array
     {
         return [
-            'key'      => ['label' => 'Access Key (SecretId)', 'type' => 'text', 'placeholder' => ''],
-            'secret'   => ['label' => 'Secret Key (SecretKey)', 'type' => 'password', 'placeholder' => ''],
-            'region'   => ['label' => 'Region', 'type' => 'text', 'placeholder' => 'cos:ap-guangzhou / oss:cn-hangzhou / aws:us-east-1（OBS 可选）'],
-            'bucket'   => ['label' => 'Bucket', 'type' => 'text', 'placeholder' => 'COS 需带 APPID，如 mybucket-1250000000'],
+            'key'      => ['label' => 'Access Key（又拍云=操作员名）', 'type' => 'text', 'placeholder' => 'COS SecretId / OSS AccessKeyId / 又拍云操作员名'],
+            'secret'   => ['label' => 'Secret Key（又拍云=操作员密码）', 'type' => 'password', 'placeholder' => ''],
+            'region'   => ['label' => 'Region', 'type' => 'text', 'placeholder' => 'cos:ap-guangzhou / oss:cn-hangzhou / aws:us-east-1 / 七牛:z0 / OBS与又拍云可选'],
+            'bucket'   => ['label' => 'Bucket（又拍云=服务名）', 'type' => 'text', 'placeholder' => 'COS 需带 APPID，如 mybucket-1250000000'],
             'endpoint' => ['label' => 'Endpoint（OBS 必填，其他可选）', 'type' => 'text', 'placeholder' => 'OBS: https://obs.cn-north-4.myhuaweicloud.com；COS: 域名后缀；AWS S3 兼容网关如 MinIO 填完整地址'],
             'cdn'      => ['label' => 'CDN 加速域名（可选）', 'type' => 'text', 'placeholder' => 'https://cdn.example.com'],
         ];

@@ -131,7 +131,7 @@
                     </div>
                     <div class="form-group">
                         <label>Region</label>
-                        <input type="text" name="cfg_region" id="profile-cfg-region" class="form-control" placeholder="cos:ap-guangzhou / oss:cn-hangzhou / aws:us-east-1 / obs:cn-north-4">
+                        <input type="text" name="cfg_region" id="profile-cfg-region" class="form-control" placeholder="cos:ap-guangzhou / oss:cn-hangzhou / aws:us-east-1 / 七牛:z0 / obs:cn-north-4 / 又拍云无需填写">
                     </div>
                     <div class="form-group">
                         <label>Bucket</label>

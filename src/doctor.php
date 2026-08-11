@@ -373,6 +373,17 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             (is_file($obsSdkAutoload) && is_file(__DIR__ . '/sdk/obs/Obs/ObsClient.php'))
                 ? 'present — OBS uses official SDK' : 'MISSING — OBS uploads will fail with a clear error', true);
 
+        // v1.1.1 迭代: UPYUN USS official SDK (Guzzle/PSR-7 from the shared cos vendor).
+        check('UPYUN SDK (upyun/sdk)', is_file(__DIR__ . '/sdk/upyun/autoload.php') && is_file(__DIR__ . '/sdk/upyun/src/Upyun/Upyun.php')
+                && is_file(__DIR__ . '/sdk/cos/vendor/autoload.php'),
+            (is_file(__DIR__ . '/sdk/upyun/autoload.php') && is_file(__DIR__ . '/sdk/upyun/src/Upyun/Upyun.php'))
+                ? 'present — UPYUN uses official SDK' : 'MISSING — UPYUN uploads will fail with a clear error', true);
+
+        // v1.1.1 迭代: Qiniu Kodo official SDK (self-contained curl, no Guzzle).
+        check('Qiniu SDK (qiniu/php-sdk)', is_file(__DIR__ . '/sdk/qiniu/autoload.php') && is_file(__DIR__ . '/sdk/qiniu/src/Qiniu/Storage/UploadManager.php'),
+            (is_file(__DIR__ . '/sdk/qiniu/autoload.php') && is_file(__DIR__ . '/sdk/qiniu/src/Qiniu/Storage/UploadManager.php'))
+                ? 'present — Qiniu uses official SDK' : 'MISSING — Qiniu uploads will fail with a clear error', true);
+
         // v1.0.35: profiles are the single source of truth — probe every
         // enabled object-storage profile with a live PUT probe. A read failure
         // is surfaced explicitly (never silently treated as "table empty").

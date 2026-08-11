@@ -62,6 +62,8 @@ class StorageProfile extends Model
             'oss' => '阿里云 OSS',
             'aws' => 'AWS S3',
             'obs' => '华为云 OBS',
+            'upyun' => '又拍云 USS',
+            'qiniu' => '七牛云 Kodo',
             default => '',
         };
     }
@@ -94,10 +96,15 @@ class StorageProfile extends Model
         }
         $cfg = $this->config();
         if (!empty($cfg['key']) && !empty($cfg['secret']) && !empty($cfg['bucket'])) {
-            // OBS signs against the endpoint (V2, no region needed); the other
-            // providers require a region. (v1.0.34-beta.1)
-            if (($this->attributes['provider'] ?? '') === 'obs') {
+            // OBS signs against the endpoint (V2, no region needed); 又拍云 USS
+            // 无 region（service=bucket, operator=key, password=secret）；
+            // the other providers require a region.
+            $provider = (string) ($this->attributes['provider'] ?? '');
+            if ($provider === 'obs') {
                 return !empty($cfg['endpoint']);
+            }
+            if ($provider === 'upyun') {
+                return true;
             }
             return !empty($cfg['region']);
         }

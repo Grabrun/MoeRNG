@@ -183,7 +183,7 @@ class StorageProfileController extends Controller
         $config = [];
 
         if ($driver === 's3') {
-            if (!in_array($provider, ['cos', 'oss', 'aws', 'obs'], true)) {
+            if (!in_array($provider, ['cos', 'oss', 'aws', 'obs', 'upyun', 'qiniu'], true)) {
                 throw new \RuntimeException('请选择对象存储服务商');
             }
             $config = [
