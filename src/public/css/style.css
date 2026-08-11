@@ -797,6 +797,13 @@ body.modal-open { overflow: hidden; }
     min-width: 34px; text-align: right; flex-shrink: 0;
 }
 
+/* v1.2.0 迭代: pulse while the backend saves after the transfer completes */
+.progress-bar .fill.processing { animation: progress-pulse 0.9s ease-in-out infinite; }
+@keyframes progress-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
+
 /* v1.1.1-beta.2: code blocks — cap height + breathing room */
 .copy-wrap pre { max-height: 320px; overflow: auto; }
 .copy-wrap .copy-btn { position: absolute; top: 10px; right: 10px; z-index: 2; }

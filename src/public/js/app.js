@@ -653,8 +653,11 @@ function initDropZone() {
         document.body.appendChild(form);
 
         if (progressBar && progressFill) {
-            progressBar.style.display = 'block';
+            // v1.2.0 迭代: use flex (not block) so the percentage label sits
+            // beside the bar — block overrode the .progress-bar flex layout.
+            progressBar.style.display = 'flex';
             progressFill.style.width = '0%';
+            progressFill.classList.remove('processing');
             // v1.1.1-beta.2: show a live percentage label next to the bar.
             var progressText = progressBar.querySelector('.progress-text');
             if (!progressText) {
@@ -672,6 +675,12 @@ function initDropZone() {
                     if (progressText) progressText.textContent = pct + '%';
                 }
             };
+            // v1.2.0 迭代: the transfer itself finished but the backend is still
+            // saving thumbnails / rows — tell the user instead of a dead 100%.
+            xhr.upload.onload = function() {
+                if (progressText) progressText.textContent = '正在保存…';
+                if (progressFill) progressFill.classList.add('processing');
+            };
             // v1.0.22 tried `status >= 200 && < 400 -> reload`. That was wrong:
             // the backend answers EVERY upload with 302 + Session flash, and an
             // XHR silently follows the 302 — so xhr.status is always 200 and the
@@ -681,6 +690,7 @@ function initDropZone() {
             // still catches non-XHR-shaped responses (e.g. nginx 413 pages).
             xhr.onload = function() {
                 if (progressBar) progressBar.style.display = 'none';
+                if (progressFill) progressFill.classList.remove('processing');
                 // Primary path: backend JSON verdict ({success, message, errors}).
                 let payload = null;
                 try { payload = JSON.parse(xhr.responseText || ''); } catch (_) {}
