@@ -556,8 +556,39 @@ if ($cli) {
             true
         );
     }
-    check('Config dir not web-exposed', !is_file(__DIR__ . '/config/.htaccess') || stripos($server, 'nginx') === false,
-        'verify /config/database.php returns 403/404 in browser', true);
+    // v1.1.1-beta.5: auto-probe /config/database.php over HTTP instead of
+    // asking the user to verify by hand. Expected: 403/404 (web layer denies).
+    // A 200 here is a real leak — the DB password file is publicly readable.
+    $isNginx = stripos($server, 'nginx') !== false;
+    $htaccessPresent = is_file(__DIR__ . '/config/.htaccess');
+    if (!$isNginx || !$htaccessPresent) {
+        // Apache honors .htaccess, or no .htaccess to be inert — nothing to prove.
+        check('Config dir not web-exposed', true, 'no inert .htaccess on this server');
+    } else {
+        $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+        $status = 0;
+        if ($host !== '') {
+            $probe = ($https ? 'https://' : 'http://') . $host . '/config/database.php';
+            $ctx = stream_context_create([
+                'http' => ['timeout' => 4, 'ignore_errors' => true, 'follow_location' => 0],
+                'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+            ]);
+            @file_get_contents($probe, false, $ctx);
+            if (isset($http_response_header[0]) && preg_match('#\s(\d{3})\s#', $http_response_header[0], $m)) {
+                $status = (int) $m[1];
+            }
+        }
+        if ($status >= 400 && $status < 500) {
+            check('Config dir not web-exposed', true, "/config/database.php -> HTTP {$status} (denied)");
+        } elseif ($status === 200) {
+            check('Config dir not web-exposed', false, '/config/database.php -> HTTP 200 (publicly readable — add nginx deny rule!)');
+        } else {
+            check('Config dir not web-exposed', true,
+                "probe HTTP {$status} (assuming protected; verify /config/database.php returns 403/404 in browser)",
+                true);
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */
