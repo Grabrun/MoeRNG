@@ -790,11 +790,20 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 /* v1.1.1-beta.2: lock background scroll while a modal is open */
 body.modal-open { overflow: hidden; }
 
-/* v1.1.1-beta.2: upload progress percentage label */
-.progress-bar { display: flex; align-items: center; gap: 10px; }
+/* v1.1.1-beta.2: upload progress percentage label.
+   v1.2.0 迭代: absolute positioning — the fill fills the bar while the
+   label floats above the right edge, so 100% + "正在保存…" never get
+   squeezed out by the flex layout. */
+.progress-bar { display: block; position: relative; }
+.progress-bar .fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    border-radius: inherit;
+}
 .progress-bar .progress-text {
-    font-size: 0.8rem; color: var(--text-secondary); font-variant-numeric: tabular-nums;
-    min-width: 34px; text-align: right; flex-shrink: 0;
+    position: absolute; right: 4px; top: -22px;
+    font-size: 0.78rem; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+    line-height: 1;
 }
 
 /* v1.2.0 迭代: pulse while the backend saves after the transfer completes */

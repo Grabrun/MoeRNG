@@ -653,9 +653,10 @@ function initDropZone() {
         document.body.appendChild(form);
 
         if (progressBar && progressFill) {
-            // v1.2.0 迭代: use flex (not block) so the percentage label sits
-            // beside the bar — block overrode the .progress-bar flex layout.
-            progressBar.style.display = 'flex';
+            // v1.2.0 迭代: label floats above the bar (absolute positioning) —
+            // display block keeps fill + floating label; flex used to squeeze
+            // the text out at 100% width.
+            progressBar.style.display = 'block';
             progressFill.style.width = '0%';
             progressFill.classList.remove('processing');
             // v1.1.1-beta.2: show a live percentage label next to the bar.
