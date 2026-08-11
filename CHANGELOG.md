@@ -2,6 +2,23 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.1] - 2026-08-11
+
+### ⬆️ 功能增强
+
+- 全站排版层级统一、按钮按压态与焦点环、表格/表单/模态/滚动条打磨，prefers-reduced-motion 无障碍降级，响应式断点补全
+- 前台导航小屏换行、Hero 统计卡微动效、在线测试面板容器化；后台侧边栏 active 指示条
+- 分类管理「每个顶级分类一张卡片」树形分组，子分类连接线 + 层级缩进
+- Modal ESC 关闭 + 背景滚动锁定；上传进度百分比 + 保存期脉冲；代码块限高滚动、复制按钮悬浮
+- doctor.php 自动探测 config 目录防护
+
+### 🐛 Bug 修复
+
+- 分类管理：删除按钮失效（容器 id 变更致事件委托未挂载）→ document 级委托
+- doctor.php：「Config dir not web-exposed」宝塔/open_basedir 下误报 → HTTP 200 响应体关键词识别
+
+> 注：v1.1.1 正式版在 v1.2.0-beta.1 上线后补发收口（基于 v1.1.1-beta.5 代码状态）。
+
 ## [1.2.0-beta.2] - 2026-08-11
 
 ### ⬆️ 功能增强
