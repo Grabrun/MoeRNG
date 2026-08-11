@@ -26,7 +26,12 @@ class ImageController extends Controller
     public function index(Request $request): void
     {
         $page = max(1, (int) $request->input('page', '1'));
-        $perPage = (int) (Config::get('settings.per_page', '20'));
+        // v1.2.0 迭代: per-page selector (?per_page=10/20/50/100), falls back
+        // to the global settings value when absent or not in the whitelist.
+        $perPage = (int) $request->input('per_page', '0');
+        $perPage = in_array($perPage, [10, 20, 50, 100], true)
+            ? $perPage
+            : (int) Config::get('settings.per_page', '20');
         $search = $request->input('search', '');
         $categoryId = $request->input('category_id', '');
 
@@ -58,6 +63,7 @@ class ImageController extends Controller
             'total' => $result['total'],
             'page' => $result['page'],
             'lastPage' => $result['last_page'],
+            'perPage' => $perPage,
             'categories' => $categories,
             'search' => $search,
             'categoryId' => $categoryId,

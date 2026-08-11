@@ -56,18 +56,28 @@
     </div>
 </div>
 
-<!-- Pagination -->
-<?php if ($lastPage > 1): ?>
-<div class="pagination">
-    <?php for ($i = 1; $i <= $lastPage; $i++): ?>
-    <?php if ($i === $page): ?>
-    <span class="active"><?= $i ?></span>
-    <?php else: ?>
-    <a href="?page=<?= $i ?>&search=<?= urlencode($search) ?>&category_id=<?= urlencode($categoryId) ?>"><?= $i ?></a>
-    <?php endif; ?>
-    <?php endfor; ?>
+<!-- Pagination (v1.2.0 迭代: per-page selector keeps search/category params) -->
+<div class="pagination-wrap">
+    <div class="pagination">
+        <?php for ($i = 1; $i <= $lastPage; $i++): ?>
+        <?php if ($i === $page): ?>
+        <span class="active"><?= $i ?></span>
+        <?php else: ?>
+        <a href="?page=<?= $i ?>&per_page=<?= $perPage ?>&search=<?= urlencode($search) ?>&category_id=<?= urlencode($categoryId) ?>"><?= $i ?></a>
+        <?php endif; ?>
+        <?php endfor; ?>
+    </div>
+    <div class="per-page">
+        <span class="text-muted">共 <?= number_format($total) ?> 张</span>
+        <label>每页
+            <select id="per-page-select" class="form-control">
+                <?php foreach ([10, 20, 50, 100] as $n): ?>
+                <option value="<?= $n ?>" <?= (int)$perPage === $n ? 'selected' : '' ?>><?= $n ?></option>
+                <?php endforeach; ?>
+            </select>
+            条</label>
+    </div>
 </div>
-<?php endif; ?>
 
 <!-- Batch Bar -->
 <div id="batch-bar" class="hidden">

@@ -210,6 +210,18 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .pagination a:hover { border-color: var(--primary); color: var(--primary); }
 .pagination .active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
+/* v1.2.0 迭代: pagination + per-page selector on one row */
+.pagination-wrap {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; flex-wrap: wrap; margin-top: 24px;
+}
+.pagination-wrap .pagination { margin-top: 0; }
+.per-page { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; white-space: nowrap; color: var(--text-secondary); }
+.per-page select { width: auto; display: inline-block; padding: 3px 8px; font-size: 0.85rem; }
+@media (max-width: 640px) {
+    .pagination-wrap { justify-content: center; }
+}
+
 /* Modal */
 .modal-overlay {
     display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;

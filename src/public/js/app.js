@@ -918,6 +918,18 @@ document.addEventListener('DOMContentLoaded', function() {
     initDropZone();
     initSortable();
     initTabs();
+
+    // v1.2.0 迭代: per-page selector on the image list — keeps the current
+    // search / category filters, resets to page 1.
+    const perPageSelect = document.getElementById('per-page-select');
+    if (perPageSelect) {
+        perPageSelect.addEventListener('change', function() {
+            const params = new URLSearchParams(location.search);
+            params.set('per_page', this.value);
+            params.delete('page');
+            location.search = params.toString();
+        });
+    }
     initStorageToggle();
     initCopyButtons();
     initDeleteButtons();
