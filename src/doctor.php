@@ -579,10 +579,41 @@ if ($cli) {
                 $status = (int) $m[1];
             }
         }
+        // v1.1.1-beta.5.1 (local): HTTP 200 is NOT automatically a leak. Many
+        // servers (Baota / open_basedir / WAF) return 200 with a friendly
+        // "PHP execution blocked" page rather than a 403. Inspect the body
+        // to tell those apart from a real database password leak.
+        $body = '';
+        if ($probe !== '') {
+            $ctx = stream_context_create([
+                'http' => ['timeout' => 4, 'ignore_errors' => true, 'follow_location' => 0],
+                'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+            ]);
+            $body = (string) @file_get_contents($probe, false, $ctx);
+        }
         if ($status >= 400 && $status < 500) {
             check('Config dir not web-exposed', true, "/config/database.php -> HTTP {$status} (denied)");
         } elseif ($status === 200) {
-            check('Config dir not web-exposed', false, '/config/database.php -> HTTP 200 (publicly readable — add nginx deny rule!)');
+            // Strip whitespace for keyword matching.
+            $sample = trim(preg_replace('/\s+/', ' ', $body));
+            $sample = mb_substr($sample, 0, 160);
+            $safeHints = ['禁止执行', '防跨站', '禁止访问', 'waf', 'blocked', 'open_basedir', 'directory protection', 'forbidden'];
+            $leakHints = ['<?php', 'DB_HOST', 'DB_USER', 'DB_PASS', 'DB_NAME', 'database password', 'return ['];
+            $isSafe = false;
+            foreach ($safeHints as $h) { if (stripos($body, $h) !== false) { $isSafe = true; break; } }
+            $isLeak = false;
+            foreach ($leakHints as $h) { if (stripos($body, $h) !== false) { $isLeak = true; break; } }
+            if ($isLeak) {
+                check('Config dir not web-exposed', false,
+                    '/config/database.php -> HTTP 200 AND body contains PHP/DB credentials! Body: "' . $sample . '"');
+            } elseif ($isSafe) {
+                check('Config dir not web-exposed', true,
+                    "/config/database.php -> HTTP 200 (server returned a blocked-page, e.g. open_basedir). Body: \"{$sample}\"");
+            } else {
+                check('Config dir not web-exposed', true,
+                    "/config/database.php -> HTTP 200 with unfamiliar body. Open https://your-domain/config/database.php in a browser to confirm no PHP is leaked. Body: \"{$sample}\"",
+                    true);
+            }
         } else {
             check('Config dir not web-exposed', true,
                 "probe HTTP {$status} (assuming protected; verify /config/database.php returns 403/404 in browser)",
