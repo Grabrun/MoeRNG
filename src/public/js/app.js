@@ -205,19 +205,33 @@ function initImageGrid() {
     const grid = document.querySelector('.image-grid');
     if (!grid) return;
 
-    // The DOM is the single source of truth for the selection. A parallel Set
-    // used to drift out of sync with the inline onclick handlers in the view,
-    // making every click toggle the highlight twice (i.e. do nothing).
-    const selectedIds = () =>
-        Array.from(grid.querySelectorAll('.image-item.selected')).map(el => el.dataset.id);
+    // v1.2.0 迭代: cross-page selection — a global Set survives pagination
+    // and filtering, so 全选/批量删除 can span every page, not just the
+    // visible one. The DOM class only mirrors what's visible now.
+    if (!window.__imgSel) window.__imgSel = new Set();
+    window.__imgTotal = parseInt(document.getElementById('image-total')?.dataset.total || '0', 10) || 0;
+    const selectedIds = () => Array.from(window.__imgSel);
+
+    function syncSetFromDom() {
+        window.__imgSel = new Set(
+            Array.from(grid.querySelectorAll('.image-item.selected')).map(el => el.dataset.id)
+        );
+    }
+    function syncDomFromSet() {
+        grid.querySelectorAll('.image-item').forEach(el => {
+            el.classList.toggle('selected', window.__imgSel.has(el.dataset.id));
+        });
+    }
 
     function updateBatchBar() {
         const bar = document.getElementById('batch-bar');
         if (!bar) return;
-        const count = selectedIds().length;
+        const count = window.__imgSel.size;
         bar.classList.toggle('hidden', count === 0);
         const label = bar.querySelector('.count');
         if (label) label.textContent = count;
+        const allBtn = document.getElementById('select-all-all');
+        if (allBtn && window.__imgTotal) allBtn.textContent = '全选全部 ' + window.__imgTotal + ' 张';
     }
     window.updateBatchBar = updateBatchBar;
 
@@ -242,6 +256,11 @@ function initImageGrid() {
         const item = e.target.closest('.image-item');
         if (!item) return;
         item.classList.toggle('selected');
+        if (item.classList.contains('selected')) {
+            window.__imgSel.add(item.dataset.id);
+        } else {
+            window.__imgSel.delete(item.dataset.id);
+        }
         updateBatchBar();
     });
 
@@ -250,6 +269,7 @@ function initImageGrid() {
         if (!item) return;
         // A double click also fired two single-click toggles; undo the second.
         item.classList.remove('selected');
+        window.__imgSel.delete(item.dataset.id);
         updateBatchBar();
         // v1.0.32: double-click opens the fullscreen lightbox.
         if (window.openLightbox) {
@@ -270,12 +290,42 @@ function initImageGrid() {
     document.getElementById('select-all')?.addEventListener('click', function() {
         const items = Array.from(grid.querySelectorAll('.image-item'));
         const allSelected = items.length > 0 && items.every(i => i.classList.contains('selected'));
-        items.forEach(i => i.classList.toggle('selected', !allSelected));
+        items.forEach(i => {
+            i.classList.toggle('selected', !allSelected);
+            if (!allSelected) {
+                window.__imgSel.add(i.dataset.id);
+            } else {
+                window.__imgSel.delete(i.dataset.id);
+            }
+        });
         updateBatchBar();
     });
 
+    // v1.2.0 迭代: select EVERYTHING matching the current filters, across all
+    // pages — fetches the full id list from the server.
+    document.getElementById('select-all-all')?.addEventListener('click', async function() {
+        const params = new URLSearchParams(location.search);
+        try {
+            const resp = await fetch('/admin/images/ids?' + params.toString(), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const data = await resp.json();
+            if (!data || !Array.isArray(data.ids)) {
+                showToast('获取全部图片失败', 'error');
+                return;
+            }
+            data.ids.forEach(id => window.__imgSel.add(String(id)));
+            syncDomFromSet();
+            updateBatchBar();
+            showToast('已选择全部 ' + data.ids.length + ' 张图片', 'success');
+        } catch (_) {
+            showToast('获取全部图片失败', 'error');
+        }
+    });
+
     document.getElementById('clear-selection')?.addEventListener('click', function() {
-        grid.querySelectorAll('.image-item.selected').forEach(i => i.classList.remove('selected'));
+        window.__imgSel.clear();
+        syncDomFromSet();
         updateBatchBar();
     });
 
@@ -298,6 +348,8 @@ function initImageGrid() {
             const result = await adminPost(url, payload);
 
             (result.deleted || ids).forEach(id => {
+                id = String(id);
+                window.__imgSel.delete(id);
                 grid.querySelector('.image-item[data-id="' + id + '"]')?.remove();
             });
             updateBatchBar();

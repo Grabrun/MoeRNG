@@ -35,6 +35,7 @@ $router->group('/admin', function ($router) {
 
     // Images
     $router->get('/images', [$images, 'index']);
+    $router->get('/images/ids', [$images, 'ids']);
     $router->post('/images/upload', [$images, 'upload']);
     $router->post('/images/update', [$images, 'update']);
     $router->post('/images/delete', [$images, 'delete']);

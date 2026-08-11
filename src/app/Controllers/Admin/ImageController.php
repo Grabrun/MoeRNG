@@ -72,6 +72,36 @@ class ImageController extends Controller
         ]);
     }
 
+    /**
+     * v1.2.0 迭代: all image ids matching the current filters — powers the
+     * cross-page "全选全部" action. Same filter logic as index().
+     */
+    public function ids(Request $request): void
+    {
+        $search = $request->input('search', '');
+        $categoryId = $request->input('category_id', '');
+
+        $where = '1=1';
+        $params = [];
+        if ($search) {
+            $where .= " AND (original_name LIKE ? OR filename LIKE ?)";
+            $params[] = "%{$search}%";
+            $params[] = "%{$search}%";
+        }
+        if ($categoryId !== '') {
+            if ($categoryId === '0' || $categoryId === 'null') {
+                $where .= " AND category_id IS NULL";
+            } else {
+                $where .= " AND category_id = ?";
+                $params[] = (int) $categoryId;
+            }
+        }
+
+        $result = Image::paginate(1, 1000000, 'id DESC', $where, $params);
+        $ids = array_map(static fn ($r) => (int) $r['id'], $result['data']);
+        $this->json(['ids' => $ids, 'total' => (int) $result['total']]);
+    }
+
     public function upload(Request $request): void
     {
         $this->validateCsrf();
