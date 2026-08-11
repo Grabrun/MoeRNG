@@ -272,8 +272,19 @@
             is_default: document.getElementById('profile-is-default').checked ? '1' : '0'
         };
         if (!payload.name) { showToast('请填写实例名称', 'error'); return; }
-        if (payload.driver === 's3' && !(payload.cfg_key && payload.cfg_secret && payload.cfg_region && payload.cfg_bucket)) {
-            showToast('对象存储实例需填写完整的 AccessKey / SecretKey / Region / Bucket', 'error'); return;
+        // v1.2.0 迭代: required fields follow the provider (PV_FIELDS) —
+        // UPYUN has no region, OBS requires endpoint instead of region, etc.
+        if (payload.driver === 's3') {
+            const def = PV_FIELDS[payload.provider] || PV_FIELDS.cos;
+            const miss = [];
+            for (const f in def) {
+                if (def[f] && def[f].r && !(payload['cfg_' + f] || '').trim()) {
+                    miss.push(def[f].l);
+                }
+            }
+            if (miss.length) {
+                showToast('对象存储实例需填写完整的：' + miss.join(' / '), 'error'); return;
+            }
         }
 
         submitBtn.disabled = true;

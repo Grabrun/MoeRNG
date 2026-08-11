@@ -194,9 +194,16 @@ class StorageProfileController extends Controller
                 'endpoint' => trim((string) $request->input('cfg_endpoint', '')),
                 'cdn'      => trim((string) $request->input('cfg_cdn', '')),
             ];
-            if ($config['key'] === '' || $config['secret'] === ''
-                || $config['region'] === '' || $config['bucket'] === '') {
-                throw new \RuntimeException('对象存储实例需填写完整的 AccessKey / SecretKey / Region / Bucket');
+            if ($config['key'] === '' || $config['secret'] === '' || $config['bucket'] === '') {
+                throw new \RuntimeException('对象存储实例需填写完整的 AccessKey / SecretKey / Bucket');
+            }
+            // v1.2.0 迭代: provider-specific required fields — UPYUN 无 region，
+            // OBS 用 endpoint 替代 region。
+            if ($provider === 'obs' && $config['endpoint'] === '') {
+                throw new \RuntimeException('对象存储实例（华为云 OBS）需填写 Endpoint');
+            }
+            if ($provider !== 'obs' && $provider !== 'upyun' && $config['region'] === '') {
+                throw new \RuntimeException('对象存储实例需填写 Region');
             }
         } else {
             $config = ['path' => trim((string) $request->input('cfg_path', ''))];
