@@ -2,6 +2,20 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0-beta.1] - 2026-08-11
+
+### 🚀 新功能
+
+- 对象存储接入第 5、6 家：又拍云 USS + 七牛云 Kodo（全部官方 SDK）
+  - sdk/upyun/：upyun/sdk 官方源码，psr7 v1→v2 适配后复用 COS vendor 的 Guzzle/PSR-7
+  - sdk/qiniu/：qiniu/php-sdk 官方源码（自实现 curl 无 Guzzle），捆绑最小 MyCLabs Enum
+  - 新增 UpyunSdkDriver（service + operator + password，无 region）与 QiniuSdkDriver（AK/SK + bucket + region z0-z3/as0/na0）
+  - 存储管理页服务商下拉新增两家选项，doctor 新增对应 SDK 检查项
+
+### 🐛 Bug 修复
+
+- doctor.php：「Config dir not web-exposed」在宝塔/open_basedir 防护下的误报修复——HTTP 200 改为响应体关键词识别（宝塔拦截页 → OK；PHP 凭据特征 → FAIL；未知 → WARN 人工确认）
+
 ## [1.1.1-beta.3] - 2026-08-10
 
 ### ⬆️ 功能增强
