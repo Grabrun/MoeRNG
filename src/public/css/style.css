@@ -812,13 +812,13 @@ body.modal-open { overflow: hidden; }
     border-radius: inherit;
 }
 .progress-bar .progress-text {
-    position: absolute; right: 4px; top: -24px;
-    font-size: 0.78rem; color: var(--text);
-    background: var(--bg-card); padding: 3px 10px; border-radius: 6px;
-    border: 1px solid var(--border-light);
+    /* v1.2.0 迭代: overlay INSIDE the bar (right edge) — white +
+       difference blend stays legible on both the fill and the empty track,
+       and never covers the drop-zone above. */
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    font-size: 0.72rem; color: #fff; mix-blend-mode: difference;
     font-variant-numeric: tabular-nums; white-space: nowrap;
-    line-height: 1; z-index: 10;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    line-height: 1; z-index: 3; pointer-events: none;
 }
 
 /* v1.2.0 迭代: pulse while the backend saves after the transfer completes */
