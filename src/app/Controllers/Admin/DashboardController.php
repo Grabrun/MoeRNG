@@ -123,7 +123,10 @@ class DashboardController extends Controller
         if (function_exists('sys_getloadavg')) {
             $la = @sys_getloadavg();
             if (is_array($la)) {
-                $cores = max(1, (int) trim((string) shell_exec('nproc') ?: '1'));
+                // Core count from /proc/cpuinfo — shell_exec() is disabled by
+                // Baota's php.ini disable_functions, so nproc is unavailable.
+                $cpuInfo = @file_get_contents('/proc/cpuinfo');
+                $cores = ($cpuInfo !== false) ? max(1, substr_count($cpuInfo, 'processor')) : 1;
                 $status['cpu'] = round(min(100, $la[0] / $cores * 100), 1);
             }
         }
