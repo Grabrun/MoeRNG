@@ -4,12 +4,15 @@
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>安装完成 - MoeRNG</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
     <link rel="stylesheet" href="/public/css/style.css">
     <style>.install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; } .install-header { text-align: center; margin-bottom: 40px; } .install-header h1 { color: var(--primary); font-size: 2.2rem; }</style>
 </head>
 <body>
     <div class="install-container">
         <div class="install-header">
+            <img class="install-logo" src="/assets/logo.png" alt="MoeRNG Logo">
             <h1>MoeRNG</h1>
             <p class="text-muted">安装完成</p>
         </div>

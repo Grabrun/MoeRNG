@@ -114,8 +114,9 @@
 
     <!-- Hero -->
     <section class="hero">
-        <!-- v1.2.0 迭代: horizontal brand banner (the banner itself now carries the title) -->
-        <img class="hero-banner" src="/assets/banner.png" alt="<?= h($siteName) ?>">
+        <!-- v1.2.0 迭代: horizontal brand banner (the banner itself now carries the title).
+             width/height keep Lighthouse CLS=0 while the image loads. -->
+        <img class="hero-banner" src="/assets/banner.png" width="1400" height="289" alt="<?= h($siteName) ?>">
         <div class="stats">
             <div class="stat">
                 <div class="num stat-value" data-count="<?= (int)$totalImages ?>"><?= number_format($totalImages) ?></div>
