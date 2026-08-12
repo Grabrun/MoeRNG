@@ -53,7 +53,7 @@ function admin_header($title) { ?>
     <div class="admin-layout">
         <aside class="sidebar" id="admin-sidebar">
             <div class="sidebar-top">
-                <a href="/admin" class="sidebar-brand"><img src="/assets/logo.png" width="30" height="30" alt="MoeRNG Logo"><span>MoeRNG</span></a>
+                <a href="/admin" class="sidebar-brand"><img src="/assets/favicon-32.png" width="30" height="30" alt="MoeRNG Logo"><span>MoeRNG</span></a>
                 <button type="button" class="theme-toggle" id="theme-toggle" aria-label="切换深浅主题" title="切换深浅主题">
                     <span class="ic icon-sun"><?= icon('sun', 20) ?></span>
                     <span class="ic icon-moon"><?= icon('moon', 20) ?></span>
