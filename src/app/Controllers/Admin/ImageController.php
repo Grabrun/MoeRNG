@@ -97,9 +97,17 @@ class ImageController extends Controller
             }
         }
 
-        $result = Image::paginate(1, 1000000, 'id DESC', $where, $params);
-        $ids = array_map(static fn ($r) => (int) $r['id'], $result['data']);
-        $this->json(['ids' => $ids, 'total' => (int) $result['total']]);
+        // Lightweight: SELECT id only (avoids hydrating full Models — the old
+        // paginate call returned Model objects, so $r['id'] was array-access
+        // on an object -> HTTP 500).
+        $sql = 'SELECT id FROM images';
+        if ($where !== '1=1') {
+            $sql .= " WHERE {$where}";
+        }
+        $sql .= ' ORDER BY id DESC';
+        $rows = Image::query($sql, $params);
+        $ids = array_map(static fn ($r) => (int) $r['id'], $rows);
+        $this->json(['ids' => $ids, 'total' => count($ids)]);
     }
 
     public function upload(Request $request): void
