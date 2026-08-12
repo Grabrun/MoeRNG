@@ -2,6 +2,33 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0-beta.4] - 2026-08-13
+
+### ✨ 新功能
+
+- 品牌视觉体系：像素猫耳 Logo 全站落地（导航/侧边栏/登录页/安装向导/Favicon/Hero 横幅/OG 分享图），透明背景多尺寸整数倍缩放
+- 后台仪表盘重做：改名「仪表盘」——最近上传、分类分布、存储用量、7 天上传趋势、最近操作日志
+- 流量统计：API 调用量 + 网站访问量（api_stats/visit_stats 按日计数表，自动埋点），今日/近 7 天/累计 + 7 天双色趋势图
+- 系统状态：CPU 负载、PHP 进程内存、磁盘占用实时指标（纯 PHP 原生，无 shell 依赖）
+
+### 🚀 性能优化
+
+- 品牌资源 WebP 化（banner 145KB → 24KB）+ LCP 预加载 + fetchpriority
+- 图片显式 width/height 消除 CLS；深色主题对比度提升（WCAG AA）
+
+### 🐛 Bug 修复
+
+- 仪表盘 500：宝塔 disable_functions 禁用 shell_exec → 改 /proc/cpuinfo + memory_get_usage
+- 「全选」接口 500（Model 数组访问）
+- 上传进度条文字裁剪/遮挡（文字行 + 胶囊渐变轨道）
+- 批量上传超限误报 419 → 413
+- 仪表盘视图防御兜底（混搭部署不 500）
+
+### 🎨 可访问性
+
+- `<main>` / meta description / sr-only 标题 / select 关联 label / 标题层级修正
+- 后台「Dashboard」→「仪表盘」语言统一
+
 ## [1.2.0-beta.3] - 2026-08-12
 
 ### 🔒 安全增强

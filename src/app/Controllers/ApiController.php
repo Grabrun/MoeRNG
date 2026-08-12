@@ -141,7 +141,7 @@ class ApiController extends Controller
             'data' => [
                 'total_images' => $totalImages,
                 'total_categories' => $totalCategories,
-                'version' => defined('APP_VERSION') ? APP_VERSION : '1.2.0-beta.3',
+                'version' => defined('APP_VERSION') ? APP_VERSION : '1.2.0-beta.4',
                 'storage_driver' => self::activeStorageDriver(),
             ],
         ]);
