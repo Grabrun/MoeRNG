@@ -7,7 +7,9 @@
     <script>var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentElement.setAttribute('data-theme',t);</script>
     <meta name="csrf-token" content="<?= $csrf_token ?>">
     <title><?= h($siteName) ?> - <?= h($siteSlogan) ?></title>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <!-- v1.2.0 迭代: PNG favicon first (modern browsers), ICO fallback, ?v= busts the browser's stubborn favicon cache -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/logo-32.png?v=20260812">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
     <link rel="stylesheet" href="/public/css/style.css">
     <style>
         .hero { padding: 100px 24px 80px; }
