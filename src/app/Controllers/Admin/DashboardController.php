@@ -119,7 +119,9 @@ class DashboardController extends Controller
         $visitSeries = Stats::series(Stats::TABLE_VISITS);
 
         // v1.2.0 迭代: server system status (best effort on each metric).
-        $status = ['cpu' => null, 'mem' => null, 'disk' => null];
+        // No shell_exec (disabled by Baota). Memory prefers PHP-process metric
+        // (memory_get_usage / limit) and only falls back to /proc/meminfo.
+        $status = ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => null, 'mem_limit' => null];
         if (function_exists('sys_getloadavg')) {
             $la = @sys_getloadavg();
             if (is_array($la)) {
@@ -130,9 +132,27 @@ class DashboardController extends Controller
                 $status['cpu'] = round(min(100, $la[0] / $cores * 100), 1);
             }
         }
-        $memInfo = @file_get_contents('/proc/meminfo');
-        if ($memInfo !== false && preg_match('/MemTotal:\s+(\d+)/', $memInfo, $m) && preg_match('/MemAvailable:\s+(\d+)/', $memInfo, $m2)) {
-            $status['mem'] = round(100 - (float) $m2[1] / (float) $m[1] * 100, 1);
+        // v1.2.0 迭代: PHP-process memory (preferred) → /proc/meminfo fallback.
+        $status['php_mem']  = memory_get_usage(true);
+        $status['mem_limit'] = (string) ini_get('memory_limit');
+        $limitBytes = -1;
+        $lim = trim($status['mem_limit']);
+        if ($lim !== '' && $lim !== '-1') {
+            $unit = strtolower(substr($lim, -1));
+            $num = (int) $lim;
+            if ($unit === 'g') $limitBytes = $num * 1024 * 1024 * 1024;
+            elseif ($unit === 'm') $limitBytes = $num * 1024 * 1024;
+            elseif ($unit === 'k') $limitBytes = $num * 1024;
+            else $limitBytes = $num;
+        }
+        if ($limitBytes > 0) {
+            $status['mem'] = round($status['php_mem'] / $limitBytes * 100, 1);
+        }
+        if ($status['mem'] === null) {
+            $memInfo = @file_get_contents('/proc/meminfo');
+            if ($memInfo !== false && preg_match('/MemTotal:\s+(\d+)/', $memInfo, $m) && preg_match('/MemAvailable:\s+(\d+)/', $memInfo, $m2)) {
+                $status['mem'] = round(100 - (float) $m2[1] / (float) $m[1] * 100, 1);
+            }
         }
         $diskFree = @disk_free_space(dirname(__DIR__, 2));
         $diskTotal = @disk_total_space(dirname(__DIR__, 2));
