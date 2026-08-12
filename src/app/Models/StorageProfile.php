@@ -121,7 +121,8 @@ class StorageProfile extends Model
             $cfg = $this->config();
             return new \App\Storage\LocalDriver(
                 (string) ($cfg['path'] ?? ''),
-                (string) ($cfg['cdn'] ?? '')
+                (string) ($cfg['cdn'] ?? ''),
+                max(1, (int) ($cfg['signed_ttl'] ?? 300))
             );
         }
         $driver = new \App\Storage\S3Driver();

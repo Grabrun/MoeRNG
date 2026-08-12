@@ -207,7 +207,11 @@ class StorageProfileController extends Controller
                 throw new \RuntimeException('对象存储实例需填写 Region');
             }
         } else {
-            $config = ['path' => trim((string) $request->input('cfg_path', ''))];
+            // v1.2.0 迭代: local storage also carries signed_ttl (signed /files links).
+            $config = [
+                'path'       => trim((string) $request->input('cfg_path', '')),
+                'signed_ttl' => trim((string) $request->input('cfg_signed_ttl', '300')),
+            ];
         }
 
         return [

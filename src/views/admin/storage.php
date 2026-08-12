@@ -116,6 +116,10 @@
                     <label>本地存储路径 <small class="text-muted">（相对项目根目录，可空默认 public/uploads）</small></label>
                     <input type="text" name="cfg_path" id="profile-cfg-path" class="form-control" placeholder="public/uploads">
                 </div>
+                <div class="form-group">
+                    <label>签名链接有效期（秒） <small class="text-muted">（本地文件经 /files 签名端点访问）</small></label>
+                    <input type="text" name="cfg_signed_ttl_local" id="profile-cfg-signed-ttl-local" class="form-control" placeholder="300（默认 5 分钟）">
+                </div>
             </div>
 
             <!-- Object storage fields -->
@@ -247,6 +251,7 @@
         document.getElementById('profile-cfg-endpoint').value = cfg.endpoint || '';
         document.getElementById('profile-cfg-cdn').value = cfg.cdn || '';
         document.getElementById('profile-cfg-signed-ttl').value = cfg.signed_ttl || '';
+        document.getElementById('profile-cfg-signed-ttl-local').value = cfg.signed_ttl || '';
         document.getElementById('profile-is-default').checked = row ? row.dataset.default === '1' : false;
 
         toggleFields();
@@ -273,7 +278,12 @@
             cfg_bucket: document.getElementById('profile-cfg-bucket').value.trim(),
             cfg_endpoint: document.getElementById('profile-cfg-endpoint').value.trim(),
             cfg_cdn: document.getElementById('profile-cfg-cdn').value.trim(),
-            cfg_signed_ttl: document.getElementById('profile-cfg-signed-ttl').value.trim(),
+            // v1.2.0 迭代: local uses its own field id (the s3 one is hidden
+            // when driver=local, so reading it would pick the wrong input).
+            const _ttlEl = document.getElementById('profile-driver').value === 's3'
+                ? document.getElementById('profile-cfg-signed-ttl')
+                : document.getElementById('profile-cfg-signed-ttl-local');
+            cfg_signed_ttl: _ttlEl ? _ttlEl.value.trim() : '',
             cfg_path: document.getElementById('profile-cfg-path').value.trim(),
             is_default: document.getElementById('profile-is-default').checked ? '1' : '0'
         };
