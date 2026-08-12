@@ -230,8 +230,8 @@ function initImageGrid() {
         bar.classList.toggle('hidden', count === 0);
         const label = bar.querySelector('.count');
         if (label) label.textContent = count;
-        const allBtn = document.getElementById('select-all-all');
-        if (allBtn && window.__imgTotal) allBtn.textContent = '全选全部 ' + window.__imgTotal + ' 张';
+        // v1.2.0 迭代: button text stays "全选"; the toast shows how many were
+        // selected, so no dynamic label needed here.
     }
     window.updateBatchBar = updateBatchBar;
 

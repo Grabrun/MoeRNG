@@ -8,7 +8,7 @@
     <div class="flex gap-2">
         <button class="btn btn-primary btn-sm" onclick="document.getElementById('upload-modal').classList.add('active')">上传图片</button>
         <button class="btn btn-outline btn-sm" id="select-all">全选本页</button>
-        <button class="btn btn-outline btn-sm" id="select-all-all">全选全部</button>
+        <button class="btn btn-outline btn-sm" id="select-all-all">全选</button>
     </div>
 </div>
 
