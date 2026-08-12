@@ -7,6 +7,20 @@ function human_bytes($b) {
     foreach ($units as $u) { $b /= 1024; if ($b < 1024) return round($b, 1) . ' ' . $u; }
     return round($b, 1) . ' PB';
 }
+// v1.2.0 迭代: defensive defaults — a partially-overwritten deploy (old
+// controller + new view) must never 500; every block degrades gracefully.
+$stats        ??= [];
+$recentImages ??= [];
+$categoryStats ??= [];
+$usage        ??= ['count' => 0, 'total_bytes' => 0.0, 'avg_bytes' => 0.0, 'max_bytes' => 0.0];
+$trend        ??= [];
+$logs         ??= [];
+$system       ??= ['php' => PHP_VERSION, 'timezone' => date_default_timezone_get(), 'storage' => null];
+$apiStats     ??= ['total' => 0, 'today' => 0, 'week' => 0];
+$visitStats   ??= ['total' => 0, 'today' => 0, 'week' => 0];
+$apiSeries    ??= [];
+$visitSeries  ??= [];
+$status       ??= ['cpu' => null, 'mem' => null, 'disk' => null];
 ?>
 <?php include __DIR__ . '/helpers.php'; admin_header('仪表盘'); ?>
 
