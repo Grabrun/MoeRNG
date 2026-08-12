@@ -267,6 +267,11 @@
     submitBtn.addEventListener('click', async function() {
         const id = document.getElementById('profile-id').value;
         const mode = id ? 'update' : 'create';
+        // v1.2.0 迭代: local uses its own field id (the s3 one is hidden when
+        // driver=local, so reading it would pick the wrong input).
+        const _ttlEl = document.getElementById('profile-driver').value === 's3'
+            ? document.getElementById('profile-cfg-signed-ttl')
+            : document.getElementById('profile-cfg-signed-ttl-local');
         const payload = {
             id: id,
             name: document.getElementById('profile-name').value.trim(),
@@ -278,11 +283,6 @@
             cfg_bucket: document.getElementById('profile-cfg-bucket').value.trim(),
             cfg_endpoint: document.getElementById('profile-cfg-endpoint').value.trim(),
             cfg_cdn: document.getElementById('profile-cfg-cdn').value.trim(),
-            // v1.2.0 迭代: local uses its own field id (the s3 one is hidden
-            // when driver=local, so reading it would pick the wrong input).
-            const _ttlEl = document.getElementById('profile-driver').value === 's3'
-                ? document.getElementById('profile-cfg-signed-ttl')
-                : document.getElementById('profile-cfg-signed-ttl-local');
             cfg_signed_ttl: _ttlEl ? _ttlEl.value.trim() : '',
             cfg_path: document.getElementById('profile-cfg-path').value.trim(),
             is_default: document.getElementById('profile-is-default').checked ? '1' : '0'
