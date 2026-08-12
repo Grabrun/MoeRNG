@@ -60,7 +60,7 @@ function admin_header($title) { ?>
                 </button>
             </div>
             <nav class="sidebar-nav">
-                <a href="/admin" class="<?= $title === 'Dashboard' ? 'active' : '' ?>"><?= icon('dashboard', 20) ?><span>Dashboard</span></a>
+                <a href="/admin" class="<?= $title === '仪表盘' ? 'active' : '' ?>"><?= icon('dashboard', 20) ?><span>仪表盘</span></a>
                 <a href="/admin/images" class="<?= $title === '图片管理' ? 'active' : '' ?>"><?= icon('image', 20) ?><span>图片管理</span></a>
                 <a href="/admin/categories" class="<?= $title === '分类管理' ? 'active' : '' ?>"><?= icon('folder-tree', 20) ?><span>分类管理</span></a>
                 <a href="/admin/storage" class="<?= $title === '存储管理' ? 'active' : '' ?>"><?= icon('cloud', 20) ?><span>存储管理</span></a>

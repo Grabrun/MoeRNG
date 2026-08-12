@@ -30,7 +30,7 @@ $router->group('/admin', function ($router) {
     $users = \App\Controllers\Admin\UserController::class;
     $apikeys = \App\Controllers\Admin\ApiKeyController::class;
 
-    // Dashboard
+    // 仪表盘
     $router->get('/', [$dashboard, 'index']);
 
     // Images
