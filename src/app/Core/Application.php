@@ -107,6 +107,8 @@ class Application
             $this->migrateLegacyToProfiles();
             // v1.1.0-beta.4: admin operation audit trail.
             $this->ensureAuditLogTable($db);
+            // v1.2.0 迭代: daily counters for API calls & site visits.
+            $this->ensureStatsTables($db);
         } catch (\Throwable $e) {
             $migrationError = $migrationError !== ''
                 ? $migrationError . ' | ' . $e->getMessage()
@@ -310,6 +312,26 @@ class Application
             `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX `idx_action` (`action`),
             INDEX `idx_created` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+        $db->exec($sql);
+    }
+
+    /**
+     * v1.2.0 迭代: daily counters for API call volume & site visits.
+     * Lightweight: one row per day per metric, upserted by INSERT..ON
+     * DUPLICATE KEY UPDATE. CREATE TABLE IF NOT EXISTS is idempotent.
+     */
+    private function ensureStatsTables(\PDO $db): void
+    {
+        $sql = "CREATE TABLE IF NOT EXISTS `api_stats` (
+            `day` DATE PRIMARY KEY,
+            `count` INT UNSIGNED NOT NULL DEFAULT 0
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+        $db->exec($sql);
+
+        $sql = "CREATE TABLE IF NOT EXISTS `visit_stats` (
+            `day` DATE PRIMARY KEY,
+            `count` INT UNSIGNED NOT NULL DEFAULT 0
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         $db->exec($sql);
     }

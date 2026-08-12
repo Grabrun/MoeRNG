@@ -13,6 +13,9 @@ class HomeController extends Controller
 {
     public function index(Request $request): void
     {
+        // v1.2.0 迭代: site visit counter (best effort, never breaks the page).
+        \App\Core\Stats::bump(\App\Core\Stats::TABLE_VISITS);
+
         $siteName = Config::get('settings.site_name', 'MoeRNG');
         $siteSlogan = Config::get('settings.site_slogan', '随机二次元图片 API 服务');
         $logoUrl = Config::get('settings.logo_url', '') ?: '/assets/logo.png';

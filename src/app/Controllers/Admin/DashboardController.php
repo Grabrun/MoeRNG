@@ -6,6 +6,7 @@ namespace App\Controllers\Admin;
 use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Database;
+use App\Core\Stats;
 use App\Models\Image;
 use App\Models\Category;
 use App\Models\User;
@@ -111,6 +112,31 @@ class DashboardController extends Controller
             'storage'  => $storage,
         ];
 
+        // v1.2.0 迭代: API call volume & site visits (daily counters).
+        $apiStats    = Stats::summary(Stats::TABLE_API);
+        $visitStats  = Stats::summary(Stats::TABLE_VISITS);
+        $apiSeries   = Stats::series(Stats::TABLE_API);
+        $visitSeries = Stats::series(Stats::TABLE_VISITS);
+
+        // v1.2.0 迭代: server system status (best effort on each metric).
+        $status = ['cpu' => null, 'mem' => null, 'disk' => null];
+        if (function_exists('sys_getloadavg')) {
+            $la = @sys_getloadavg();
+            if (is_array($la)) {
+                $cores = max(1, (int) trim((string) shell_exec('nproc') ?: '1'));
+                $status['cpu'] = round(min(100, $la[0] / $cores * 100), 1);
+            }
+        }
+        $memInfo = @file_get_contents('/proc/meminfo');
+        if ($memInfo !== false && preg_match('/MemTotal:\s+(\d+)/', $memInfo, $m) && preg_match('/MemAvailable:\s+(\d+)/', $memInfo, $m2)) {
+            $status['mem'] = round(100 - (float) $m2[1] / (float) $m[1] * 100, 1);
+        }
+        $diskFree = @disk_free_space(dirname(__DIR__, 2));
+        $diskTotal = @disk_total_space(dirname(__DIR__, 2));
+        if ($diskFree !== false && $diskTotal !== false && $diskTotal > 0) {
+            $status['disk'] = round(100 - $diskFree / $diskTotal * 100, 1);
+        }
+
         $stats = [
             'total_images'     => Image::count("status = 'active'"),
             'total_categories' => Category::count(),
@@ -129,6 +155,11 @@ class DashboardController extends Controller
             'trend'        => $trend,
             'logs'         => $logs,
             'system'       => $system,
+            'apiStats'     => $apiStats,
+            'visitStats'   => $visitStats,
+            'apiSeries'    => $apiSeries,
+            'visitSeries'  => $visitSeries,
+            'status'       => $status,
         ]);
     }
 }

@@ -24,3 +24,6 @@ $router->group('/api/v1', function ($router) {
 }, [\App\Middleware\RateLimitMiddleware::class]);
 
 $app->run();
+
+// v1.2.0 迭代: record the API call (after run so 404s don't count; best effort).
+\App\Core\Stats::bump(\App\Core\Stats::TABLE_API);

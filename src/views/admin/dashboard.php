@@ -131,6 +131,84 @@ function human_bytes($b) {
 </div>
 
 <div class="grid grid-2 mt-3 reveal">
+    <!-- 流量统计：API 调用 + 网站访问（v1.2.0 迭代） -->
+    <div class="card">
+        <h3 class="mb-2">流量统计</h3>
+        <div class="flex" style="gap:24px;margin-bottom:16px">
+            <div>
+                <div class="stat-value" style="font-size:1.4rem"><?= number_format($apiStats['today']) ?></div>
+                <div class="stat-label">今日 API 调用</div>
+            </div>
+            <div>
+                <div class="stat-value" style="font-size:1.4rem"><?= number_format($apiStats['week']) ?></div>
+                <div class="stat-label">近 7 天</div>
+            </div>
+            <div>
+                <div class="stat-value" style="font-size:1.4rem"><?= number_format($apiStats['total']) ?></div>
+                <div class="stat-label">累计调用</div>
+            </div>
+        </div>
+        <div class="flex" style="gap:24px;margin-bottom:16px">
+            <div>
+                <div class="stat-value" style="font-size:1.4rem"><?= number_format($visitStats['today']) ?></div>
+                <div class="stat-label">今日访问</div>
+            </div>
+            <div>
+                <div class="stat-value" style="font-size:1.4rem"><?= number_format($visitStats['week']) ?></div>
+                <div class="stat-label">近 7 天</div>
+            </div>
+            <div>
+                <div class="stat-value" style="font-size:1.4rem"><?= number_format($visitStats['total']) ?></div>
+                <div class="stat-label">累计访问</div>
+            </div>
+        </div>
+        <h4 class="mb-1" style="font-size:.95rem">近 7 天趋势（API / 访问）</h4>
+        <div style="display:flex;align-items:flex-end;gap:6px;height:96px;padding-top:8px">
+            <?php $maxFlow = max(1, max(array_column($apiSeries, 'count')), max(array_column($visitSeries, 'count'))); ?>
+            <?php for ($i = 0; $i < 7; $i++): ?>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+                <div style="display:flex;gap:2px;align-items:flex-end;height:60px">
+                    <div style="width:6px;height:<?= max(3, round($apiSeries[$i]['count'] / $maxFlow * 56)) ?>px;border-radius:3px 0 0 3px;background:var(--primary)" title="API <?= $apiSeries[$i]['day'] ?>: <?= $apiSeries[$i]['count'] ?>"></div>
+                    <div style="width:6px;height:<?= max(3, round($visitSeries[$i]['count'] / $maxFlow * 56)) ?>px;border-radius:0 3px 3px 0;background:var(--accent)" title="访问 <?= $visitSeries[$i]['day'] ?>: <?= $visitSeries[$i]['count'] ?>"></div>
+                </div>
+                <span style="font-size:.65rem;color:var(--text-muted)"><?= $apiSeries[$i]['day'] ?></span>
+            </div>
+            <?php endfor; ?>
+        </div>
+        <div class="flex" style="gap:16px;margin-top:8px;font-size:.78rem;color:var(--text-secondary)">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--primary);vertical-align:middle;margin-right:4px"></span>API 调用</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent);vertical-align:middle;margin-right:4px"></span>网站访问</span>
+        </div>
+    </div>
+    <!-- 系统状态（v1.2.0 迭代） -->
+    <div class="card">
+        <h3 class="mb-2">系统状态</h3>
+        <div style="display:flex;flex-direction:column;gap:16px">
+            <?php
+            $metrics = [
+                ['label' => 'CPU 负载', 'val' => $status['cpu'], 'color' => 'var(--primary)'],
+                ['label' => '内存使用', 'val' => $status['mem'], 'color' => 'var(--accent)'],
+                ['label' => '磁盘占用', 'val' => $status['disk'], 'color' => 'var(--info)'],
+            ];
+            foreach ($metrics as $m):
+                $show = $m['val'] !== null;
+            ?>
+            <div>
+                <div class="flex" style="justify-content:space-between;margin-bottom:4px">
+                    <span style="font-size:.88rem"><?= $m['label'] ?></span>
+                    <span style="font-size:.88rem;color:var(--text-secondary)"><?= $show ? $m['val'] . ' %' : '不可用' ?></span>
+                </div>
+                <div style="height:10px;border-radius:999px;background:var(--bg-input);overflow:hidden">
+                    <div style="width:<?= $show ? min(100, $m['val']) : 0 ?>%;height:100%;border-radius:999px;background:<?= $m['color'] ?>"></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <p class="text-muted" style="margin-top:16px;font-size:.82rem">CPU 为 1 分钟负载均值；内存/磁盘来自系统 /proc 与磁盘空间统计。</p>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-3 reveal">
     <!-- 快捷操作 -->
     <div class="card">
         <h3 class="mb-2">快捷操作</h3>
