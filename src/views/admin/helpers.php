@@ -10,8 +10,12 @@ function admin_header($title) { ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= \App\Core\Session::csrfToken() ?>">
     <title><?= h($title) ?> - MoeRNG Admin</title>
+    <!-- v1.2.0 迭代: brand favicon on admin pages too -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
     <link rel="stylesheet" href="/public/css/style.css">
     <style>
+        .sidebar-brand img { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; }
         .admin-layout { display: flex; min-height: 100vh; }
         .sidebar { width: 240px; background: var(--bg-card); border-right: 1px solid var(--border); padding: 24px 16px; position: fixed; top: 0; left: 0; bottom: 0; overflow-y: auto; z-index: 100; }
         .sidebar-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; padding: 0 12px; gap: 8px; }
@@ -49,7 +53,7 @@ function admin_header($title) { ?>
     <div class="admin-layout">
         <aside class="sidebar" id="admin-sidebar">
             <div class="sidebar-top">
-                <a href="/admin" class="sidebar-brand"><?= icon('sparkles', 22) ?><span>MoeRNG</span></a>
+                <a href="/admin" class="sidebar-brand"><img src="/assets/logo.png" alt="MoeRNG Logo"><span>MoeRNG</span></a>
                 <button type="button" class="theme-toggle" id="theme-toggle" aria-label="切换深浅主题" title="切换深浅主题">
                     <span class="ic icon-sun"><?= icon('sun', 20) ?></span>
                     <span class="ic icon-moon"><?= icon('moon', 20) ?></span>

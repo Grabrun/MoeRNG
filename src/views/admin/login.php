@@ -7,10 +7,14 @@
     <script>var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentElement.setAttribute('data-theme',t);</script>
     <meta name="csrf-token" content="<?= $csrf_token ?>">
     <title>Login - MoeRNG Admin</title>
+    <!-- v1.2.0 迭代: brand favicon on the login page too -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
     <link rel="stylesheet" href="/public/css/style.css">
     <style>
         .login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
         .login-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 40px; width: 100%; max-width: 400px; }
+        .login-card .login-logo { display: block; width: 72px; height: 72px; margin: 0 auto 12px; border-radius: 16px; object-fit: contain; }
         .login-card h1 { text-align: center; margin-bottom: 8px; color: var(--primary); }
         .login-card .subtitle { text-align: center; color: var(--text-secondary); margin-bottom: 32px; }
     </style>
@@ -22,6 +26,7 @@
     </button>
     <div class="login-page">
         <div class="login-card">
+            <img class="login-logo" src="/assets/logo.png" alt="MoeRNG Logo">
             <h1>MoeRNG</h1>
             <p class="subtitle">管理面板登录</p>
             <?php if ($error): ?>
