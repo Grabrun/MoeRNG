@@ -1,3 +1,13 @@
+<?php
+// 人类可读大小
+function human_bytes($b) {
+    $b = (float) $b;
+    if ($b < 1024) return (int) $b . ' B';
+    $units = ['KB', 'MB', 'GB', 'TB'];
+    foreach ($units as $u) { $b /= 1024; if ($b < 1024) return round($b, 1) . ' ' . $u; }
+    return round($b, 1) . ' PB';
+}
+?>
 <?php include __DIR__ . '/helpers.php'; admin_header('仪表盘'); ?>
 
 <div class="page-header">
@@ -64,6 +74,55 @@
                     <div style="width:<?= round($cat['count'] / $maxCount * 100) ?>%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--primary),var(--accent))"></div>
                 </div>
                 <span style="width:40px;text-align:right;font-size:.85rem;color:var(--text-secondary)"><?= (int)$cat['count'] ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-3 reveal">
+    <!-- 存储用量 + 7 天趋势 -->
+    <div class="card">
+        <h3 class="mb-2">存储用量</h3>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+            <div>
+                <div class="stat-value" style="font-size:1.4rem"><?= human_bytes($usage['total_bytes']) ?></div>
+                <div class="stat-label">总占用</div>
+            </div>
+            <div>
+                <div class="stat-value" style="font-size:1.4rem"><?= human_bytes($usage['avg_bytes']) ?></div>
+                <div class="stat-label">平均大小</div>
+            </div>
+            <div>
+                <div class="stat-value" style="font-size:1.4rem"><?= human_bytes($usage['max_bytes']) ?></div>
+                <div class="stat-label">最大单图</div>
+            </div>
+        </div>
+        <h4 class="mb-1" style="font-size:.95rem">近 7 天上传趋势</h4>
+        <div style="display:flex;align-items:flex-end;gap:6px;height:90px;padding-top:8px">
+            <?php $maxTrend = max(1, max(array_column($trend, 'count'))); ?>
+            <?php foreach ($trend as $t): ?>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+                <span style="font-size:.7rem;color:var(--text-secondary)"><?= (int)$t['count'] ?></span>
+                <div style="width:100%;max-width:34px;height:<?= max(4, round($t['count'] / $maxTrend * 60)) ?>px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,var(--primary),var(--accent))" title="<?= $t['day'] ?>: <?= (int)$t['count'] ?> 张"></div>
+                <span style="font-size:.65rem;color:var(--text-muted)"><?= $t['day'] ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <!-- 最近操作日志 -->
+    <div class="card">
+        <h3 class="mb-2">最近操作</h3>
+        <?php if (empty($logs)): ?>
+            <p class="text-muted">暂无操作日志。</p>
+        <?php else: ?>
+        <div style="display:flex;flex-direction:column;gap:0">
+            <?php foreach ($logs as $log): ?>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:.88rem">
+                <span class="badge" style="background:var(--bg-input);color:var(--text-secondary);padding:2px 8px;border-radius:6px;white-space:nowrap"><?= h($log['action']) ?></span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= h($log['detail'] ?: $log['username']) ?></span>
+                <span style="color:var(--text-muted);font-size:.78rem;white-space:nowrap"><?= h(substr($log['time'], 5, 11)) ?></span>
             </div>
             <?php endforeach; ?>
         </div>
