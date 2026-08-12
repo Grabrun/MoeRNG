@@ -114,11 +114,8 @@
 
     <!-- Hero -->
     <section class="hero">
-        <!-- v1.2.0 迭代: horizontal brand banner -->
+        <!-- v1.2.0 迭代: horizontal brand banner (the banner itself now carries the title) -->
         <img class="hero-banner" src="/assets/banner.png" alt="<?= h($siteName) ?>">
-        <h1><?= h($siteName) ?></h1>
-        <p class="subtitle"><?= h($siteSlogan) ?></p>
-        <p class="text-muted">基于 RESTful 架构的随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式</p>
         <div class="stats">
             <div class="stat">
                 <div class="num stat-value" data-count="<?= (int)$totalImages ?>"><?= number_format($totalImages) ?></div>
