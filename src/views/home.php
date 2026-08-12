@@ -10,9 +10,12 @@
     <!-- v1.2.0 迭代: PNG favicon first (modern browsers), ICO fallback, ?v= busts the browser's stubborn favicon cache -->
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
+    <meta name="description" content="<?= h($siteName) ?> - <?= h($siteSlogan) ?>。基于 RESTful 架构的随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式。">
     <meta property="og:title" content="<?= h($siteName) ?> - <?= h($siteSlogan) ?>">
     <meta property="og:type" content="website">
     <meta property="og:image" content="/assets/og-image.png">
+    <!-- preload LCP banner so the hero paints immediately -->
+    <link rel="preload" as="image" href="/assets/banner.webp" fetchpriority="high">
     <link rel="stylesheet" href="/public/css/style.css">
     <style>
         .hero { padding: 100px 24px 80px; }
@@ -112,11 +115,15 @@
         </button>
     </header>
 
-    <!-- Hero -->
+    <!-- Hero + main content (a11y: <main>, h1 + sr-only keeps SEO while banner visually carries the title) -->
+    <main>
     <section class="hero">
-        <!-- v1.2.0 迭代: horizontal brand banner (the banner itself now carries the title).
-             width/height keep Lighthouse CLS=0 while the image loads. -->
-        <img class="hero-banner" src="/assets/banner.png" width="1400" height="289" alt="<?= h($siteName) ?>">
+        <h1 class="sr-only"><?= h($siteName) ?> - <?= h($siteSlogan) ?></h1>
+        <!-- v1.2.0 迭代: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
+        <picture>
+            <source srcset="/assets/banner.webp" type="image/webp">
+            <img class="hero-banner" src="/assets/banner.png" width="1400" height="289" alt="<?= h($siteName) ?>" fetchpriority="high">
+        </picture>
         <div class="stats">
             <div class="stat">
                 <div class="num stat-value" data-count="<?= (int)$totalImages ?>"><?= number_format($totalImages) ?></div>
@@ -145,6 +152,7 @@
                 <div class="rd-loading hidden" id="rd-loading"><span class="spinner"></span></div>
             </div>
             <div class="rd-footer">
+                <label for="rd-category" class="sr-only">随机图分类筛选</label>
                 <select class="form-control" id="rd-category" style="width:150px;flex-shrink:0">
                     <option value="">全部</option>
                     <?php foreach ($categories as $cat): ?>
@@ -205,7 +213,7 @@
                 </div>
                 <div class="body">
                     <p class="mb-2">返回一张随机图片。可通过参数指定分类和返回格式。</p>
-                    <h4 class="mb-1">请求参数</h4>
+                    <h3 class="mb-1">请求参数</h3>
                     <table class="param-table">
                         <thead><tr><th>参数</th><th>类型</th><th>必需</th><th>默认值</th><th>说明</th></tr></thead>
                         <tbody>
@@ -226,13 +234,13 @@
                         </tbody>
                     </table>
 
-                    <h4 class="mb-1 mt-3">请求示例</h4>
+                    <h3 class="mb-1">请求示例</h3>
                     <div class="copy-wrap">
                         <button type="button" class="copy-btn" data-copy-text='curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?category=landscape&type=json"'>复制</button>
                         <pre><code>curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?category=landscape&type=json"</code></pre>
                     </div>
 
-                    <h4 class="mb-1 mt-3">JSON 响应示例</h4>
+                    <h3 class="mb-1">JSON 响应示例</h3>
                     <div class="copy-wrap">
                         <button type="button" class="copy-btn" data-copy-text='{
   "success": true,
@@ -260,7 +268,7 @@
 }</code></pre>
                     </div>
 
-                    <h4 class="mb-1 mt-3">重定向模式</h4>
+                    <h3 class="mb-1">重定向模式</h3>
                     <div class="copy-wrap">
                         <button type="button" class="copy-btn" data-copy-text='curl -L -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?type=redirect"
 # HTTP 302 → 图片直接输出'>复制</button>
@@ -277,7 +285,7 @@
                     <span class="text-muted" style="margin-left:auto">图片列表（分页）</span>
                 </div>
                 <div class="body">
-                    <h4 class="mb-1">请求参数</h4>
+                    <h3 class="mb-1">请求参数</h3>
                     <table class="param-table">
                         <thead><tr><th>参数</th><th>类型</th><th>默认值</th><th>说明</th></tr></thead>
                         <tbody>
@@ -370,7 +378,7 @@
             <div class="api-tester" id="api-tester">
                 <div class="flex gap-2 flex-wrap mb-3">
                     <div class="form-group" style="flex:1;min-width:180px;margin-bottom:0">
-                        <label>分类</label>
+                        <label for="test-category">分类</label>
                         <select class="form-control" id="test-category">
                             <option value="">全部（随机）</option>
                             <?php foreach ($categories as $cat): ?>
@@ -379,7 +387,7 @@
                         </select>
                     </div>
                     <div class="form-group" style="flex:1;min-width:180px;margin-bottom:0">
-                        <label>返回格式</label>
+                        <label for="test-type">返回格式</label>
                         <select class="form-control" id="test-type">
                             <option value="json">JSON</option>
                             <option value="redirect">Redirect (图片直出)</option>
@@ -429,9 +437,10 @@
                 </div>
             </div>
         </section>
+    </main>
 
-        <!-- Footer -->
-        <footer class="footer">
+    <!-- Footer -->
+    <footer class="footer">
             <p><?= h($siteName) ?> <?= h($copyright) ?></p>
             <p class="mt-1">MoeRNG v<?= defined('APP_VERSION') ? APP_VERSION : '1.2.0-beta.3' ?> &mdash; Open-source under MIT License</p>
             <?php if (!empty($icpNumber)): ?>

@@ -12,7 +12,7 @@
     --bg-card-hover: #222240;
     --bg-input: #16213e;
     --text: #e8e8f0;
-    --text-secondary: #9898b8;
+    --text-secondary: #b0b0d0;
     --text-muted: #6a6a8a;
     --border: #2a2a4a;
     --border-light: #3a3a5a;
@@ -944,4 +944,11 @@ body.modal-open { overflow: hidden; }
 @media (max-width: 480px) {
     .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
     .card { padding: 16px; }
+}
+
+/* v1.2.0 迭代: screen-reader-only text (a11y label / h1) — visible to AT but hidden visually */
+.sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0,0,0,0); white-space: nowrap; border: 0;
 }

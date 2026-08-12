@@ -26,7 +26,7 @@
     </button>
     <div class="login-page">
         <div class="login-card">
-            <img class="login-logo" src="/assets/logo.png" alt="MoeRNG Logo">
+            <img class="login-logo" src="/assets/logo.png" width="72" height="72" alt="MoeRNG Logo">
             <h1>MoeRNG</h1>
             <p class="subtitle">管理面板登录</p>
             <?php if ($error): ?>

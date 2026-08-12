@@ -12,7 +12,7 @@
 <body>
     <div class="install-container">
         <div class="install-header">
-            <img class="install-logo" src="/assets/logo.png" alt="MoeRNG Logo">
+            <img class="install-logo" src="/assets/logo.png" width="64" height="64" alt="MoeRNG Logo">
             <h1>MoeRNG 安装向导</h1>
             <p class="text-muted">管理员账号</p>
         </div>
