@@ -7,6 +7,7 @@
     <script>var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentElement.setAttribute('data-theme',t);</script>
     <meta name="csrf-token" content="<?= $csrf_token ?>">
     <title><?= h($siteName) ?> - <?= h($siteSlogan) ?></title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="/public/css/style.css">
     <style>
         .hero { padding: 100px 24px 80px; }

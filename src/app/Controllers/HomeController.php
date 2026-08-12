@@ -15,7 +15,7 @@ class HomeController extends Controller
     {
         $siteName = Config::get('settings.site_name', 'MoeRNG');
         $siteSlogan = Config::get('settings.site_slogan', '随机二次元图片 API 服务');
-        $logoUrl = Config::get('settings.logo_url', '');
+        $logoUrl = Config::get('settings.logo_url', '') ?: '/assets/logo.png';
         $totalImages = 0;
         $totalCategories = 0;
 

@@ -156,7 +156,7 @@ class InstallController extends Controller
             $settings = [
                 'site_name' => 'MoeRNG',
                 'site_slogan' => '随机二次元图片 API 服务',
-                'logo_url' => '',
+                'logo_url' => '/assets/logo.png',
                 'per_page' => '20',
                 'cache_ttl' => '3600',
                 'cdn_url' => $request->input('cdn_url', ''),
