@@ -231,14 +231,6 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
             <div class="flex" style="justify-content:space-between;padding:4px 0"><span class="text-muted">内存上限</span><span><?= h($status['mem_limit'] ?? '-') ?></span></div>
             <div class="flex" style="justify-content:space-between;padding:4px 0"><span class="text-muted">当前进程占用</span><span><?= human_bytes((float)($status['php_mem'] ?? 0)) ?></span></div>
             <div class="flex" style="justify-content:space-between;padding:4px 0"><span class="text-muted">时区</span><span><?= h($system['timezone']) ?></span></div>
-            <?php if ($system['storage']): ?>
-            <div class="flex" style="justify-content:space-between;padding:4px 0">
-                <span class="text-muted">存储驱动</span>
-                <span><?= $system['storage']['is_local'] ? '本地存储' : ('对象存储 · ' . strtoupper(h($system['storage']['provider']))) ?></span>
-            </div>
-            <div class="flex" style="justify-content:space-between;padding:4px 0"><span class="text-muted">默认实例</span><span><?= h($system['storage']['name']) ?></span></div>
-            <?php endif; ?>
-            <div class="flex" style="justify-content:space-between;padding:4px 0"><span class="text-muted">未分类图片</span><span><?= number_format((int)$stats['unused_images']) ?></span></div>
         </div>
     </div>
 </div>
