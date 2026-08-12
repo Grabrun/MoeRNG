@@ -806,19 +806,36 @@ body.modal-open { overflow: hidden; }
    v1.2.0 迭代: absolute positioning — the fill fills the bar while the
    label floats above the right edge, so 100% + "正在保存…" never get
    squeezed out by the flex layout. */
-.progress-bar { display: block; position: relative; overflow: visible; }
-.progress-bar .fill {
-    position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
-    border-radius: inherit;
+/* v1.2.0 迭代: progress unit — label row above a capsule gradient track.
+   The whole unit lives BELOW the drop-zone (own margin), so nothing floats
+   over its dashed border; the label is a normal-flow row, never clipped. */
+.progress-bar {
+    display: block; position: relative;
+    height: 26px; padding-top: 18px;
+    margin-top: 12px;
 }
 .progress-bar .progress-text {
-    /* v1.2.0 迭代: overlay INSIDE the bar (right edge) — white +
-       difference blend stays legible on both the fill and the empty track,
-       and never covers the drop-zone above. */
-    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-    font-size: 0.72rem; color: #fff; mix-blend-mode: difference;
+    position: absolute; top: 0; right: 2px;
+    font-size: 0.78rem; color: var(--text-secondary);
     font-variant-numeric: tabular-nums; white-space: nowrap;
-    line-height: 1; z-index: 3; pointer-events: none;
+    line-height: 18px; z-index: 2;
+}
+/* capsule track */
+.progress-bar::before {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 8px;
+    background: var(--bg-input); border: 1px solid var(--border-light);
+    border-radius: 999px; box-sizing: border-box;
+}
+.progress-bar .fill {
+    position: absolute; left: 0; bottom: 0; height: 8px; width: 0%;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    border-radius: 999px;
+    transition: width 0.2s ease;
+}
+.progress-bar .fill.processing { animation: progress-pulse 0.9s ease-in-out infinite; }
+@keyframes progress-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
 }
 
 /* v1.2.0 迭代: pulse while the backend saves after the transfer completes */
