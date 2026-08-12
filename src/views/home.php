@@ -8,8 +8,11 @@
     <meta name="csrf-token" content="<?= $csrf_token ?>">
     <title><?= h($siteName) ?> - <?= h($siteSlogan) ?></title>
     <!-- v1.2.0 迭代: PNG favicon first (modern browsers), ICO fallback, ?v= busts the browser's stubborn favicon cache -->
-    <link rel="icon" type="image/png" sizes="32x32" href="/assets/logo-32.png?v=20260812">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
+    <meta property="og:title" content="<?= h($siteName) ?> - <?= h($siteSlogan) ?>">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="/assets/og-image.png">
     <link rel="stylesheet" href="/public/css/style.css">
     <style>
         .hero { padding: 100px 24px 80px; }
@@ -111,6 +114,8 @@
 
     <!-- Hero -->
     <section class="hero">
+        <!-- v1.2.0 迭代: horizontal brand banner -->
+        <img class="hero-banner" src="/assets/banner.png" alt="<?= h($siteName) ?>">
         <h1><?= h($siteName) ?></h1>
         <p class="subtitle"><?= h($siteSlogan) ?></p>
         <p class="text-muted">基于 RESTful 架构的随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式</p>

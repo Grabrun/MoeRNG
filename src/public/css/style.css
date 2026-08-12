@@ -412,6 +412,11 @@ pre code { background: none; color: var(--text); padding: 0; }
     text-align: center; padding: 80px 24px 60px;
     position: relative; z-index: 1;
 }
+.hero .hero-banner {
+    display: block; max-width: 560px; width: 100%;
+    margin: 0 auto 20px; border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
 .hero h1 {
     font-size: 3.5rem; font-weight: 800;
     color: var(--primary);
