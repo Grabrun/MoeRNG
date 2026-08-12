@@ -806,16 +806,19 @@ body.modal-open { overflow: hidden; }
    v1.2.0 迭代: absolute positioning — the fill fills the bar while the
    label floats above the right edge, so 100% + "正在保存…" never get
    squeezed out by the flex layout. */
-.progress-bar { display: block; position: relative; }
+.progress-bar { display: block; position: relative; overflow: visible; }
 .progress-bar .fill {
     position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
     border-radius: inherit;
 }
 .progress-bar .progress-text {
-    position: absolute; right: 4px; top: -22px;
-    font-size: 0.78rem; color: var(--text-secondary);
+    position: absolute; right: 4px; top: -24px;
+    font-size: 0.78rem; color: var(--text);
+    background: var(--bg-card); padding: 3px 10px; border-radius: 6px;
+    border: 1px solid var(--border-light);
     font-variant-numeric: tabular-nums; white-space: nowrap;
-    line-height: 1;
+    line-height: 1; z-index: 10;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
 }
 
 /* v1.2.0 迭代: pulse while the backend saves after the transfer completes */
