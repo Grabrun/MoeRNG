@@ -423,6 +423,21 @@ pre code { background: none; color: var(--text); padding: 0; }
     letter-spacing: -0.02em;
     margin-bottom: 16px;
 }
+/* v1.2.0 迭代: mobile hero — reduce padding, stack stats to 1 column,
+   shrink hero-banner rounding so it fits narrower viewports cleanly */
+@media (max-width: 768px) {
+    .hero { padding: 40px 16px 32px; }
+    .hero .hero-banner { border-radius: 12px; margin-bottom: 16px; }
+    .hero h1 { font-size: 2.25rem; margin-bottom: 8px; }
+    .hero .stats { flex-direction: column; gap: 16px; margin: 20px 0; }
+    .hero .stats .stat-value { font-size: 1.6rem; }
+    .hero .btn-group { gap: 8px; }
+}
+@media (max-width: 480px) {
+    .hero { padding: 28px 12px 24px; }
+    .hero h1 { font-size: 1.9rem; }
+    .hero .stats .stat-value { font-size: 1.4rem; }
+}
 .hero p { font-size: 1.2rem; color: var(--text-secondary); max-width: 600px; margin: 0 auto 32px; }
 .hero .btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 
