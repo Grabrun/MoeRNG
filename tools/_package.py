@@ -56,7 +56,7 @@ with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as z:
                 continue
             if rel == 'nul':
                 continue
-            if rel.startswith('.') and rel != '.htaccess':
+            if rel.startswith('.') and rel != '.htaccess' and rel != '.well-known/security.txt':
                 continue
             if not aws_allowed(rel):
                 skipped += 1
