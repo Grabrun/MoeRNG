@@ -7,7 +7,7 @@
     <script>var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentElement.setAttribute('data-theme',t);</script>
     <meta name="csrf-token" content="<?= $csrf_token ?>">
     <title><?= h($siteName) ?> - <?= h($siteSlogan) ?></title>
-    <!-- v1.2.0 迭代: PNG favicon first (modern browsers), ICO fallback, ?v= busts the browser's stubborn favicon cache -->
+    <!--: PNG favicon first (modern browsers), ICO fallback, ?v= busts the browser's stubborn favicon cache -->
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
     <meta name="description" content="<?= h($siteName) ?> - <?= h($siteSlogan) ?>。基于 RESTful 架构的随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式。">
@@ -90,7 +90,7 @@
 <body>
     <div class="toast-container"></div>
 
-    <!-- v1.1.0-beta.7: fixed top navigation bar -->
+    <!-- fixed top navigation bar -->
     <header class="site-nav">
         <a class="site-nav-brand" href="/" aria-label="返回<?= h($siteName) ?>首页" title="返回首页">
             <?php if (!empty($logoUrl)): ?>
@@ -119,7 +119,7 @@
     <main>
     <section class="hero">
         <h1 class="sr-only"><?= h($siteName) ?> - <?= h($siteSlogan) ?></h1>
-        <!-- v1.2.0 迭代: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
+        <!--: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
         <picture>
             <source srcset="/assets/banner.webp" type="image/webp">
             <img class="hero-banner" src="/assets/banner.png" width="1400" height="289" alt="<?= h($siteName) ?>" fetchpriority="high">
@@ -322,7 +322,7 @@
   "data": {
     "total_images": 1234,
     "total_categories": 15,
-    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.2.0' ?>",
+    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.2.1-beta.1' ?>",
     "storage_driver": "local"
   }
 }'>复制</button>
@@ -331,7 +331,7 @@
   "data": {
     "total_images": 1234,
     "total_categories": 15,
-    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.2.0' ?>",
+    "version": "<?= defined('APP_VERSION') ? APP_VERSION : '1.2.1-beta.1' ?>",
     "storage_driver": "local"
   }
 }</code></pre>
@@ -442,7 +442,7 @@
     <!-- Footer -->
     <footer class="footer">
             <p><?= h($siteName) ?> <?= h($copyright) ?></p>
-            <p class="mt-1">MoeRNG v<?= defined('APP_VERSION') ? APP_VERSION : '1.2.0' ?> &mdash; Open-source under MIT License</p>
+            <p class="mt-1">MoeRNG v<?= defined('APP_VERSION') ? APP_VERSION : '1.2.1-beta.1' ?> &mdash; Open-source under MIT License</p>
             <?php if (!empty($icpNumber)): ?>
             <p class="mt-1"><a href="https://beian.miit.gov.cn/" target="_blank" rel="nofollow noopener" style="color:inherit;text-decoration:none"><?= h($icpNumber) ?></a></p>
             <?php endif; ?>
