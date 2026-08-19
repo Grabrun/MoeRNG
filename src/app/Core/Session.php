@@ -13,6 +13,27 @@ class Session
             return;
         }
         if (session_status() === PHP_SESSION_NONE) {
+            // v1.2.1 security: harden the session cookie — HttpOnly + SameSite=Lax
+            // always, Secure whenever the request arrived over TLS (direct HTTPS
+            // or behind a trusted proxy that sets X-Forwarded-Proto). Also enable
+            // strict mode so PHP rejects externally-supplied session IDs (the
+            // mitigation for session fixation).
+            $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path'     => '/',
+                'domain'   => '',
+                'secure'   => $isSecure,
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
+            @ini_set('session.use_strict_mode', '1');
+            @ini_set('session.cookie_httponly', '1');
+            @ini_set('session.cookie_samesite', 'Lax');
+            if ($isSecure) {
+                @ini_set('session.cookie_secure', '1');
+            }
             session_start();
         }
         self::$started = true;

@@ -80,6 +80,11 @@ class AuthController extends Controller
 
         // Success: reset the lockout counter for this IP + audit.
         RateLimiter::reset($this->loginBucket($ip));
+        // v1.2.1 security (session fixation): rotate the session ID on login
+        // so an attacker-supplied PHPSESSID can never be used post-auth.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
         Session::set('user_id', $user->id);
         Session::set('user_role', $user->role);
         Session::set('user_name', (string) $user->username);

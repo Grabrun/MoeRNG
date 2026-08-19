@@ -136,13 +136,14 @@ class ApiController extends Controller
         $totalImages = Image::count("status = 'active'");
         $totalCategories = Category::count();
 
+        // v1.2.1 security: version / storage_driver removed from the public
+        // surface — exact build & storage-provider details help attackers
+        // target known CVEs. Keep only business counters.
         $this->json([
             'success' => true,
             'data' => [
                 'total_images' => $totalImages,
                 'total_categories' => $totalCategories,
-                'version' => defined('APP_VERSION') ? APP_VERSION : '1.2.0',
-                'storage_driver' => self::activeStorageDriver(),
             ],
         ]);
     }

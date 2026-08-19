@@ -71,10 +71,11 @@ class Request
 
     private function resolveIp(): string
     {
-        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-            return trim($ips[0]);
-        }
+        // v1.2.1 security: NEVER trust the client-supplied X-Forwarded-For —
+        // attackers can rotate it to defeat IP-based rate limiting / login
+        // lockout. The real client address is REMOTE_ADDR only (a reverse
+        // proxy layer is responsible for overwriting REMOTE_ADDR with the
+        // true peer when one is deployed).
         return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     }
 

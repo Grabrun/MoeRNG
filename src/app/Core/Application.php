@@ -38,6 +38,16 @@ class Application
         ini_set('display_errors', '0');
         ini_set('log_errors', '1');
 
+        // v1.2.1 security: baseline security headers on every response.
+        // CSP intentionally allows 'unsafe-inline' — the pages ship inline
+        // theme JS and <style> blocks; tightening it needs a refactor first.
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: DENY');
+        header('Referrer-Policy: strict-origin-when-cross-origin');
+        header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'");
+        header('X-Robots-Tag: noindex, nofollow');
+
         // Timezone
         date_default_timezone_set('Asia/Shanghai');
 

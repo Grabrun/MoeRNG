@@ -1,0 +1,5 @@
+Contact: mailto:admin@grabrun.top
+Expires: 2027-08-20T00:00:00.000Z
+Preferred-Languages: zh-CN, en
+Canonical: https://images.grabrun.top/.well-known/security.txt
+Policy: https://github.com/Grabrun/MoeRNG/security/policy

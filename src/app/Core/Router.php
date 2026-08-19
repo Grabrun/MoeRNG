@@ -73,6 +73,13 @@ class Router
         $uri = '/' . trim(parse_url($uri, PHP_URL_PATH) ?: '', '/');
         $uri = $uri === '/' ? '/' : rtrim($uri, '/');
 
+        // v1.2.1 security/info: HEAD requests are routed as GET (health
+        // checks & scanners probe with HEAD; previously every dynamic route
+        // answered 404 which also polluted monitor alerts).
+        if ($method === 'HEAD') {
+            $method = 'GET';
+        }
+
         foreach ($this->routes as $route) {
             if ($route['method'] !== $method && $route['method'] !== 'ANY') {
                 continue;
