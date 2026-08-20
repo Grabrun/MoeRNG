@@ -45,7 +45,6 @@ API = 'https://api.github.com'
 UPLOADS = 'https://uploads.github.com'
 FILES = [
     ('src/bootstrap.php', re.compile(r"(define\('APP_VERSION', ')[^']+('\))"), lambda v: r"\g<1>" + v + r"\g<2>"),
-    ('src/app/Controllers/ApiController.php', re.compile(r"('version' => defined\('APP_VERSION'\) \? APP_VERSION : ')[^']+(',)"), lambda v: r"\g<1>" + v + r"\g<2>"),
     ('src/views/home.php', re.compile(r"(\? APP_VERSION : ')[^']+(')"), lambda v: r"\g<1>" + v + r"\g<2>"),
     ('tools/_package.py', re.compile(r"(MoeRNG-v)[0-9A-Za-z.\-]+(-)"), lambda v: r"\g<1>" + v + r"\g<2>"),
 ]

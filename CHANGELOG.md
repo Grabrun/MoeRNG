@@ -2,6 +2,29 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1-beta.2] - 2026-08-20
+
+### 🔒 安全增强
+
+- 会话加固（Cookie 属性/use_strict_mode/防会话固定）
+- 限流键可信化（不信任 X-Forwarded-For）
+- 签名密钥独立化（文件存储，与 DB 完全隔离）
+- 限流 fail-closed / 全站安全响应头 / 信息泄露收敛 / security.txt
+
+### ✨ 新功能
+
+- 移动端汉堡导航（details 折叠）
+- HEAD 路由支持 / doctor 签名密钥自检
+
+### 🐛 Bug 修复
+
+- 本地图片加载失败（signing_key 生成回归）
+- 移动端 hero 布局 / banner 宽高比
+
+### 🧹 工程整理
+
+- tools/ 归档 / 根目录 assets/ 归位
+
 ## [1.2.0] - 2026-08-13
 
 ### 🔒 安全增强
