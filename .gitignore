@@ -29,6 +29,7 @@ Thumbs.db
 *.log
 tools/__pycache__/
 reference/
-1786334203712 (1).png
-1786334203712 (1).png
-1786334290474 (1).png
+
+# ── Brand design assets (user-provided source art; root-level only, NOT src/assets) ──
+/assets/
+
