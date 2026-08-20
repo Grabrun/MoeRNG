@@ -13,7 +13,28 @@
     <meta name="description" content="<?= h($siteName) ?> - <?= h($siteSlogan) ?>。基于 RESTful 架构的随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式。">
     <meta property="og:title" content="<?= h($siteName) ?> - <?= h($siteSlogan) ?>">
     <meta property="og:type" content="website">
+    <meta property="og:description" content="<?= h($siteName) ?>是一个基于 RESTful 架构的随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式返回。">
+    <meta property="og:url" content="<?= h('https://' . ($_SERVER['HTTP_HOST'] ?? 'images.grabrun.top') . '/') ?>">
+    <meta property="og:site_name" content="<?= h($siteName) ?>">
+    <meta property="og:locale" content="zh_CN">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<?= h($siteName) ?> - <?= h($siteSlogan) ?>">
+    <meta name="twitter:description" content="免费二次元图片随机获取 API 服务">
     <meta property="og:image" content="/assets/og-image.png">
+    <!-- v1.2.1 迭代: JSON-LD structured data (WebApplication) -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "<?= h($siteName) ?>",
+        "description": "随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式",
+        "url": "<?= h('https://' . ($_SERVER['HTTP_HOST'] ?? 'images.grabrun.top') . '/') ?>",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Web",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },
+        "featureList": ["随机图片获取 API", "多级分类支持", "JSON/Redirect 双模式", "速率限制保护"]
+    }
+    </script>
     <!-- preload LCP banner so the hero paints immediately -->
     <link rel="preload" as="image" href="/assets/banner.webp" fetchpriority="high">
     <link rel="stylesheet" href="/public/css/style.css">
@@ -22,6 +43,13 @@
         .hero h1 { font-size: 4rem; margin-bottom: 12px; }
         .hero .subtitle { font-size: 1.25rem; color: var(--text-secondary); margin-bottom: 8px; }
         .hero .stats { display: flex; gap: 32px; justify-content: center; margin: 32px 0; }
+        /* v1.2.1 迭代: bolder stat numbers (UI audit V2) */
+        .hero .stats .stat-value {
+            font-size: 2.4rem; font-weight: 800; line-height: 1.15;
+            background: linear-gradient(135deg, var(--primary), #ffb3d0);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent; color: var(--primary);
+        }
         .hero .stat { text-align: center; }
         .hero .stat .num { font-size: 2rem; font-weight: 700; color: var(--primary); }
         .hero .stat .label { font-size: 0.85rem; color: var(--text-muted); }
@@ -114,6 +142,9 @@
 <body>
     <div class="toast-container"></div>
 
+    <!-- v1.2.1 迭代: skip link for keyboard / screen-reader users -->
+    <a href="#main-content" class="skip-link">跳到主要内容</a>
+
     <!-- fixed top navigation bar -->
     <header class="site-nav">
         <a class="site-nav-brand" href="/" aria-label="返回<?= h($siteName) ?>首页" title="返回首页">
@@ -143,13 +174,13 @@
     </header>
 
     <!-- Hero + main content (a11y: <main>, h1 + sr-only keeps SEO while banner visually carries the title) -->
-    <main>
+    <main id="main-content">
     <section class="hero">
         <h1 class="sr-only"><?= h($siteName) ?> - <?= h($siteSlogan) ?></h1>
         <!--: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
         <picture>
             <source srcset="/assets/banner.webp" type="image/webp">
-            <img class="hero-banner" src="/assets/banner.png" width="1400" height="466" alt="<?= h($siteName) ?>" fetchpriority="high">
+            <img class="hero-banner" src="/assets/banner.png" width="1400" height="466" alt="<?= h($siteName) ?>随机二次元图片 API 服务" fetchpriority="high">
         </picture>
         <div class="stats">
             <div class="stat">
@@ -172,12 +203,13 @@
         </div>
 
         <!-- Random image demo: proves the API works right from the hero -->
-        <div class="random-demo reveal">
+        <div class="random-demo reveal" role="region" aria-label="随机图片生成器">
             <div class="rd-preview">
                 <div class="rd-placeholder" id="rd-placeholder">点「试试手气」，从 API 随机取一张图</div>
-                <img id="rd-image" src="" alt="随机图片" style="display:none">
+                <img id="rd-image" src="" alt="随机图片（点击查看大图）" style="display:none" class="rd-image-preview">
                 <div class="rd-loading hidden" id="rd-loading"><span class="spinner"></span></div>
             </div>
+            <div class="rd-meta hidden" id="rd-meta" style="font-size:.82rem;color:var(--text-secondary);margin-top:8px"></div>
             <div class="rd-footer">
                 <label for="rd-category" class="sr-only">随机图分类筛选</label>
                 <select class="form-control" id="rd-category" style="width:150px;flex-shrink:0">
@@ -188,8 +220,21 @@
                 </select>
                 <button class="btn btn-primary btn-sm" id="rd-run"><?= icon('dice', 16) ?> 试试手气</button>
                 <span class="rd-url" id="rd-url">-</span>
-                <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接"><?= icon('copy', 16) ?></button>
+                <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 16) ?></button>
+                <!-- v1.2.1 迭代: view-large / download / history for the random demo -->
+                <button type="button" class="btn btn-outline btn-sm" id="rd-zoom" aria-label="查看大图" title="查看大图" style="display:none"><?= icon('eye', 16) ?></button>
+                <button type="button" class="btn btn-outline btn-sm" id="rd-download" aria-label="下载图片" title="下载图片" style="display:none"><?= icon('download', 16) ?></button>
             </div>
+            <div class="rd-history" id="rd-history" style="display:none;margin-top:12px">
+                <p class="text-muted" style="font-size:.82rem;margin-bottom:6px">最近记录</p>
+                <div id="rd-history-list" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+            </div>
+        </div>
+
+        <!-- v1.2.1 迭代: lightbox for the random demo image -->
+        <div class="lb-overlay hidden" id="rd-lightbox" role="dialog" aria-modal="true" aria-label="图片大图预览">
+            <img id="rd-lb-img" src="" alt="大图预览">
+            <button type="button" class="lb-close" id="rd-lb-close" aria-label="关闭预览"><?= icon('x', 24) ?></button>
         </div>
     </section>
 

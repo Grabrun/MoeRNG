@@ -1127,6 +1127,89 @@ function initRandomDemo() {
     const catSel = document.getElementById('rd-category');
     const loading = document.getElementById('rd-loading');
     const placeholder = document.getElementById('rd-placeholder');
+    const metaEl = document.getElementById('rd-meta');
+    const zoomBtn = document.getElementById('rd-zoom');
+    const dlBtn = document.getElementById('rd-download');
+    const lb = document.getElementById('rd-lightbox');
+    const lbImg = document.getElementById('rd-lb-img');
+    const lbClose = document.getElementById('rd-lb-close');
+    const historyBox = document.getElementById('rd-history');
+    const historyList = document.getElementById('rd-history-list');
+
+    const HISTORY_KEY = 'moerng_random_history';
+    let currentUrl = '';
+    let currentName = '';
+
+    function saveHistory(url, category) {
+        try {
+            let h = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+            h = h.filter(x => x.url !== url);
+            h.unshift({ url, category, time: Date.now() });
+            if (h.length > 10) h = h.slice(0, 10);
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+            renderHistory();
+        } catch (e) { /* private mode etc. — ignore */ }
+    }
+    function renderHistory() {
+        if (!historyList) return;
+        let h = [];
+        try { h = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch (e) {}
+        if (!h.length) { if (historyBox) historyBox.style.display = 'none'; return; }
+        if (historyBox) historyBox.style.display = '';
+        historyList.innerHTML = '';
+        h.forEach(item => {
+            const thumb = document.createElement('img');
+            thumb.src = item.url; thumb.alt = '历史图片';
+            thumb.style.cssText = 'width:44px;height:44px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border)';
+            thumb.addEventListener('click', () => showImage(item.url, item.category || ''));
+            historyList.appendChild(thumb);
+        });
+    }
+    function showImage(url, category) {
+        currentUrl = url;
+        currentName = (category ? category + '-' : '') + 'random.' + (url.split('.').pop() || 'jpg');
+        imgBox.src = url;
+        imgBox.alt = category ? '随机图片：' + category : '随机图片';
+        imgBox.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+        if (urlEl) urlEl.textContent = url;
+        if (zoomBtn) zoomBtn.style.display = '';
+        if (dlBtn) dlBtn.style.display = '';
+        if (metaEl) {
+            metaEl.textContent = '图片ID: ' + (url.split('&s=')[0].split('&e=')[0].split('p=')[1] ? '已签名' : '') + (category ? ' · 分类: ' + category : '');
+            metaEl.classList.remove('hidden');
+        }
+        saveHistory(url, category);
+    }
+
+    // v1.2.1 迭代: view-large (lightbox)
+    if (zoomBtn && imgBox) {
+        imgBox.addEventListener('click', () => {
+            if (!currentUrl) return;
+            if (lbImg) lbImg.src = currentUrl;
+            if (lb) lb.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        });
+    }
+    if (lbClose && lb) {
+        lbClose.addEventListener('click', closeLb);
+        lb.addEventListener('click', (e) => { if (e.target === lb) closeLb(); });
+    }
+    function closeLb() {
+        if (lb) lb.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && lb && !lb.classList.contains('hidden')) closeLb(); });
+
+    // v1.2.1 迭代: download button
+    if (dlBtn) {
+        dlBtn.addEventListener('click', () => {
+            if (!currentUrl) return;
+            const a = document.createElement('a');
+            a.href = currentUrl; a.download = currentName; a.rel = 'noopener';
+            document.body.appendChild(a); a.click(); a.remove();
+        });
+    }
 
     btn?.addEventListener('click', async function() {
         btn.disabled = true;
@@ -1141,11 +1224,7 @@ function initRandomDemo() {
             const resp = await fetch('/api/v1/random?' + params.toString());
             const data = await resp.json();
             if (!data.success || !data.data || !data.data.url) throw new Error(data.message || '请求失败');
-            imgBox.src = data.data.url;
-            imgBox.alt = data.data.category || '随机图片';
-            imgBox.style.display = 'block';
-            if (placeholder) placeholder.style.display = 'none';
-            if (urlEl) urlEl.textContent = data.data.url;
+            showImage(data.data.url, data.data.category || '');
         } catch (e) {
             imgBox.style.opacity = '1';
             imgBox.src = '';
@@ -1159,6 +1238,8 @@ function initRandomDemo() {
             imgBox.style.opacity = '1';
         }
     });
+
+    renderHistory();
 }
 
 // Mobile drawer sidebar (hamburger + backdrop).
