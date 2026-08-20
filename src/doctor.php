@@ -499,6 +499,22 @@ check('Signed links (short-lived)', is_file(__DIR__ . '/app/Controllers/FileCont
         ? 'present — local /files endpoint + object-storage presign (no proxy)'
         : 'MISSING — file URLs would fall back to permanent links', true);
 
+// v1.2.1 迭代: signing key must be STABLE across processes — a per-request
+// random key breaks every /files URL. Verify sign()==verify() round-trip.
+try {
+    $probePath = 'doctor-sign-roundtrip-' . bin2hex(random_bytes(4));
+    $probeExp = time() + 300;
+    $sig = \App\Storage\SignedUrl::sign($probePath, $probeExp);
+    $roundTrip = \App\Storage\SignedUrl::verify($probePath, $probeExp, $sig);
+    $stable = \App\Storage\SignedUrl::sign($probePath, $probeExp) === $sig;
+    check('Signing key stable + round-trip', $roundTrip && $stable,
+        ($roundTrip ? 'round-trip OK' : 'SIGN/VERIFY MISMATCH — broken signatures') . '; '
+        . ($stable ? 'secret stable' : 'SECRET CHANGES PER CALL — config/ may be unwritable'),
+        true);
+} catch (\Throwable $e) {
+    check('Signing key stable + round-trip', false, 'exception: ' . $e->getMessage(), true);
+}
+
 /* ------------------------------------------------------------------ */
 section('Session persistence');
 
