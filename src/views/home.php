@@ -43,6 +43,30 @@
             background: color-mix(in srgb, var(--bg) 84%, transparent);
             border-bottom: 1px solid var(--border);
         }
+        /* v1.2.0 迭代: mobile nav — collapse 5 links into a hamburger button
+           so the fixed header stops hogging space and overlapping content. */
+        .site-nav-menu > summary { display: none; cursor: pointer; list-style: none; }
+        .site-nav-menu > summary::-webkit-details-marker { display: none; }
+        .site-nav-menu > summary svg { display: block; }
+        @media (max-width: 768px) {
+            .site-nav { gap: 8px; }
+            .site-nav-menu > summary {
+                display: inline-flex; align-items: center; justify-content: center;
+                width: 40px; height: 40px; border-radius: var(--radius-sm);
+                color: var(--text); margin-left: auto;
+            }
+            .site-nav-menu > summary:hover { background: var(--bg-card); }
+            .site-nav-links {
+                position: absolute; top: 56px; left: 0; right: 0;
+                background: var(--bg); border-bottom: 1px solid var(--border);
+                padding: 12px 20px; display: none;
+                flex-direction: column; align-items: stretch; gap: 4px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+            }
+            .site-nav-menu[open] .site-nav-links { display: flex; }
+            .site-nav-links a { padding: 10px 12px; border-radius: var(--radius-sm); }
+            .site-nav-links a:hover { background: var(--bg-card); }
+        }
         .site-nav-brand {
             display: inline-flex; align-items: center; gap: 8px;
             text-decoration: none; color: var(--text);
@@ -99,16 +123,19 @@
             <span><?= h($siteName) ?></span>
             <?php endif; ?>
         </a>
-        <nav class="site-nav-links">
-            <a href="/" class="active">首页</a>
-            <a href="/#docs">API 文档</a>
-            <a href="/#tester">在线测试</a>
-            <a href="/#about">关于</a>
-            <?php if (!empty($githubUrl)): ?>
-            <a href="<?= h($githubUrl) ?>" target="_blank" rel="noopener nofollow">GitHub</a>
-            <?php endif; ?>
-            <a href="/admin">管理面板</a>
-        </nav>
+        <details class="site-nav-menu">
+            <summary aria-label="打开菜单"><?= icon('menu', 22) ?></summary>
+            <nav class="site-nav-links">
+                <a href="/" class="active">首页</a>
+                <a href="/#docs">API 文档</a>
+                <a href="/#tester">在线测试</a>
+                <a href="/#about">关于</a>
+                <?php if (!empty($githubUrl)): ?>
+                <a href="<?= h($githubUrl) ?>" target="_blank" rel="noopener nofollow">GitHub</a>
+                <?php endif; ?>
+                <a href="/admin">管理面板</a>
+            </nav>
+        </details>
         <button type="button" class="theme-toggle theme-toggle-float" id="theme-toggle" aria-label="切换深浅主题" title="切换深浅主题">
             <span class="ic icon-sun"><?= icon('sun', 20) ?></span>
             <span class="ic icon-moon"><?= icon('moon', 20) ?></span>
