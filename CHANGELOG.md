@@ -2,7 +2,7 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [1.2.1-beta.2] - 2026-08-20
+## [1.2.1-beta.1] - 2026-08-20
 
 ### 🔒 安全增强
 
