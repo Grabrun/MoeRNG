@@ -501,10 +501,10 @@ check('Signed links (short-lived)', is_file(__DIR__ . '/app/Controllers/FileCont
 
 // v1.2.1 迭代: signing key must be STABLE and INDEPENDENT (no DB fallback).
 // Verify sign()==verify() round-trip + a second sign() for stability.
-$keyFileProbe = __DIR__ . '/config/signing_key.php';
-check('Signing key file (config/signing_key.php)',
-    is_file($keyFileProbe),
-    is_file($keyFileProbe) ? 'present — independent HMAC key' : 'MISSING — auto-generated on first use; config/ must be writable',
+$dbKeyProbe = (string) \App\Models\Setting::get('signing_key', '');
+check('Signing key (DB settings.signing_key)',
+    $dbKeyProbe !== '',
+    $dbKeyProbe !== '' ? 'present — independent HMAC key stored in DB' : 'MISSING — auto-generated on first use',
     true);
 try {
     $probePath = 'doctor-sign-roundtrip-' . bin2hex(random_bytes(4));

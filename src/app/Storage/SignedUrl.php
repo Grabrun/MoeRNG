@@ -12,14 +12,15 @@ namespace App\Storage;
 class SignedUrl
 {
     /**
-     * Per-deploy secret from config/signing_key.php (auto-generated).
+     * HMAC signing secret, stored in the DATABASE (settings.signing_key).
      *
-     * v1.2.1 security (audit V-01, strict): the signing key is FULLY
-     * independent — there is NO database-password derivation fallback.
-     * If the key file cannot be created (unwritable config/ dir) we fail
-     * loudly with a RuntimeException: the operator must fix permissions.
-     * (The installer already wrote config/database.php, so config/ is
-     * writable on every normal install — this only trips on broken setups.)
+     * v1.2.1 security (audit V-01): the signing key is FULLY independent —
+     * there is NO database-PASSWORD derivation. Resolution order:
+     *   1) settings.signing_key (authoritative storage)
+     *   2) legacy config/signing_key.php → migrated into settings on first
+     *      access (keeps already-issued URLs valid), then the file is removed
+     *   3) fresh random 256-bit key persisted to settings
+     * Any failure to read/write settings surfaces as an exception (loud).
      */
     public static function secret(): string
     {
@@ -27,31 +28,28 @@ class SignedUrl
         if ($secret !== null) {
             return $secret;
         }
+        // 1) DB-backed key (settings table).
+        $stored = (string) \App\Models\Setting::get('signing_key', '');
+        if ($stored !== '') {
+            $secret = $stored;
+            return $secret;
+        }
+        // 2) Legacy file key → migrate into the DB (keeps URLs valid).
         $keyFile = dirname(__DIR__, 2) . '/config/signing_key.php';
         if (is_file($keyFile)) {
             $cfg = include $keyFile;
-            $secret = (string) ($cfg['signing_key'] ?? '');
-            if ($secret !== '') {
+            $fileKey = (string) ($cfg['signing_key'] ?? '');
+            if ($fileKey !== '') {
+                \App\Models\Setting::set('signing_key', $fileKey);
+                @unlink($keyFile); // file superseded by DB storage
+                $secret = $fileKey;
                 return $secret;
             }
         }
-        // Generate a fresh random key and persist it.
+        // 3) Generate a fresh random key and persist it in the DB.
         $newKey = bin2hex(random_bytes(32));
-        $ok = @file_put_contents(
-            $keyFile,
-            "<?php\n\nreturn ['signing_key' => '{$newKey}'];\n",
-            LOCK_EX
-        );
-        if ($ok === false) {
-            throw new \RuntimeException(
-                '[MoeRNG] Cannot write ' . $keyFile . ' — make config/ writable '
-                . 'so the HMAC signing key can be persisted (no DB fallback).'
-            );
-        }
-        // Re-read to survive concurrent first calls that raced each other.
-        $re = @include $keyFile;
-        $written = is_array($re) ? (string) ($re['signing_key'] ?? '') : '';
-        $secret = $written !== '' ? $written : $newKey;
+        \App\Models\Setting::set('signing_key', $newKey);
+        $secret = $newKey;
         return $secret;
     }
 
