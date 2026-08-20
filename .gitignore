@@ -1,5 +1,6 @@
 # ── Deploy-time generated / sensitive ────────────────────────────────
 src/config/database.php          # DB credentials (written by the installer)
+src/config/signing_key.php        # HMAC signing key (auto-generated on first use)
 src/public/uploads/              # uploaded images
 src/var/                        # rate-limit counters
 backups/                        # backup archives

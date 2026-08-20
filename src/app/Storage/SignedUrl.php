@@ -4,26 +4,46 @@ declare(strict_types=1);
 namespace App\Storage;
 
 /**
- * 临时链接签名工具（v1.2.0 迭代）：
+ * 临时链接签名工具（v1.2.0 迭代，v1.2.1 安全加固）：
  * - 本地存储下载端点 /files 使用 HMAC-SHA256 签名（key = expires + path）
- * - secret 由数据库密码派生（部署不换库则签名稳定，无需新增配置）
+ * - secret 使用独立随机签名密钥（config/signing_key.php，首次调用自动生成），
+ *   不再从数据库密码派生——DB 密码泄露不再等于签名密钥泄露（审计 V-01）
  */
 class SignedUrl
 {
-    /** Stable per-deploy secret derived from the DB password. */
+    /** Per-deploy secret from config/signing_key.php (auto-generated). */
     public static function secret(): string
     {
         static $secret = null;
         if ($secret !== null) {
             return $secret;
         }
-        $dbConfig = dirname(__DIR__, 2) . '/config/database.php';
-        $password = '';
-        if (is_file($dbConfig)) {
-            $cfg = include $dbConfig;
-            $password = (string) ($cfg['password'] ?? '');
+        $keyFile = dirname(__DIR__, 2) . '/config/signing_key.php';
+        if (is_file($keyFile)) {
+            $cfg = include $keyFile;
+            $secret = (string) ($cfg['signing_key'] ?? '');
         }
-        $secret = hash('sha256', 'moerng-signed-url:' . $password);
+        if ($secret === '') {
+            // First deploy (or upgrade): generate a fresh random key. If the
+            // file can't be written we fall back to the legacy DB-derived
+            // secret so downloads keep working instead of locking everyone out.
+            $secret = bin2hex(random_bytes(32));
+            try {
+                file_put_contents(
+                    $keyFile,
+                    "<?php\n\nreturn ['signing_key' => '{$secret}'];\n",
+                    LOCK_EX
+                );
+            } catch (\Throwable) {
+                $dbConfig = dirname(__DIR__, 2) . '/config/database.php';
+                $password = '';
+                if (is_file($dbConfig)) {
+                    $cfg = include $dbConfig;
+                    $password = (string) ($cfg['password'] ?? '');
+                }
+                $secret = hash('sha256', 'moerng-signed-url:' . $password);
+            }
+        }
         return $secret;
     }
 

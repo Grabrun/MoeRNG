@@ -20,9 +20,11 @@ class RateLimiter
     {
         $dir = dirname(__DIR__, 2) . '/var/rate-limit';
         if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
-            // Degrade gracefully: if we cannot write counters, allow through
-            // (fail-open) — a broken limiter must not lock everyone out.
-            return '';
+            // v1.2.1 security (audit V-02): fail-CLOSED — an unusable limiter
+            // must deny (login lockout stays effective) instead of silently
+            // allowing every request through. Log loudly for ops.
+            @error_log('[MoeRNG] Rate limiter directory unavailable: ' . $dir);
+            return "\x00FAIL";
         }
         return $dir;
     }
@@ -35,8 +37,8 @@ class RateLimiter
     public static function hit(string $bucket, int $limit, int $windowSeconds): array
     {
         $dir = self::dir();
-        if ($dir === '') {
-            return [true, $limit, 0];
+        if ($dir === "\x00FAIL") {
+            return [false, 0, 0]; // fail-closed (audit V-02)
         }
         $file = $dir . '/' . md5($bucket) . '.json';
         $now = time();
@@ -73,8 +75,8 @@ class RateLimiter
     public static function peek(string $bucket, int $limit, int $windowSeconds): array
     {
         $dir = self::dir();
-        if ($dir === '') {
-            return [true, $limit, 0];
+        if ($dir === "\x00FAIL") {
+            return [false, 0, 0]; // fail-closed (audit V-02)
         }
         $file = $dir . '/' . md5($bucket) . '.json';
         $now = time();
@@ -101,7 +103,7 @@ class RateLimiter
     public static function reset(string $bucket): void
     {
         $dir = self::dir();
-        if ($dir === '') {
+        if ($dir === '' || $dir === "\x00FAIL") {
             return;
         }
         $file = $dir . '/' . md5($bucket) . '.json';
