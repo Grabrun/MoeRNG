@@ -11,7 +11,16 @@ namespace App\Storage;
  */
 class SignedUrl
 {
-    /** Per-deploy secret from config/signing_key.php (auto-generated). */
+    /**
+     * Per-deploy secret from config/signing_key.php (auto-generated).
+     *
+     * v1.2.1 security (audit V-01, strict): the signing key is FULLY
+     * independent — there is NO database-password derivation fallback.
+     * If the key file cannot be created (unwritable config/ dir) we fail
+     * loudly with a RuntimeException: the operator must fix permissions.
+     * (The installer already wrote config/database.php, so config/ is
+     * writable on every normal install — this only trips on broken setups.)
+     */
     public static function secret(): string
     {
         static $secret = null;
@@ -22,35 +31,27 @@ class SignedUrl
         if (is_file($keyFile)) {
             $cfg = include $keyFile;
             $secret = (string) ($cfg['signing_key'] ?? '');
-        }
-        if ($secret === '') {
-            // First deploy (or upgrade): generate a fresh random key.
-            $newKey = bin2hex(random_bytes(32));
-            $ok = @file_put_contents(
-                $keyFile,
-                "<?php\n\nreturn ['signing_key' => '{$newKey}'];\n",
-                LOCK_EX
-            );
-            if ($ok !== false) {
-                // Written (or already exists — re-read to survive concurrent
-                // first calls that raced each other).
-                $re = @include $keyFile;
-                $written = is_array($re) ? (string) ($re['signing_key'] ?? '') : '';
-                $secret = $written !== '' ? $written : $newKey;
-            } else {
-                // Write failed (unwritable config dir) → fall back to the
-                // DETERMINISTIC legacy DB-derived secret so every process
-                // derives the SAME key and signatures keep verifying.
-                // (A random per-request key would break every /files URL.)
-                $dbConfig = dirname(__DIR__, 2) . '/config/database.php';
-                $password = '';
-                if (is_file($dbConfig)) {
-                    $cfg = include $dbConfig;
-                    $password = (string) ($cfg['password'] ?? '');
-                }
-                $secret = hash('sha256', 'moerng-signed-url:' . $password);
+            if ($secret !== '') {
+                return $secret;
             }
         }
+        // Generate a fresh random key and persist it.
+        $newKey = bin2hex(random_bytes(32));
+        $ok = @file_put_contents(
+            $keyFile,
+            "<?php\n\nreturn ['signing_key' => '{$newKey}'];\n",
+            LOCK_EX
+        );
+        if ($ok === false) {
+            throw new \RuntimeException(
+                '[MoeRNG] Cannot write ' . $keyFile . ' — make config/ writable '
+                . 'so the HMAC signing key can be persisted (no DB fallback).'
+            );
+        }
+        // Re-read to survive concurrent first calls that raced each other.
+        $re = @include $keyFile;
+        $written = is_array($re) ? (string) ($re['signing_key'] ?? '') : '';
+        $secret = $written !== '' ? $written : $newKey;
         return $secret;
     }
 
