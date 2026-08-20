@@ -122,7 +122,7 @@
         <!--: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
         <picture>
             <source srcset="/assets/banner.webp" type="image/webp">
-            <img class="hero-banner" src="/assets/banner.png" width="1400" height="289" alt="<?= h($siteName) ?>" fetchpriority="high">
+            <img class="hero-banner" src="/assets/banner.png" width="1400" height="466" alt="<?= h($siteName) ?>" fetchpriority="high">
         </picture>
         <div class="stats">
             <div class="stat">
