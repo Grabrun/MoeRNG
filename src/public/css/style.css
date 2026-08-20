@@ -416,6 +416,12 @@ pre code { background: none; color: var(--text); padding: 0; }
     display: block; max-width: 880px; width: 100%;
     margin: 0 auto 24px; border-radius: 18px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    /* v1.2.0 迭代: lock the box to the asset's true aspect ratio so the
+       rendered area matches the actual artwork and there is no top/bottom
+       padding (the "orange band" left by the browser when only width is
+       scaled). Matches the real 1400x466 asset. */
+    aspect-ratio: 1400 / 466;
+    height: auto;
 }
 .hero h1 {
     font-size: 3.5rem; font-weight: 800;
