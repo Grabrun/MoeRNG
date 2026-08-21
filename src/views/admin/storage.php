@@ -156,7 +156,7 @@
                     </div>
                     <div class="form-group pv-field" data-field="source_domain">
                         <label class="pv-label">自定义源站域名（可选）</label><span class="pv-req" style="color:var(--danger)"> *</span>
-                        <input type="text" name="cfg_source_domain" id="profile-cfg-source-domain" class="form-control" placeholder="images-cos.grabrun.top">
+                        <input type="text" name="cfg_source_domain" id="profile-cfg-source-domain" class="form-control" placeholder="img.example.com">
                     </div>
                     <div class="form-group pv-field" data-field="signed_ttl">
                         <label class="pv-label">签名链接有效期（秒）</label><span class="pv-req" style="color:var(--danger)"> *</span>

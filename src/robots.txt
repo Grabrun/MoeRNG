@@ -4,4 +4,4 @@ Disallow: /api/
 Disallow: /admin/
 Disallow: /files/
 
-Sitemap: https://images.grabrun.top/sitemap.xml
+Sitemap: https://your-domain.com/sitemap.xml

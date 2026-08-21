@@ -14,7 +14,7 @@
     <meta property="og:title" content="<?= h($siteName) ?> - <?= h($siteSlogan) ?>">
     <meta property="og:type" content="website">
     <meta property="og:description" content="<?= h($siteName) ?>是一个基于 RESTful 架构的随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式返回。">
-    <meta property="og:url" content="<?= h('https://' . ($_SERVER['HTTP_HOST'] ?? 'images.grabrun.top') . '/') ?>">
+    <meta property="og:url" content="<?= h('https://' . ($_SERVER['HTTP_HOST'] ?? 'example.com') . '/') ?>">
     <meta property="og:site_name" content="<?= h($siteName) ?>">
     <meta property="og:locale" content="zh_CN">
     <meta name="twitter:card" content="summary_large_image">
@@ -28,7 +28,7 @@
         "@type": "WebApplication",
         "name": "<?= h($siteName) ?>",
         "description": "随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式",
-        "url": "<?= h('https://' . ($_SERVER['HTTP_HOST'] ?? 'images.grabrun.top') . '/') ?>",
+        "url": "<?= h('https://' . ($_SERVER['HTTP_HOST'] ?? 'example.com') . '/') ?>",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Web",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },

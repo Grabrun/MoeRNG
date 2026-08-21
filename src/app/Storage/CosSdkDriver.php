@@ -73,7 +73,7 @@ class CosSdkDriver implements StorageInterface
         }
         require_once dirname(__DIR__, 2) . '/sdk/cos/vendor/autoload.php';
         // v1.2.1: when the operator has bound a custom source domain (e.g.
-        // images-cos.grabrun.top → moerng-xxx.cos.ap-chengdu.myqcloud.com
+        // img.example.com → moerng-xxx.cos.ap-chengdu.myqcloud.com
         // in the COS console), pass it as the SDK `domain` so every request
         // host — including the presigned URL — is that custom domain.
         $config = [

@@ -4,7 +4,7 @@
 
 ## 1. 宝塔「伪静态」配置（v1.2.1-beta.2 起）
 
-**宝塔面板 → 网站（images.grabrun.top）→ 设置 → 伪静态**，整段替换为：
+**宝塔面板 → 网站（你的域名）→ 设置 → 伪静态**，整段替换为：
 
 ```nginx
 location ~ ^/(config|app|views|releases|backups|var)/ { deny all; return 404; }

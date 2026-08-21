@@ -14,21 +14,21 @@
 server {
     listen       80;
     listen       443 ssl http2;
-    server_name  images.grabrun.top;
+    server_name  your-domain.com;
 
-    root         /www/wwwroot/images.grabrun.top;
+    root         /www/wwwroot/your-domain.com;
     index        index.php index.html;
 
     charset      utf-8;
 
-    # ssl_certificate     /www/server/panel/vhost/cert/images.grabrun.top/fullchain.pem;
-    # ssl_certificate_key /www/server/panel/vhost/cert/images.grabrun.top/privkey.pem;
+    # ssl_certificate     /www/server/panel/vhost/cert/your-domain.com/fullchain.pem;
+    # ssl_certificate_key /www/server/panel/vhost/cert/your-domain.com/privkey.pem;
 
     # Image uploads: keep in sync with php.ini upload_max_filesize / post_max_size
     client_max_body_size 50m;
 
-    access_log /www/wwwlogs/images.grabrun.top.log;
-    error_log  /www/wwwlogs/images.grabrun.top.error.log;
+    access_log /www/wwwlogs/your-domain.com.log;
+    error_log  /www/wwwlogs/your-domain.com.error.log;
 
     # -------------------------------------------------------------------------
     # Denied paths. These MUST appear before the "\.php$" block, because regex
