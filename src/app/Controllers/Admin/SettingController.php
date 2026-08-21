@@ -33,9 +33,11 @@ class SettingController extends Controller
      * Rules: required, max, min, numeric, integer, email, url, in:[a,b]
      */
     public const GROUPS = [
-        'site' => [
-            'label' => '站点信息',
-            'desc' => '站点名称、Logo、备案与版权等基础信息',
+        // v1.2.1 迭代: regrouped per settings-optimization doc —
+        // 基础设置 / 安全设置 / 媒体与缓存 / 邮件与备份 (4 smart groups).
+        'basic' => [
+            'label' => '基础设置',
+            'desc' => '站点名称、Logo、备案、版权等基础信息',
             'fields' => [
                 'site_name' => ['type' => 'text', 'label' => '网站名称', 'default' => 'MoeRNG', 'maxlength' => 100, 'rules' => ['required' => true, 'max' => 100], 'help' => '显示在浏览器标题、首页与页脚'],
                 'site_slogan' => ['type' => 'text', 'label' => '网站标语', 'default' => '随机二次元图片 API 服务', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '首页 hero 区域副标题'],
@@ -44,40 +46,35 @@ class SettingController extends Controller
                 'icp_number' => ['type' => 'text', 'label' => 'ICP 备案号', 'default' => '', 'maxlength' => 64, 'rules' => ['max' => 64], 'help' => '仅中国大陆部署需要；如 粤ICP备xxxxxxxx号，留空不显示'],
                 'copyright' => ['type' => 'text', 'label' => '版权信息', 'default' => '© {year} MoeRNG. All rights reserved.', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '页脚版权文字；{year} 会自动替换为当前年份'],
                 'footer_html' => ['type' => 'textarea', 'label' => '页脚自定义信息', 'default' => '', 'maxlength' => 1000, 'rules' => ['max' => 1000], 'help' => '页脚底部追加的纯文本（自动转义），支持多行'],
-                'cdn_url' => ['type' => 'text', 'label' => 'CDN 加速域名', 'default' => '', 'maxlength' => 200, 'rules' => ['url' => true, 'max' => 200], 'help' => '配置后图片 URL 将通过 CDN 域名提供（本地与对象存储均支持）'],
                 'github_url' => ['type' => 'text', 'label' => 'GitHub 仓库地址', 'default' => '', 'maxlength' => 200, 'rules' => ['url' => true, 'max' => 200], 'help' => '填后顶部导航显示 GitHub 入口与「关于」区的开源链接；留空不显示'],
                 'per_page' => ['type' => 'number', 'label' => '每页图片数', 'default' => '20', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 100], 'help' => '后台图片列表与分类每页显示数量'],
             ],
         ],
         'security' => [
-            'label' => '安全与访问',
-            'desc' => '登录验证码、失败锁定与 API 频率限制',
+            'label' => '安全设置',
+            'desc' => '登录安全、API 认证与访问控制',
             'fields' => [
                 'login_captcha' => ['type' => 'toggle', 'label' => '登录验证码', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后登录页显示图形验证码（需 GD 扩展）'],
                 'login_max_attempts' => ['type' => 'number', 'label' => '登录失败最大次数', 'default' => '5', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 20], 'help' => '同一 IP 在窗口期内连续失败达到次数后锁定登录'],
                 'login_lockout_minutes' => ['type' => 'number', 'label' => '锁定时间（分钟）', 'default' => '15', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1440], 'help' => '锁定期内该 IP 无法登录（成功登录自动重置计数）'],
                 'api_rate_limit_enabled' => ['type' => 'toggle', 'label' => '接口频率限制', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '对公开 API（/api/v1）按 IP 限流，防止滥用'],
                 'api_rate_limit_per_minute' => ['type' => 'number', 'label' => '每分钟最大请求数', 'default' => '100', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1000], 'help' => '单个 IP 每分钟允许的请求数（仅限流开启时生效）'],
-                // v1.2.1 迭代: optional API-Key gate (settings optimization doc).
                 'api_key_auth_required' => ['type' => 'toggle', 'label' => 'API Key 认证（实验性）', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后公开 API 必须携带有效 X-API-Key 头；默认关闭（公开 API 保持开放）'],
-                // v1.2.1 迭代: audit log retention (settings optimization doc).
-                'audit_log_retention_days' => ['type' => 'number', 'label' => '操作日志保留天数', 'default' => '90', 'rules' => ['numeric' => true, 'min' => 7, 'max' => 3650], 'help' => '超过该天数的操作日志自动清理；0 表示不清理'],
-                // v1.2.1 迭代: CORS origins (settings optimization doc).
                 'cors_origins' => ['type' => 'text', 'label' => 'CORS 允许来源', 'default' => '', 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => '逗号分隔的域名白名单，如 https://a.com,https://b.com；留空=不发送 CORS 头（浏览器默认同源限制）'],
+                'audit_log_retention_days' => ['type' => 'number', 'label' => '操作日志保留天数', 'default' => '90', 'rules' => ['numeric' => true, 'min' => 7, 'max' => 3650], 'help' => '超过该天数的操作日志自动清理；0 表示不清理'],
             ],
         ],
-        'performance' => [
-            'label' => '性能与缓存',
-            'desc' => '输出压缩与缓存参数',
+        'media' => [
+            'label' => '媒体与缓存',
+            'desc' => '图片 CDN 域名与输出压缩',
             'fields' => [
-                // v1.2.1 迭代: cache_ttl removed — it was a reserved placeholder
-                // with no backing implementation (settings optimization doc).
+                'cdn_url' => ['type' => 'text', 'label' => 'CDN 加速域名', 'default' => '', 'maxlength' => 200, 'rules' => ['url' => true, 'max' => 200], 'help' => '配置后图片 URL 将通过 CDN 域名提供（本地与对象存储均支持）'],
                 'gzip_level' => ['type' => 'select', 'label' => 'Gzip 压缩级别', 'default' => '6', 'options' => ['0' => '0 - 不压缩', '1' => '1 - 最快', '4' => '4 - 平衡', '6' => '6 - 推荐', '9' => '9 - 最小体积'], 'rules' => ['in:0,1,4,6,9'], 'help' => '页面/API 输出 Gzip 压缩级别；0 关闭'],
             ],
         ],
-        'mail' => [
-            'label' => '邮件与通知',
-            'desc' => 'SMTP 服务器参数与通知开关',
+        'mailbackup' => [
+            'label' => '邮件与备份',
+            'desc' => 'SMTP 通知与自动备份',
             'fields' => [
                 'mail_enabled' => ['type' => 'toggle', 'label' => '邮件通知开关', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '总开关：关闭后所有邮件通知不发送'],
                 'mail_host' => ['type' => 'text', 'label' => 'SMTP 服务器', 'default' => '', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '如 smtp.qq.com / smtp.exmail.qq.com'],
@@ -89,12 +86,6 @@ class SettingController extends Controller
                 'mail_from_name' => ['type' => 'text', 'label' => '发件人名称', 'default' => 'MoeRNG', 'maxlength' => 100, 'rules' => ['max' => 100], 'help' => '如 MoeRNG / 图片服务'],
                 'mail_test_to' => ['type' => 'email', 'label' => '测试收件邮箱', 'default' => '', 'rules' => ['email' => true, 'max' => 200], 'help' => '点「发送测试邮件」时的收件人，配置完成后建议先测试'],
                 'mail_notify_backup' => ['type' => 'toggle', 'label' => '备份完成通知', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '自动备份完成后向「测试收件邮箱」发送通知邮件'],
-            ],
-        ],
-        'backup' => [
-            'label' => '备份与恢复',
-            'desc' => '数据库与上传文件的自动备份',
-            'fields' => [
                 'backup_enabled' => ['type' => 'toggle', 'label' => '自动备份开关', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后按周期在访问时触发检查并自动备份'],
                 'backup_period' => ['type' => 'select', 'label' => '备份周期', 'default' => 'weekly', 'options' => ['daily' => '每天', 'weekly' => '每周', 'monthly' => '每月'], 'rules' => ['in:daily,weekly,monthly'], 'help' => 'daily 每天一次；weekly 每周一；monthly 每月 1 号'],
                 'backup_path' => ['type' => 'text', 'label' => '备份存储路径', 'default' => 'backups', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '相对项目根目录，或绝对路径；请勿放在 public 下（会被下载）'],

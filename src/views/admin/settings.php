@@ -108,7 +108,7 @@ admin_header('系统设置');
         </div>
     </form>
 
-    <?php if ($gid === 'performance'): ?>
+    <?php if ($gid === 'media'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">缓存清理</h3>
         <p class="text-muted" style="font-size:0.85rem;color:var(--text-secondary)">清理 OPcache 与限流计数等运行时缓存。</p>
@@ -119,7 +119,7 @@ admin_header('系统设置');
     </div>
     <?php endif; ?>
 
-    <?php if ($gid === 'mail'): ?>
+    <?php if ($gid === 'mailbackup'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">测试邮件</h3>
         <p class="text-muted" style="font-size:0.85rem;color:var(--text-secondary)">使用上方 SMTP 参数向「测试收件邮箱」发送一封测试邮件，验证配置是否正确。</p>
@@ -128,9 +128,7 @@ admin_header('系统设置');
             <button type="submit" class="btn btn-warning">发送测试邮件</button>
         </form>
     </div>
-    <?php endif; ?>
 
-    <?php if ($gid === 'backup'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">备份管理</h3>
         <div class="d-flex" style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
