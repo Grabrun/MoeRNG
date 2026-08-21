@@ -136,12 +136,15 @@
             transition: opacity var(--transition);
         }
         .site-nav-brand:hover { opacity: 0.85; }
-        .site-nav-brand img { max-height: 34px; max-width: 160px; object-fit: contain; display: block; }
+        /* v1.2.1-beta.3 迭代: 导航 logo 放大（40px，设计规范桌面 ≥32px） */
+        .site-nav-brand img { max-height: 40px; max-width: 180px; object-fit: contain; display: block; }
         .site-nav-links { display: flex; align-items: center; gap: 2px; margin-left: auto; }
         .site-nav-links a {
-            padding: 6px 12px; border-radius: var(--radius-sm);
+            padding: 6px 14px; border-radius: var(--radius-pill);
             color: var(--text-secondary); text-decoration: none;
             font-size: 0.9rem; transition: all var(--transition); white-space: nowrap;
+            /* v1.2.1-beta.3 迭代: 菜单文字居中（横排/汉堡展开两态一致） */
+            display: inline-flex; align-items: center; justify-content: center; text-align: center;
         }
         .site-nav-links a:hover { background: var(--bg-input); color: var(--text); }
         .site-nav-links a.active { color: var(--primary); font-weight: 600; }
