@@ -154,6 +154,10 @@
                         <label class="pv-label">CDN 加速域名（可选）</label><span class="pv-req" style="color:var(--danger)"> *</span>
                         <input type="text" name="cfg_cdn" id="profile-cfg-cdn" class="form-control" placeholder="https://cdn.example.com">
                     </div>
+                    <div class="form-group pv-field" data-field="source_domain">
+                        <label class="pv-label">自定义源站域名（可选）</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <input type="text" name="cfg_source_domain" id="profile-cfg-source-domain" class="form-control" placeholder="images-cos.grabrun.top">
+                    </div>
                     <div class="form-group pv-field" data-field="signed_ttl">
                         <label class="pv-label">签名链接有效期（秒）</label><span class="pv-req" style="color:var(--danger)"> *</span>
                         <input type="text" name="cfg_signed_ttl" id="profile-cfg-signed-ttl" class="form-control" placeholder="300（默认 5 分钟）">
@@ -188,7 +192,9 @@
         cos:   { key:{l:'SecretId', p:'AKID 开头', r:true}, secret:{l:'SecretKey', p:'', r:true},
                  region:{l:'Region', p:'ap-guangzhou / ap-shanghai…', r:true},
                  bucket:{l:'Bucket', p:'mybucket-1250000000（需带 APPID）', r:true}, endpoint:null,
-                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false}, signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
+                 cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false},
+                 source_domain:{l:'自定义源站域名（可选）', p:'在 COS 控制台「自定义源站域名」绑定后填入', r:false},
+                 signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
         oss:   { key:{l:'AccessKeyId', p:'LTAI 开头', r:true}, secret:{l:'AccessKeySecret', p:'', r:true},
                  region:{l:'Region', p:'cn-hangzhou / oss-cn-…', r:true},
                  bucket:{l:'Bucket', p:'mybucket', r:true}, endpoint:null,
@@ -256,6 +262,7 @@
         document.getElementById('profile-cfg-bucket').value = cfg.bucket || '';
         document.getElementById('profile-cfg-endpoint').value = cfg.endpoint || '';
         document.getElementById('profile-cfg-cdn').value = cfg.cdn || '';
+        document.getElementById('profile-cfg-source-domain').value = cfg.source_domain || '';
         document.getElementById('profile-cfg-signed-ttl').value = cfg.signed_ttl || '';
         document.getElementById('profile-cfg-signed-ttl-local').value = cfg.signed_ttl || '';
         document.getElementById('profile-is-default').checked = row ? row.dataset.default === '1' : false;
@@ -293,6 +300,7 @@
             cfg_bucket: document.getElementById('profile-cfg-bucket').value.trim(),
             cfg_endpoint: document.getElementById('profile-cfg-endpoint').value.trim(),
             cfg_cdn: _cdnEl ? _cdnEl.value.trim() : '',
+            cfg_source_domain: document.getElementById('profile-cfg-source-domain').value.trim(),
             cfg_signed_ttl: _ttlEl ? _ttlEl.value.trim() : '',
             cfg_path: document.getElementById('profile-cfg-path').value.trim(),
             is_default: document.getElementById('profile-is-default').checked ? '1' : '0'

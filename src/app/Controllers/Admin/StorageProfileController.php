@@ -193,6 +193,9 @@ class StorageProfileController extends Controller
                 'bucket'   => trim((string) $request->input('cfg_bucket', '')),
                 'endpoint' => trim((string) $request->input('cfg_endpoint', '')),
                 'cdn'      => trim((string) $request->input('cfg_cdn', '')),
+                // v1.2.1: 自定义源站域名（cos 控制台绑到 bucket 的 CNAME）；
+                // 签名 URL 用它替代默认 {bucket}.cos.{region}.myqcloud.com。
+                'source_domain' => trim((string) $request->input('cfg_source_domain', '')),
                 'signed_ttl' => trim((string) $request->input('cfg_signed_ttl', '300')),
             ];
             if ($config['key'] === '' || $config['secret'] === '' || $config['bucket'] === '') {

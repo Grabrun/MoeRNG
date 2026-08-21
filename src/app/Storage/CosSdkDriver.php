@@ -26,6 +26,7 @@ class CosSdkDriver implements StorageInterface
     private string $region;
     private string $bucket;
     private string $cdnUrl;
+    private string $sourceDomain = '';
     private int $signedTtl = 300;
     private ?\Qcloud\Cos\Client $client = null;
 
@@ -35,13 +36,15 @@ class CosSdkDriver implements StorageInterface
         string $region,
         string $bucket,
         string $cdnUrl = '',
-        int $signedTtl = 300
+        int $signedTtl = 300,
+        string $sourceDomain = ''
     ) {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
         $this->region    = $region;
         $this->bucket    = $bucket;
         $this->cdnUrl    = $cdnUrl;
+        $this->sourceDomain = trim($sourceDomain);
         $this->signedTtl = max(1, $signedTtl);
     }
 
@@ -69,14 +72,22 @@ class CosSdkDriver implements StorageInterface
             return $this->client;
         }
         require_once dirname(__DIR__, 2) . '/sdk/cos/vendor/autoload.php';
-        $this->client = new \Qcloud\Cos\Client([
+        // v1.2.1: when the operator has bound a custom source domain (e.g.
+        // images-cos.grabrun.top → moerng-xxx.cos.ap-chengdu.myqcloud.com
+        // in the COS console), pass it as the SDK `domain` so every request
+        // host — including the presigned URL — is that custom domain.
+        $config = [
             'region' => $this->region,
             'scheme' => 'https',
             'credentials' => [
                 'secretId'  => $this->accessKey,
                 'secretKey' => $this->secretKey,
             ],
-        ]);
+        ];
+        if ($this->sourceDomain !== '') {
+            $config['domain'] = $this->sourceDomain;
+        }
+        $this->client = new \Qcloud\Cos\Client($config);
         return $this->client;
     }
 
@@ -158,8 +169,11 @@ class CosSdkDriver implements StorageInterface
         } catch (\Throwable) {
             // Presigning should not fail with valid credentials; fall back to a
             // bare public URL so access errors surface on the image request
-            // rather than crashing the listing page.
-            $host = "{$this->bucket}.cos.{$this->region}.myqcloud.com";
+            // rather than crashing the listing page. Honour the custom
+            // source domain if the operator bound one in the COS console.
+            $host = $this->sourceDomain !== ''
+                ? $this->sourceDomain
+                : "{$this->bucket}.cos.{$this->region}.myqcloud.com";
             return "https://{$host}/" . ltrim($remotePath, '/');
         }
     }

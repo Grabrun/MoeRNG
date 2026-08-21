@@ -31,6 +31,8 @@ class S3Driver implements StorageInterface
     private string $region;
     private string $endpoint;
     private string $cdnUrl;
+    // v1.2.1: COS 自定义源站域名（绑到 bucket 的 CNAME）；签名 URL 会用它。
+    private string $sourceDomain = '';
     private int $signedTtl = 300;
 
     /**
@@ -76,6 +78,7 @@ class S3Driver implements StorageInterface
         $this->bucket    = (string) ($data['bucket'] ?? '');
         $this->endpoint  = (string) ($data['endpoint'] ?? '');
         $this->cdnUrl    = (string) ($data['cdn'] ?? '');
+        $this->sourceDomain = (string) ($data['source_domain'] ?? '');
         return $this;
     }
 
@@ -99,6 +102,7 @@ class S3Driver implements StorageInterface
         $this->bucket    = (string) ($cfg['bucket'] ?? '');
         $this->endpoint  = (string) ($cfg['endpoint'] ?? '');
         $this->cdnUrl    = (string) ($cfg['cdn'] ?? '');
+        $this->sourceDomain = (string) ($cfg['source_domain'] ?? '');
         $this->signedTtl = max(1, (int) ($cfg['signed_ttl'] ?? 300));
         return $this;
     }
@@ -169,7 +173,7 @@ class S3Driver implements StorageInterface
         if (!CosSdkDriver::available()) {
             throw $this->sdkMissing('cos');
         }
-        return new CosSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl);
+        return new CosSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
     }
 
     private function ossSdk(): ?OssSdkDriver
