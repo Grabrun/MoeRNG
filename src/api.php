@@ -13,7 +13,7 @@ require_once __DIR__ . '/bootstrap.php';
 $app = \App\Core\Application::create(__DIR__);
 $router = $app->router();
 
-// API v1 routes with rate limiting
+// API v1 routes with rate limiting (+ optional API-Key auth gate)
 $router->group('/api/v1', function ($router) {
     $controller = \App\Controllers\ApiController::class;
 
@@ -21,7 +21,10 @@ $router->group('/api/v1', function ($router) {
     $router->get('/images', [$controller, 'list']);
     $router->get('/categories', [$controller, 'categories']);
     $router->get('/stats', [$controller, 'stats']);
-}, [\App\Middleware\RateLimitMiddleware::class]);
+}, [
+    \App\Middleware\ApiKeyAuthMiddleware::class,
+    \App\Middleware\RateLimitMiddleware::class,
+]);
 
 $app->run();
 

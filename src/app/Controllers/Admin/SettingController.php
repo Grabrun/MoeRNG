@@ -58,6 +58,8 @@ class SettingController extends Controller
                 'login_lockout_minutes' => ['type' => 'number', 'label' => '锁定时间（分钟）', 'default' => '15', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1440], 'help' => '锁定期内该 IP 无法登录（成功登录自动重置计数）'],
                 'api_rate_limit_enabled' => ['type' => 'toggle', 'label' => '接口频率限制', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '对公开 API（/api/v1）按 IP 限流，防止滥用'],
                 'api_rate_limit_per_minute' => ['type' => 'number', 'label' => '每分钟最大请求数', 'default' => '100', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1000], 'help' => '单个 IP 每分钟允许的请求数（仅限流开启时生效）'],
+                // v1.2.1 迭代: optional API-Key gate (settings optimization doc).
+                'api_key_auth_required' => ['type' => 'toggle', 'label' => 'API Key 认证（实验性）', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后公开 API 必须携带有效 X-API-Key 头；默认关闭（公开 API 保持开放）'],
                 // v1.2.1 迭代: audit log retention (settings optimization doc).
                 'audit_log_retention_days' => ['type' => 'number', 'label' => '操作日志保留天数', 'default' => '90', 'rules' => ['numeric' => true, 'min' => 7, 'max' => 3650], 'help' => '超过该天数的操作日志自动清理；0 表示不清理'],
                 // v1.2.1 迭代: CORS origins (settings optimization doc).
