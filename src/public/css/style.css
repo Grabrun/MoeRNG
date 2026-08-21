@@ -120,6 +120,27 @@ small { font-size: 0.85rem; color: var(--text-secondary); }
 select.form-control { cursor: pointer; }
 textarea.form-control { resize: vertical; min-height: 80px; }
 
+/* Settings grid (v1.2.1) — capped input widths, full-row for long fields */
+.settings-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+}
+.setting-item-wide { grid-column: 1 / -1; }
+/* Short fields get a sensible max-width; textarea/logo keep full row width */
+.setting-item input.form-control,
+.setting-item select.form-control { max-width: 420px; }
+.setting-item .toggle-wrap { max-width: 420px; }
+.setting-item textarea.form-control { width: 100%; max-width: 760px; }
+/* Mobile: let everything go full width */
+@media (max-width: 768px) {
+    .setting-item input.form-control,
+    .setting-item select.form-control,
+    .setting-item .toggle-wrap,
+    .setting-item textarea.form-control { max-width: 100%; }
+    .setting-item-wide { grid-column: auto; }
+}
+
 /* Cards */
 .card {
     background: var(--bg-card); border: 1px solid var(--border);
