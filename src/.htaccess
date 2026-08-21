@@ -12,10 +12,10 @@ RewriteEngine On
 # Deny rules MUST come before the catch-all rewrite below, otherwise the
 # catch-all matches first and these are never evaluated.
 # -----------------------------------------------------------------------------
-RewriteRule ^(config|app|views|releases)/ - [F,L]
+RewriteRule ^(config|app|views|releases|backups|var)/ - [F,L]
 RewriteRule ^\. - [F,L]
 
-<FilesMatch "\.(env|sql|md|log|ini|lock|ya?ml)$">
+<FilesMatch "\.(env|sql|zip|md|log|ini|lock|ya?ml)$">
     Require all denied
 </FilesMatch>
 

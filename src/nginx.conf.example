@@ -34,12 +34,12 @@ server {
     # Denied paths. These MUST appear before the "\.php$" block, because regex
     # locations are evaluated in the order they are declared.
     # -------------------------------------------------------------------------
-    location ~ ^/(config|app|views|releases)/ {
+    location ~ ^/(config|app|views|releases|backups|var)/ {
         deny all;
         return 404;
     }
 
-    location ~* \.(sql|md|log|ini|lock|yml|yaml)$ {
+    location ~* \.(sql|zip|md|log|ini|lock|yml|yaml)$ {
         deny all;
         return 404;
     }
