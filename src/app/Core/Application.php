@@ -41,11 +41,8 @@ class Application
         // v1.2.1 security: baseline security headers on every response.
         // CSP intentionally allows 'unsafe-inline' — the pages ship inline
         // theme JS and <style> blocks; tightening it needs a refactor first.
-        header('X-Content-Type-Options: nosniff');
-        header('X-Frame-Options: DENY');
-        header('Referrer-Policy: strict-origin-when-cross-origin');
-        header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
-        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'");
+        // Re-sent after DB load with storage CDN domains (see below).
+        $this->sendSecurityHeaders(false);
         header('X-Robots-Tag: noindex, nofollow');
 
         // Timezone
@@ -73,6 +70,10 @@ class Application
 
             // Backfill per-image storage columns (see Image::driverFor).
             $this->runStorageMigration();
+
+            // v1.2.1: storage profiles are loaded — re-send CSP with the
+            // CDN/bucket hosts so cross-origin object-stored images load.
+            $this->sendSecurityHeaders(true);
         }
     }
 
@@ -86,6 +87,87 @@ class Application
         } catch (\Throwable) {
             // Settings table may not exist yet
         }
+    }
+
+    /**
+     * v1.2.1: send baseline security headers. When $withStorageDomains is
+     * true (DB already connected) the CSP img-src is extended with every
+     * storage profile's CDN / bucket host, otherwise cross-origin images
+     * (COS/OSS/AWS …) are blocked by 'self' — the site then fails to load
+     * object-stored images even though the URLs themselves work in a browser
+     * (the browser bypasses CSP when opening the link directly).
+     */
+    private function sendSecurityHeaders(bool $withStorageDomains): void
+    {
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: DENY');
+        header('Referrer-Policy: strict-origin-when-cross-origin');
+        header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+
+        $imgSrc = "'self' data: blob:";
+        if ($withStorageDomains) {
+            $hosts = $this->storageImageHosts();
+            foreach ($hosts as $h) {
+                $imgSrc .= ' https://' . $h;
+            }
+        }
+        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src {$imgSrc}; connect-src 'self'; frame-ancestors 'self'");
+    }
+
+    /**
+     * Collect every host the storage layer may serve images from:
+     *   - profile config cdn (explicit CDN domain) → its host
+     *   - object-storage buckets without a CDN → derived default host
+     *     (COS {bucket}.cos.{region}.myqcloud.com, OSS …aliyuncs.com,
+     *     AWS …amazonaws.com / endpoint, OBS endpoint, UPYUN/Qiniu CDN).
+     * Best-effort: any DB error just yields an empty list (base CSP stays).
+     */
+    private function storageImageHosts(): array
+    {
+        $hosts = [];
+        try {
+            $rows = \App\Core\Database::getInstance()
+                ->query("SELECT config FROM storage_profiles WHERE enabled = 1")
+                ->fetchAll(\PDO::FETCH_COLUMN);
+        } catch (\Throwable) {
+            return [];
+        }
+        foreach ($rows as $json) {
+            $cfg = json_decode((string) $json, true);
+            if (!is_array($cfg)) {
+                continue;
+            }
+            $cdn = trim((string) ($cfg['cdn'] ?? ''));
+            if ($cdn !== '') {
+                $h = parse_url($cdn, PHP_URL_HOST);
+                if (is_string($h) && $h !== '') {
+                    $hosts[$h] = true;
+                }
+                continue;
+            }
+            $bucket = trim((string) ($cfg['bucket'] ?? ''));
+            $region = trim((string) ($cfg['region'] ?? ''));
+            $endpoint = trim((string) ($cfg['endpoint'] ?? ''));
+            if ($bucket === '') {
+                continue;
+            }
+            if ($endpoint !== '') {
+                $h = parse_url($endpoint, PHP_URL_HOST);
+                if (is_string($h) && $h !== '') {
+                    $hosts[$h] = true;
+                }
+            }
+            if ($region !== '') {
+                $hosts["{$bucket}.cos.{$region}.myqcloud.com"] = true;
+                $hosts["{$bucket}.oss-{$region}.aliyuncs.com"] = true;
+                $hosts["{$bucket}.s3.{$region}.amazonaws.com"] = true;
+            }
+            // UPYUN / Qiniu without an explicit CDN are reachable via their
+            // service domains; including them keeps previews working.
+            $hosts[$bucket . '.b0.upaiyun.com'] = true;
+            $hosts[$bucket . '.qiniucdn.com'] = true;
+        }
+        return array_keys($hosts);
     }
 
     /**
