@@ -30,6 +30,7 @@ class ObsSdkDriver implements StorageInterface
     private string $endpoint;
     private string $bucket;
     private string $cdnUrl;
+    private string $sourceDomain = '';
     private int $signedTtl = 300;
     private ?\Obs\ObsClient $client = null;
 
@@ -39,13 +40,15 @@ class ObsSdkDriver implements StorageInterface
         string $endpoint,
         string $bucket,
         string $cdnUrl = '',
-        int $signedTtl = 300
+        int $signedTtl = 300,
+        string $sourceDomain = ''
     ) {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
         $this->endpoint  = $endpoint;
         $this->bucket    = $bucket;
         $this->cdnUrl    = $cdnUrl;
+        $this->sourceDomain = trim($sourceDomain);
         $this->signedTtl = max(1, $signedTtl);
     }
 
@@ -82,7 +85,9 @@ class ObsSdkDriver implements StorageInterface
         $this->client = new \Obs\ObsClient([
             'key'      => $this->accessKey,
             'secret'   => $this->secretKey,
-            'endpoint' => $this->endpoint,
+            // v1.2.1: custom source domain (CNAME bound to the bucket) wins
+            // over the region endpoint so presigned URLs use that domain.
+            'endpoint' => $this->sourceDomain !== '' ? $this->sourceDomain : $this->endpoint,
             // signature left unset → OBS V2 (no region required)
         ]);
         return $this->client;
@@ -162,7 +167,8 @@ class ObsSdkDriver implements StorageInterface
         } catch (\Throwable) {
             // Presigning should not fail with valid credentials; fall back to a
             // bare endpoint URL so access errors surface on the image request.
-            return rtrim($this->endpoint, '/') . '/' . $this->bucket . '/' . ltrim($remotePath, '/');
+            $host = $this->sourceDomain !== '' ? $this->sourceDomain : $this->endpoint;
+            return rtrim($host, '/') . '/' . $this->bucket . '/' . ltrim($remotePath, '/');
         }
     }
 

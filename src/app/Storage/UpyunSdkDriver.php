@@ -17,15 +17,17 @@ class UpyunSdkDriver implements StorageInterface
     private string $operator;
     private string $password;
     private string $cdnUrl;
+    private string $sourceDomain = '';
     private int $signedTtl = 300;
     private ?\Upyun\Upyun $upyun = null;
 
-    public function __construct(string $service, string $operator, string $password, string $cdnUrl = '', int $signedTtl = 300)
+    public function __construct(string $service, string $operator, string $password, string $cdnUrl = '', int $signedTtl = 300, string $sourceDomain = '')
     {
         $this->service = $service;
         $this->operator = $operator;
         $this->password = $password;
         $this->cdnUrl = rtrim($cdnUrl, '/');
+        $this->sourceDomain = trim($sourceDomain);
         $this->signedTtl = max(1, $signedTtl);
     }
 
@@ -94,7 +96,10 @@ class UpyunSdkDriver implements StorageInterface
         // 私有空间短时链接，不经服务器代理。
         $expires = time() + $this->signedTtl;
         $sign = md5("{$this->operator}:{$this->password}:{$expires}");
-        $base = 'https://' . $this->service . '.b0.upaiyun.com/' . str_replace('%2F', '/', rawurlencode($key));
+        // v1.2.1: custom source domain (CNAME bound to the service) replaces
+        // the default {service}.b0.upaiyun.com host for the signed URL.
+        $host = $this->sourceDomain !== '' ? $this->sourceDomain : $this->service . '.b0.upaiyun.com';
+        $base = 'https://' . $host . '/' . str_replace('%2F', '/', rawurlencode($key));
         return $base . '?_up_t=' . $expires . '_' . $sign;
     }
 

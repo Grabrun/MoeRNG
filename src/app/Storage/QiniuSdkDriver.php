@@ -18,15 +18,17 @@ class QiniuSdkDriver implements StorageInterface
     private string $bucket;
     private string $region;
     private string $cdnUrl;
+    private string $sourceDomain = '';
     private int $signedTtl = 300;
 
-    public function __construct(string $accessKey, string $secretKey, string $bucket, string $region = 'z0', string $cdnUrl = '', int $signedTtl = 300)
+    public function __construct(string $accessKey, string $secretKey, string $bucket, string $region = 'z0', string $cdnUrl = '', int $signedTtl = 300, string $sourceDomain = '')
     {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
         $this->bucket = $bucket;
         $this->region = $region !== '' ? $region : 'z0';
         $this->cdnUrl = rtrim($cdnUrl, '/');
+        $this->sourceDomain = trim($sourceDomain);
         $this->signedTtl = max(1, $signedTtl);
     }
 
@@ -104,7 +106,10 @@ class QiniuSdkDriver implements StorageInterface
         }
         // v1.2.0 迭代: 七牛私有空间下载签名（?e={expires}&token={ak}:{urlsafe-b64(hmac-sha1)}），
         // 短时链接，不经服务器代理。
-        $base = 'https://' . $this->bucket . '.qiniudns.com/' . str_replace('%2F', '/', rawurlencode($key));
+        // v1.2.1: custom source domain (CNAME bound to the space) replaces
+        // the default {bucket}.qiniudns.com host for the signed URL.
+        $host = $this->sourceDomain !== '' ? $this->sourceDomain : $this->bucket . '.qiniudns.com';
+        $base = 'https://' . $host . '/' . str_replace('%2F', '/', rawurlencode($key));
         $expires = time() + $this->signedTtl;
         $signData = $base . '?e=' . $expires;
         $sign = rtrim(strtr(base64_encode(hash_hmac('sha1', $signData, $this->secretKey, true)), '+/', '-_'), '=');

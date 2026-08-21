@@ -184,7 +184,7 @@ class S3Driver implements StorageInterface
         if (!OssSdkDriver::available()) {
             throw $this->sdkMissing('oss');
         }
-        return new OssSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl);
+        return new OssSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
     }
 
     private function awsSdk(): ?AwsSdkDriver
@@ -195,7 +195,7 @@ class S3Driver implements StorageInterface
         if (!AwsSdkDriver::available()) {
             throw $this->sdkMissing('aws');
         }
-        return new AwsSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->endpoint, $this->cdnUrl, $this->signedTtl);
+        return new AwsSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->endpoint, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
     }
 
     private function obsSdk(): ?ObsSdkDriver
@@ -206,7 +206,7 @@ class S3Driver implements StorageInterface
         if (!ObsSdkDriver::available()) {
             throw $this->sdkMissing('obs');
         }
-        return new ObsSdkDriver($this->accessKey, $this->secretKey, $this->endpoint, $this->bucket, $this->cdnUrl, $this->signedTtl);
+        return new ObsSdkDriver($this->accessKey, $this->secretKey, $this->endpoint, $this->bucket, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
     }
 
     private function upyunSdk(): ?UpyunSdkDriver
@@ -218,7 +218,7 @@ class S3Driver implements StorageInterface
             throw $this->sdkMissing('upyun');
         }
         // 又拍云：service=bucket、operator=key、password=secret
-        return new UpyunSdkDriver($this->bucket, $this->accessKey, $this->secretKey, $this->cdnUrl, $this->signedTtl);
+        return new UpyunSdkDriver($this->bucket, $this->accessKey, $this->secretKey, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
     }
 
     private function qiniuSdk(): ?QiniuSdkDriver
@@ -229,7 +229,7 @@ class S3Driver implements StorageInterface
         if (!QiniuSdkDriver::available()) {
             throw $this->sdkMissing('qiniu');
         }
-        return new QiniuSdkDriver($this->accessKey, $this->secretKey, $this->bucket, $this->region, $this->cdnUrl, $this->signedTtl);
+        return new QiniuSdkDriver($this->accessKey, $this->secretKey, $this->bucket, $this->region, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
     }
 
     public function upload(string $localPath, string $remotePath, string $contentType): string

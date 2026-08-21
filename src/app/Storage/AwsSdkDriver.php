@@ -21,6 +21,7 @@ class AwsSdkDriver implements StorageInterface
     private string $bucket;
     private string $endpoint;
     private string $cdnUrl;
+    private string $sourceDomain = '';
     private int $signedTtl = 300;
     private ?\Aws\S3\S3Client $client = null;
 
@@ -31,7 +32,8 @@ class AwsSdkDriver implements StorageInterface
         string $bucket,
         string $endpoint = '',
         string $cdnUrl = '',
-        int $signedTtl = 300
+        int $signedTtl = 300,
+        string $sourceDomain = ''
     ) {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
@@ -39,6 +41,7 @@ class AwsSdkDriver implements StorageInterface
         $this->bucket    = $bucket;
         $this->endpoint  = $endpoint;
         $this->cdnUrl    = $cdnUrl;
+        $this->sourceDomain = trim($sourceDomain);
         $this->signedTtl = max(1, $signedTtl);
     }
 
@@ -76,10 +79,15 @@ class AwsSdkDriver implements StorageInterface
         ];
         // Custom endpoint (S3-compatible gateways such as MinIO) — AWS S3
         // itself resolves the endpoint from region, so this stays empty there.
-        if ($this->endpoint !== '') {
-            $args['endpoint'] = rtrim($this->endpoint, '/');
-            // Path-style for gateways that lack virtual-host bucket support.
-            $args['use_path_style_endpoint'] = true;
+        // v1.2.1: a custom source domain bound to the bucket (CNAME, e.g.
+        // images.example.com → {bucket}.s3.{region}.amazonaws.com) wins over
+        // the gateway endpoint and keeps virtual-hosted style (bucket.sourcedomain).
+        $hostOverride = $this->sourceDomain !== '' ? $this->sourceDomain : $this->endpoint;
+        if ($hostOverride !== '') {
+            $args['endpoint'] = rtrim($hostOverride, '/');
+            // Path-style only for explicit gateways; a source domain is a
+            // virtual-hosted CNAME (bucket.sourcedomain), so no path style.
+            $args['use_path_style_endpoint'] = $this->sourceDomain === '';
         }
         $this->client = new \Aws\S3\S3Client($args);
         return $this->client;
@@ -150,9 +158,11 @@ class AwsSdkDriver implements StorageInterface
             return (string) $request->getUri();
         } catch (\Throwable) {
             // Fall back to a bare public URL (works for public-read buckets).
-            $host = $this->endpoint !== ''
-                ? rtrim($this->endpoint, '/')
-                : "{$this->bucket}.s3.{$this->region}.amazonaws.com";
+            $host = $this->sourceDomain !== ''
+                ? rtrim($this->sourceDomain, '/')
+                : ($this->endpoint !== ''
+                    ? rtrim($this->endpoint, '/')
+                    : "{$this->bucket}.s3.{$this->region}.amazonaws.com");
             return $host . '/' . ltrim($remotePath, '/');
         }
     }

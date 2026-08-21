@@ -20,6 +20,7 @@ class OssSdkDriver implements StorageInterface
     private string $region;
     private string $bucket;
     private string $cdnUrl;
+    private string $sourceDomain = '';
     private int $signedTtl = 300;
     private ?\AlibabaCloud\Oss\V2\Client $client = null;
 
@@ -29,13 +30,15 @@ class OssSdkDriver implements StorageInterface
         string $region,
         string $bucket,
         string $cdnUrl = '',
-        int $signedTtl = 300
+        int $signedTtl = 300,
+        string $sourceDomain = ''
     ) {
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
         $this->region    = $region;
         $this->bucket    = $bucket;
         $this->cdnUrl    = $cdnUrl;
+        $this->sourceDomain = trim($sourceDomain);
         $this->signedTtl = max(1, $signedTtl);
     }
 
@@ -72,6 +75,14 @@ class OssSdkDriver implements StorageInterface
             new \AlibabaCloud\Oss\V2\Credentials\StaticCredentialsProvider($this->accessKey, $this->secretKey)
         );
         $cfg->setRegion($this->region);
+        // v1.2.1: custom source domain bound to the bucket in the OSS console
+        // (CNAME). The SDK then resolves every request host — presigned URLs
+        // included — against that domain instead of the default
+        // {bucket}.oss-{region}.aliyuncs.com.
+        if ($this->sourceDomain !== '') {
+            $cfg->setEndpoint($this->sourceDomain);
+            $cfg->setUseCname(true);
+        }
         $this->client = new \AlibabaCloud\Oss\V2\Client($cfg);
         return $this->client;
     }
@@ -126,7 +137,9 @@ class OssSdkDriver implements StorageInterface
             );
             return (string) ($result->url ?? '');
         } catch (\Throwable) {
-            $host = "{$this->bucket}.oss-{$this->region}.aliyuncs.com";
+            $host = $this->sourceDomain !== ''
+                ? $this->sourceDomain
+                : "{$this->bucket}.oss-{$this->region}.aliyuncs.com";
             return "https://{$host}/" . ltrim($remotePath, '/');
         }
     }
