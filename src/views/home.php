@@ -38,11 +38,46 @@
     <!-- preload LCP banner so the hero paints immediately -->
     <link rel="preload" as="image" href="/assets/banner.webp" fetchpriority="high">
     <link rel="stylesheet" href="/public/css/style.css">
+    <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强——font-display=swap 不阻塞渲染；
+         国内网络无法访问 Google Fonts 时自动回退到系统字体栈，不影响可用性） -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        .hero { padding: 100px 24px 80px; }
+        /* v1.2.1-beta.3 迭代: hero 双栏布局（Design Tokens §5 两栏 hero-grid） */
+        .hero { padding: 96px 24px 64px; }
+        .hero-inner { max-width: var(--maxw, 1120px); margin: 0 auto; }
+        .hero-grid {
+            display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px;
+            align-items: center;
+        }
+        .hero-title {
+            font-family: var(--font-display);
+            font-size: 2.75rem; font-weight: 800; line-height: 1.2;
+            margin-bottom: 16px; color: var(--text);
+        }
+        .hero-sub {
+            font-size: 1.125rem; color: var(--text-secondary);
+            max-width: 520px; margin-bottom: 24px; line-height: 1.7;
+        }
+        .hero .stats { display: flex; gap: 28px; margin: 28px 0; }
+        .hero .stat { text-align: left; }
+        .hero .stat .num { font-size: 2rem; font-weight: 700; color: var(--primary); font-family: var(--font-display); }
+        .hero .stat .label { font-size: 0.85rem; color: var(--text-muted); }
+        .hero .btn-group { gap: 12px; }
+        .hero-stage {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: var(--radius-lg); padding: 24px;
+            box-shadow: var(--shadow-floating);
+        }
+        .hero-banner-wrap { display: block; margin-bottom: 24px; }
+        .hero-banner { width: 100%; height: auto; border-radius: var(--radius); }
+        @media (max-width: 900px) {
+            .hero-grid { grid-template-columns: 1fr; gap: 32px; }
+            .hero-title { font-size: 2.1rem; }
+        }
         .hero h1 { font-size: 4rem; margin-bottom: 12px; }
         .hero .subtitle { font-size: 1.25rem; color: var(--text-secondary); margin-bottom: 8px; }
-        .hero .stats { display: flex; gap: 32px; justify-content: center; margin: 32px 0; }
         /* v1.2.1 迭代: bolder stat numbers (UI audit V2) — 纯色粉紫（禁止渐变文字铁律） */
         .hero .stats .stat-value {
             font-size: 2.4rem; font-weight: 800; line-height: 1.15;
@@ -175,57 +210,67 @@
     <main id="main-content">
     <section class="hero">
         <h1 class="sr-only"><?= h($siteName) ?> - <?= h($siteSlogan) ?></h1>
-        <!--: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
-        <picture>
-            <source srcset="/assets/banner.webp" type="image/webp">
-            <img class="hero-banner" src="/assets/banner.png" width="1400" height="466" alt="<?= h($siteName) ?>随机二次元图片 API 服务" fetchpriority="high">
-        </picture>
-        <div class="stats">
-            <div class="stat">
-                <div class="num stat-value" data-count="<?= (int)$totalImages ?>"><?= number_format($totalImages) ?></div>
-                <div class="label">图片资源</div>
+        <div class="hero-inner">
+        <div class="hero-grid">
+            <!-- 左栏：品牌 banner + 文案 + CTA + 统计 -->
+            <div class="hero-left">
+                <!--: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
+                <picture class="hero-banner-wrap">
+                    <source srcset="/assets/banner.webp" type="image/webp">
+                    <img class="hero-banner" src="/assets/banner.png" width="1400" height="466" alt="<?= h($siteName) ?>随机二次元图片 API 服务" fetchpriority="high">
+                </picture>
+                <p class="hero-sub"><?= h($siteSlogan) ?>。真随机取图、多级分类、JSON 与重定向双模式——为二次元爱好者准备的治愈感，为开发者准备的效率感。</p>
+                <div class="btn-group">
+                    <a href="#docs" class="btn btn-primary btn-lg">API 文档</a>
+                    <a href="#tester" class="btn btn-outline btn-lg">在线测试</a>
+                    <a href="/admin" class="btn btn-outline btn-lg">管理面板</a>
+                </div>
+                <div class="stats">
+                    <div class="stat">
+                        <div class="num stat-value" data-count="<?= (int)$totalImages ?>"><?= number_format($totalImages) ?></div>
+                        <div class="label">图片资源</div>
+                    </div>
+                    <div class="stat">
+                        <div class="num stat-value" data-count="<?= (int)$totalCategories ?>"><?= number_format($totalCategories) ?></div>
+                        <div class="label">分类主题</div>
+                    </div>
+                    <div class="stat">
+                        <div class="num">99.9%</div>
+                        <div class="label">服务可用性</div>
+                    </div>
+                </div>
             </div>
-            <div class="stat">
-                <div class="num stat-value" data-count="<?= (int)$totalCategories ?>"><?= number_format($totalCategories) ?></div>
-                <div class="label">分类主题</div>
-            </div>
-            <div class="stat">
-                <div class="num">99.9%</div>
-                <div class="label">服务可用性</div>
-            </div>
-        </div>
-        <div class="btn-group">
-            <a href="#docs" class="btn btn-primary btn-lg">API 文档</a>
-            <a href="#tester" class="btn btn-outline btn-lg">在线测试</a>
-            <a href="/admin" class="btn btn-outline btn-lg">管理面板</a>
-        </div>
 
-        <!-- Random image demo: proves the API works right from the hero -->
-        <div class="random-demo reveal" role="region" aria-label="随机图片生成器">
-            <div class="rd-preview">
-                <div class="rd-placeholder" id="rd-placeholder">点「试试手气」，从 API 随机取一张图</div>
-                <img id="rd-image" src="" alt="随机图片（点击查看大图）" style="display:none" class="rd-image-preview">
-                <div class="rd-loading hidden" id="rd-loading"><span class="spinner"></span></div>
-            </div>
-            <div class="rd-meta hidden" id="rd-meta" style="font-size:.82rem;color:var(--text-secondary);margin-top:8px"></div>
-            <div class="rd-footer">
-                <label for="rd-category" class="sr-only">随机图分类筛选</label>
-                <select class="form-control" id="rd-category" style="width:150px;flex-shrink:0">
-                    <option value="">全部</option>
-                    <?php foreach ($categories as $cat): ?>
-                    <option value="<?= h($cat->getSlug()) ?>"><?= h($cat->name) ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <button class="btn btn-primary btn-sm" id="rd-run"><?= icon('dice', 16) ?> 试试手气</button>
-                <span class="rd-url" id="rd-url">-</span>
-                <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 16) ?></button>
-                <!-- v1.2.1 迭代: view-large / download / history for the random demo -->
-                <button type="button" class="btn btn-outline btn-sm" id="rd-zoom" aria-label="查看大图" title="查看大图" style="display:none"><?= icon('eye', 16) ?></button>
-                <button type="button" class="btn btn-outline btn-sm" id="rd-download" aria-label="下载图片" title="下载图片" style="display:none"><?= icon('download', 16) ?></button>
-            </div>
-            <div class="rd-history" id="rd-history" style="display:none;margin-top:12px">
-                <p class="text-muted" style="font-size:.82rem;margin-bottom:6px">最近记录</p>
-                <div id="rd-history-list" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+            <!-- 右栏：抽图舞台（hero-stage 卡片化，设计核心交互） -->
+            <div class="hero-stage">
+                <!-- Random image demo: proves the API works right from the hero -->
+                <div class="random-demo reveal" role="region" aria-label="随机图片生成器">
+                    <div class="rd-preview">
+                        <div class="rd-placeholder" id="rd-placeholder">点「试试手气」，从 API 随机取一张图</div>
+                        <img id="rd-image" src="" alt="随机图片（点击查看大图）" style="display:none" class="rd-image-preview">
+                        <div class="rd-loading hidden" id="rd-loading"><span class="spinner"></span></div>
+                    </div>
+                    <div class="rd-meta hidden" id="rd-meta" style="font-size:.82rem;color:var(--text-secondary);margin-top:8px"></div>
+                    <div class="rd-footer">
+                        <label for="rd-category" class="sr-only">随机图分类筛选</label>
+                        <select class="form-control" id="rd-category" style="width:150px;flex-shrink:0">
+                            <option value="">全部</option>
+                            <?php foreach ($categories as $cat): ?>
+                            <option value="<?= h($cat->getSlug()) ?>"><?= h($cat->name) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <button class="btn btn-primary btn-sm" id="rd-run"><?= icon('dice', 16) ?> 试试手气</button>
+                        <span class="rd-url" id="rd-url">-</span>
+                        <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 16) ?></button>
+                        <!-- v1.2.1 迭代: view-large / download / history for the random demo -->
+                        <button type="button" class="btn btn-outline btn-sm" id="rd-zoom" aria-label="查看大图" title="查看大图" style="display:none"><?= icon('eye', 16) ?></button>
+                        <button type="button" class="btn btn-outline btn-sm" id="rd-download" aria-label="下载图片" title="下载图片" style="display:none"><?= icon('download', 16) ?></button>
+                    </div>
+                    <div class="rd-history" id="rd-history" style="display:none;margin-top:12px">
+                        <p class="text-muted" style="font-size:.82rem;margin-bottom:6px">最近记录</p>
+                        <div id="rd-history-list" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -233,6 +278,7 @@
         <div class="lb-overlay hidden" id="rd-lightbox" role="dialog" aria-modal="true" aria-label="图片大图预览">
             <img id="rd-lb-img" src="" alt="大图预览">
             <button type="button" class="lb-close" id="rd-lb-close" aria-label="关闭预览"><?= icon('x', 24) ?></button>
+        </div>
         </div>
     </section>
 

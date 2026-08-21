@@ -27,6 +27,7 @@
     --radius-sm: 12px;
     --radius-lg: 28px;
     --radius-pill: 999px;
+    --maxw: 1120px;
     --shadow: 0 6px 20px rgba(195,137,232,.18);
     --shadow-sm: 0 1px 3px rgba(195,137,232,.10);
     --shadow-floating: 0 12px 32px rgba(195,137,232,.25);
@@ -783,6 +784,12 @@ pre code { background: none; color: var(--text); padding: 0; }
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: var(--radius-lg); padding: 16px;
     box-shadow: var(--shadow);
+}
+/* v1.2.1-beta.3 迭代: hero 双栏布局中，外层 .hero-stage 承担卡片视觉，
+   .random-demo 退为透明内容区（保持独立使用时的卡片外观） */
+.hero-stage .random-demo {
+    margin: 0; max-width: none; background: transparent;
+    border: none; box-shadow: none; padding: 0;
 }
 .random-demo .rd-preview {
     border-radius: var(--radius-sm); overflow: hidden; min-height: 240px;
