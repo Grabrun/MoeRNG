@@ -39,6 +39,7 @@
 - **恢复「图片与存储」组占位**（2026-08-21）：用户要求保留该组（后续开发图片处理/缩略图等设置）→ media 组恢复为空 fields 占位（desc 注明"后续版本提供；CDN 请到存储管理"），视图对空组显示占位文案、隐藏无意义的保存按钮
 - **本地存储补 CDN 配置**（2026-08-21）：存储管理的 local profile 表单原来没有 CDN 输入框（LocalDriver 其实已支持 cdn 覆盖，只是 UI/后端未暴露）→ 表单加 CDN 字段（独立 id `cfg_cdn_local`，与 s3 的 `cfg_cdn` 区分）、JS 回填/提交按 driver 分支取值、后端 local 分支 config 保存 `cdn`
 - **修复：CSP 拦截对象存储图片**（2026-08-21）：COS/OSS 等跨域图片在页面加载失败（浏览器直接访问 URL 正常）——根因是 v1.2.1 加的 CSP `img-src 'self' data: blob:` 只放行同源；修复为 DB 就绪后重新发送 CSP，img-src 动态加入所有 storage profile 的 CDN 域名与 bucket 默认 host（COS `{bucket}.cos.{region}.myqcloud.com`、OSS/AWS/endpoint/UPYUN/Qiniu）；DB 不可用时回退基础 CSP
+  - **按 provider 精确推导**（用户指正）：AWS 是通用 S3（可接 MinIO/R2 等 S3 兼容网关）→ 有 endpoint 时只放行 endpoint host，不再无差别猜 `s3.{region}.amazonaws.com`；仅无 endpoint 时兜底 AWS 官方默认域名；COS/OSS/UPYUN/Qiniu/OBS 各按自身规则推导（SELECT 增加 provider 列）
 
 _（继续迭代积累）_
 
