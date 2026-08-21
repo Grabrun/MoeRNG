@@ -1178,38 +1178,10 @@ function initRandomDemo() {
     const lb = document.getElementById('rd-lightbox');
     const lbImg = document.getElementById('rd-lb-img');
     const lbClose = document.getElementById('rd-lb-close');
-    const historyBox = document.getElementById('rd-history');
-    const historyList = document.getElementById('rd-history-list');
 
-    const HISTORY_KEY = 'moerng_random_history';
     let currentUrl = '';
     let currentName = '';
 
-    function saveHistory(url, category) {
-        try {
-            let h = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-            h = h.filter(x => x.url !== url);
-            h.unshift({ url, category, time: Date.now() });
-            if (h.length > 10) h = h.slice(0, 10);
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
-            renderHistory();
-        } catch (e) { /* private mode etc. — ignore */ }
-    }
-    function renderHistory() {
-        if (!historyList) return;
-        let h = [];
-        try { h = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch (e) {}
-        if (!h.length) { if (historyBox) historyBox.style.display = 'none'; return; }
-        if (historyBox) historyBox.style.display = '';
-        historyList.innerHTML = '';
-        h.forEach(item => {
-            const thumb = document.createElement('img');
-            thumb.src = item.url; thumb.alt = '历史图片';
-            thumb.style.cssText = 'width:44px;height:44px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border)';
-            thumb.addEventListener('click', () => showImage(item.url, item.category || ''));
-            historyList.appendChild(thumb);
-        });
-    }
     function showImage(url, category) {
         currentUrl = url;
         currentName = (category ? category + '-' : '') + 'random.' + (url.split('.').pop() || 'jpg');
@@ -1224,10 +1196,9 @@ function initRandomDemo() {
             metaEl.textContent = '图片ID: ' + (url.split('&s=')[0].split('&e=')[0].split('p=')[1] ? '已签名' : '') + (category ? ' · 分类: ' + category : '');
             metaEl.classList.remove('hidden');
         }
-        saveHistory(url, category);
-
         // v1.2.1-beta.3 迭代: gacha 抽卡动效 — 霓虹边框闪动 + 过冲弹入（可关）。
         // 仅在用户未通过 prefers-reduced-motion 关闭动效时执行。
+        // v1.2.1-beta.3 移除: 历史缩略图（签名 URL 默认 5 分钟 TTL，过期后图裂）已删除。
         const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (!reduceMotion) {
             const stage = imgBox.closest('.rd-preview');
@@ -1301,7 +1272,7 @@ function initRandomDemo() {
         }
     });
 
-    renderHistory();
+    // v1.2.1-beta.3 移除: 历史缩略图已删除（renderHistory / saveHistory 一并移除）
 }
 
 // Mobile drawer sidebar (hamburger + backdrop).

@@ -270,10 +270,6 @@
                         <button type="button" class="btn btn-outline btn-sm" id="rd-zoom" aria-label="查看大图" title="查看大图" style="display:none"><?= icon('eye', 16) ?></button>
                         <button type="button" class="btn btn-outline btn-sm" id="rd-download" aria-label="下载图片" title="下载图片" style="display:none"><?= icon('download', 16) ?></button>
                     </div>
-                    <div class="rd-history" id="rd-history" style="display:none;margin-top:12px">
-                        <p class="text-muted" style="font-size:.82rem;margin-bottom:6px">最近记录</p>
-                        <div id="rd-history-list" style="display:flex;gap:6px;flex-wrap:wrap"></div>
-                    </div>
                 </div>
             </div>
         </div>
