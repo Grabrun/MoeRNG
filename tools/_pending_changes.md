@@ -29,6 +29,7 @@
   - 清除 4 处陈旧 anchor（`#performance`/`#backup`/`#mail` → `?tab=maintenance#maintenance`）
   - 补 `.settings-save-bar` sticky 底栏样式（此前遗漏，用户要求过"保存栏 sticky"）
 - **Logo 上传合并为单按钮**（2026-08-21）：「选择图片」+「上传」合并为一个「上传」按钮——点击唤起文件选择，选中后预览并立即自动上传；移除 `data-logo-choose` 绑定与 disabled 状态
+- **Logo 去掉 URL 粘贴框 + 默认预览**（2026-08-21）：删除「或粘贴外部 URL」输入框，改 hidden input 携带值（防保存清空）；未设置时预览默认 `/assets/logo.png` 并提示"当前使用默认 Logo"；移除 Logo 回退默认预览；**修复连带 bug**——logo_url 规则的 `url` 校验（FILTER_VALIDATE_URL）会把相对路径（`/assets/logo.png`、`/public/uploads/...`）判为非法导致保存必失败，已移除该校验
 
 _（继续迭代积累）_
 
