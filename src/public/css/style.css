@@ -798,6 +798,8 @@ pre code { background: none; color: var(--text); padding: 0; }
     aspect-ratio: 4 / 5; max-height: 360px;
     background: var(--bg-input); display: flex; align-items: center; justify-content: center;
     border: 1px solid var(--border); position: relative;
+    /* v1.2.1-beta.3 迭代: 在 hero-stage 内撑满父容器（默认 auto 会按内容收缩 → 图片右侧留白） */
+    width: 100%;
 }
 .random-demo .rd-preview img {
     width: 100%; height: 100%; object-fit: cover; display: block;
