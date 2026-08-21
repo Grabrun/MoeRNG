@@ -99,15 +99,19 @@ class UserController extends Controller
         $user = User::find($id);
 
         if (!$user) {
-            $this->json(['error' => 'User not found.'], 404);
+            // v1.2.1 fix: JSON was shown as raw page when posted via plain <form>;
+            // use redirect+flash so it always lands back on /admin/users.
+            $this->fail('用户不存在。', 404, '/admin/users');
         }
 
         // Prevent deleting self
         if ((int) $user->id === (int) Session::get('user_id')) {
-            $this->json(['error' => 'Cannot delete your own account.'], 400);
+            $this->fail('不能删除当前登录的账号。', 400, '/admin/users');
         }
 
+        $username = (string) $user->username;
         $user->delete();
-        $this->json(['success' => true, 'message' => 'User deleted.']);
+        \App\Models\AuditLog::record('user_delete', ['id' => $id, 'username' => $username]);
+        $this->ok('已删除用户「' . $username . '」。', [], '/admin/users');
     }
 }

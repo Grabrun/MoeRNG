@@ -1,5 +1,19 @@
 <?php include __DIR__ . '/helpers.php'; admin_header('用户管理'); ?>
 
+<?php
+// v1.2.1 迭代: render flash messages (ok/fail) so deletes/toggles show feedback.
+$success = \App\Core\Session::flash('success');
+$error   = \App\Core\Session::flash('error');
+if ($success): ?>
+<div class="alert alert-success" style="margin-bottom:16px;padding:12px 16px;border-radius:var(--radius-sm);background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:var(--text)">
+    <?= h($success) ?>
+</div>
+<?php endif; if ($error): ?>
+<div class="alert alert-error" style="margin-bottom:16px;padding:12px 16px;border-radius:var(--radius-sm);background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:var(--text)">
+    <?= h($error) ?>
+</div>
+<?php endif; ?>
+
 <div class="page-header flex-between">
     <div>
         <h1>用户管理</h1>
