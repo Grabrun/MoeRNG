@@ -115,84 +115,41 @@ class Application
     }
 
     /**
-     * Collect every host the storage layer may serve images from:
-     *   - profile config cdn (explicit CDN domain) → its host, wins outright
-     *   - endpoint (custom S3-compatible gateway: MinIO / R2 / …) → its host
-     *   - otherwise provider-specific default host derived from bucket/region.
-     *     AWS is generic S3: with an endpoint we use ONLY that; without one we
-     *     fall back to the AWS default (s3.{region}.amazonaws.com).
-     * Best-effort: any DB error just yields an empty list (base CSP stays).
+     * Collect every host the storage layer may actually serve images from.
+     *
+     * Instead of guessing provider-specific default domains, each enabled
+     * storage profile is resolved to its real driver and asked for a probe
+     * URL (driver->url() is pure local computation — signing or CDN prefix,
+     * no network I/O). The host of that real URL is what gets whitelisted:
+     *   - profile with a CDN  → CDN host (that is where images will load from)
+     *   - object storage      → the bucket host the SDK actually signs
+     *   - local without CDN   → relative /files… URL → no host → same-origin
+     * Best-effort: any DB/driver error just yields an empty list (base CSP
+     * stays), so a broken profile can never take the site down.
      */
     private function storageImageHosts(): array
     {
         $hosts = [];
         try {
-            $stmt = \App\Core\Database::getInstance()
-                ->query("SELECT config, provider FROM storage_profiles WHERE enabled = 1");
-            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $profiles = \App\Models\StorageProfile::all('sort_order ASC, id ASC');
         } catch (\Throwable) {
             return [];
         }
-        foreach ($rows as $row) {
-            $cfg = json_decode((string) ($row['config'] ?? ''), true);
-            if (!is_array($cfg)) {
+        foreach ($profiles as $profile) {
+            if (!$profile->isEnabled()) {
                 continue;
             }
-            $cdn = trim((string) ($cfg['cdn'] ?? ''));
-            if ($cdn !== '') {
-                $this->addHost($hosts, $cdn);
-                continue;
+            try {
+                $url = $profile->driver()->url('__csp_probe__.png');
+            } catch (\Throwable) {
+                continue; // SDK missing / profile unusable — skip, never fatal
             }
-            $bucket = trim((string) ($cfg['bucket'] ?? ''));
-            $region = trim((string) ($cfg['region'] ?? ''));
-            $endpoint = trim((string) ($cfg['endpoint'] ?? ''));
-            $provider = (string) ($row['provider'] ?? '');
-            if ($endpoint !== '') {
-                // Custom S3-compatible gateway — that is the real image host.
-                $this->addHost($hosts, $endpoint);
-                continue;
-            }
-            if ($bucket === '') {
-                continue;
-            }
-            switch ($provider) {
-                case 'cos':
-                    if ($region !== '') {
-                        $hosts["{$bucket}.cos.{$region}.myqcloud.com"] = true;
-                    }
-                    break;
-                case 'oss':
-                    if ($region !== '') {
-                        $hosts["{$bucket}.oss-{$region}.aliyuncs.com"] = true;
-                    }
-                    break;
-                case 'aws':
-                    // Generic S3 default host — only when no endpoint is set.
-                    if ($region !== '') {
-                        $hosts["{$bucket}.s3.{$region}.amazonaws.com"] = true;
-                    }
-                    break;
-                case 'obs':
-                    // OBS always requires an endpoint (handled above).
-                    break;
-                case 'upyun':
-                    $hosts[$bucket . '.b0.upaiyun.com'] = true;
-                    break;
-                case 'qiniu':
-                    $hosts[$bucket . '.qiniudn.com'] = true;
-                    $hosts[$bucket . '.bkt.clouddn.com'] = true;
-                    break;
+            $host = parse_url($url, PHP_URL_HOST);
+            if (is_string($host) && $host !== '') {
+                $hosts[$host] = true;
             }
         }
         return array_keys($hosts);
-    }
-
-    private function addHost(array &$hosts, string $url): void
-    {
-        $h = parse_url($url, PHP_URL_HOST);
-        if (is_string($h) && $h !== '') {
-            $hosts[$h] = true;
-        }
     }
 
     /**
