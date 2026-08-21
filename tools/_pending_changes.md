@@ -36,6 +36,7 @@
   - `mail_encryption`：原文案「tls 按 ssl 处理」不实——实际 TLS/无 均为明文连接（未实现 STARTTLS）→ 文案如实说明，推荐 SSL
   - **安全修复**：备份目录 `backups/` 与 `.zip` 后缀未受 nginx/.htaccess 防护，备份 zip（含 DB+上传文件）可被公网下载 → 已加入 deny（nginx `location ~ ^/(...|backups|var)/` + `\.(sql|zip|...)`；apache 同步 `[F,L]` + FilesMatch zip）
 - **移除死配置 `cdn_url`**（2026-08-21）：设置页「图片与存储」组的 CDN 域名字段实际只在旧库迁移时读取一次，真正生效的 CDN 在存储管理 profile 的 `cdn` 字段 → 从设置页 GROUPS 移除（media 组删除）、安装向导 step4 移除 local CDN 输入框、InstallController 不再写入；保留 Application.php 旧库迁移读取（老版本升级需把 cdn_url 迁入 profile）
+- **恢复「图片与存储」组占位**（2026-08-21）：用户要求保留该组（后续开发图片处理/缩略图等设置）→ media 组恢复为空 fields 占位（desc 注明"后续版本提供；CDN 请到存储管理"），视图对空组显示占位文案、隐藏无意义的保存按钮
 
 _（继续迭代积累）_
 
