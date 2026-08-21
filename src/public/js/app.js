@@ -155,6 +155,7 @@ function initApiTester() {
     updateUrl();
 
     runBtn.addEventListener('click', async function() {
+        // v1.2.1-beta.3: 守卫式禁用 + 视觉 Loading 反馈（防止用户在异步完成前重复点击）
         runBtn.disabled = true;
         runBtn.textContent = 'Loading...';
         resultBox.innerHTML = '<div class="spinner"></div>';
@@ -164,6 +165,15 @@ function initApiTester() {
         const params = new URLSearchParams();
         if (category) params.set('category', category);
         if (type) params.set('type', type);
+
+        // Promise wrapper so finally runs in BOTH json/redirect branches,
+        // regardless of which branch executes. Without this, the redirect
+        // branch returns immediately (Image is async) and the user could
+        // click again before the previous request finishes — dev tools
+        // would show no second request because the first click handler
+        // hadn't completed. We resolve the promise on Image load/error.
+        let resolveRequest;
+        const requestDone = new Promise(r => { resolveRequest = r; });
 
         try {
             const apiPath = '/api/v1/random?' + params.toString();
@@ -180,15 +190,11 @@ function initApiTester() {
                 tester.alt = 'Random Image';
                 tester.style.cssText = 'max-width:100%;max-height:400px;object-fit:contain;';
                 tester.onload = function() {
-                    // Success path: render the image at the URL the server
-                    // 302-redirected to. We intentionally do NOT surface the
-                    // raw API path here — the operator already sees the URL
-                    // they're testing in the "请求 URL" field above, so a
-                    // duplicate under the image is just noise.
                     tester.removeAttribute('style');
                     tester.style.cssText = 'max-width:100%;max-height:400px;object-fit:contain;display:block;margin:0 auto;';
                     resultBox.innerHTML = '';
                     resultBox.appendChild(tester);
+                    resolveRequest();
                 };
                 tester.onerror = function() {
                     resultBox.innerHTML =
@@ -197,13 +203,17 @@ function initApiTester() {
                         + '浏览器 fetch 在跨域时会拦截（Failed to fetch）。'
                         + '\n本测试改用 img 探测，已绕开此限制。'
                         + '\n\n请求 URL：' + apiPath + '</pre>';
+                    resolveRequest();
                 };
                 tester.src = apiPath;
             } else {
                 const resp = await fetch(apiPath);
                 const data = await resp.json();
                 resultBox.innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                resolveRequest();
             }
+
+            await requestDone;
         } catch(e) {
             resultBox.innerHTML = '<pre style="color:var(--danger)">Error: ' + e.message + '</pre>';
         }
@@ -1216,13 +1226,18 @@ function initRandomDemo() {
     }
 
     // v1.2.1 迭代: view-large (lightbox)
-    if (zoomBtn && imgBox) {
-        imgBox.addEventListener('click', () => {
-            if (!currentUrl) return;
-            if (lbImg) lbImg.src = currentUrl;
-            if (lb) lb.classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
-        });
+    // v1.2.1-beta.3 修复: 之前只有图片本体有点击事件，眼睛图标按钮（zoomBtn）无反应
+    function openLightbox() {
+        if (!currentUrl) return;
+        if (lbImg) lbImg.src = currentUrl;
+        if (lb) lb.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+    if (imgBox) {
+        imgBox.addEventListener('click', openLightbox);
+    }
+    if (zoomBtn) {
+        zoomBtn.addEventListener('click', openLightbox);
     }
     if (lbClose && lb) {
         lbClose.addEventListener('click', closeLb);
