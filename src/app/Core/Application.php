@@ -116,58 +116,83 @@ class Application
 
     /**
      * Collect every host the storage layer may serve images from:
-     *   - profile config cdn (explicit CDN domain) → its host
-     *   - object-storage buckets without a CDN → derived default host
-     *     (COS {bucket}.cos.{region}.myqcloud.com, OSS …aliyuncs.com,
-     *     AWS …amazonaws.com / endpoint, OBS endpoint, UPYUN/Qiniu CDN).
+     *   - profile config cdn (explicit CDN domain) → its host, wins outright
+     *   - endpoint (custom S3-compatible gateway: MinIO / R2 / …) → its host
+     *   - otherwise provider-specific default host derived from bucket/region.
+     *     AWS is generic S3: with an endpoint we use ONLY that; without one we
+     *     fall back to the AWS default (s3.{region}.amazonaws.com).
      * Best-effort: any DB error just yields an empty list (base CSP stays).
      */
     private function storageImageHosts(): array
     {
         $hosts = [];
         try {
-            $rows = \App\Core\Database::getInstance()
-                ->query("SELECT config FROM storage_profiles WHERE enabled = 1")
-                ->fetchAll(\PDO::FETCH_COLUMN);
+            $stmt = \App\Core\Database::getInstance()
+                ->query("SELECT config, provider FROM storage_profiles WHERE enabled = 1");
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         } catch (\Throwable) {
             return [];
         }
-        foreach ($rows as $json) {
-            $cfg = json_decode((string) $json, true);
+        foreach ($rows as $row) {
+            $cfg = json_decode((string) ($row['config'] ?? ''), true);
             if (!is_array($cfg)) {
                 continue;
             }
             $cdn = trim((string) ($cfg['cdn'] ?? ''));
             if ($cdn !== '') {
-                $h = parse_url($cdn, PHP_URL_HOST);
-                if (is_string($h) && $h !== '') {
-                    $hosts[$h] = true;
-                }
+                $this->addHost($hosts, $cdn);
                 continue;
             }
             $bucket = trim((string) ($cfg['bucket'] ?? ''));
             $region = trim((string) ($cfg['region'] ?? ''));
             $endpoint = trim((string) ($cfg['endpoint'] ?? ''));
+            $provider = (string) ($row['provider'] ?? '');
+            if ($endpoint !== '') {
+                // Custom S3-compatible gateway — that is the real image host.
+                $this->addHost($hosts, $endpoint);
+                continue;
+            }
             if ($bucket === '') {
                 continue;
             }
-            if ($endpoint !== '') {
-                $h = parse_url($endpoint, PHP_URL_HOST);
-                if (is_string($h) && $h !== '') {
-                    $hosts[$h] = true;
-                }
+            switch ($provider) {
+                case 'cos':
+                    if ($region !== '') {
+                        $hosts["{$bucket}.cos.{$region}.myqcloud.com"] = true;
+                    }
+                    break;
+                case 'oss':
+                    if ($region !== '') {
+                        $hosts["{$bucket}.oss-{$region}.aliyuncs.com"] = true;
+                    }
+                    break;
+                case 'aws':
+                    // Generic S3 default host — only when no endpoint is set.
+                    if ($region !== '') {
+                        $hosts["{$bucket}.s3.{$region}.amazonaws.com"] = true;
+                    }
+                    break;
+                case 'obs':
+                    // OBS always requires an endpoint (handled above).
+                    break;
+                case 'upyun':
+                    $hosts[$bucket . '.b0.upaiyun.com'] = true;
+                    break;
+                case 'qiniu':
+                    $hosts[$bucket . '.qiniudn.com'] = true;
+                    $hosts[$bucket . '.bkt.clouddn.com'] = true;
+                    break;
             }
-            if ($region !== '') {
-                $hosts["{$bucket}.cos.{$region}.myqcloud.com"] = true;
-                $hosts["{$bucket}.oss-{$region}.aliyuncs.com"] = true;
-                $hosts["{$bucket}.s3.{$region}.amazonaws.com"] = true;
-            }
-            // UPYUN / Qiniu without an explicit CDN are reachable via their
-            // service domains; including them keeps previews working.
-            $hosts[$bucket . '.b0.upaiyun.com'] = true;
-            $hosts[$bucket . '.qiniucdn.com'] = true;
         }
         return array_keys($hosts);
+    }
+
+    private function addHost(array &$hosts, string $url): void
+    {
+        $h = parse_url($url, PHP_URL_HOST);
+        if (is_string($h) && $h !== '') {
+            $hosts[$h] = true;
+        }
     }
 
     /**
