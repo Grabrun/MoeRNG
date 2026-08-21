@@ -5,7 +5,12 @@
         <h1>分类管理</h1>
         <p>管理图片分类层级结构</p>
     </div>
-    <button class="btn btn-primary btn-sm" onclick="openModal('category-modal')">新建分类</button>
+    <div class="flex gap-2">
+        <!-- v1.2.1 迭代: expand/collapse all (admin UI audit C1) -->
+        <button type="button" class="btn btn-outline btn-sm" id="cat-expand-all">展开全部</button>
+        <button type="button" class="btn btn-outline btn-sm" id="cat-collapse-all">折叠全部</button>
+        <button class="btn btn-primary btn-sm" onclick="openModal('category-modal')">新建分类</button>
+    </div>
 </div>
 
 <div class="category-list" id="category-tree">

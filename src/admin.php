@@ -57,6 +57,8 @@ $router->group('/admin', function ($router) {
     $router->post('/settings/test-mail', [$settings, 'testMail']);
     $router->post('/settings/logo-upload', [$settings, 'logoUpload']);
     $router->get('/settings/logs', [$settings, 'logs']);
+    // v1.2.1 迭代: CSV export of the filtered audit trail.
+    $router->get('/settings/logs/export', [$settings, 'logsExport']);
 
     // Storage profiles — top-level board, peer of 图片管理 / 系统设置
     $storageProfiles = \App\Controllers\Admin\StorageProfileController::class;

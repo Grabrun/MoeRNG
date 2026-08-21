@@ -296,7 +296,9 @@ class SettingController extends Controller
     public function logs(Request $request): void
     {
         $page = max(1, (int) $request->input('page', '1'));
-        $perPage = 50;
+        // v1.2.1 迭代: per-page selector (50/100/200/500) for long audit trails.
+        $perPage = in_array((int) $request->input('per_page', '50'), [50, 100, 200, 500], true)
+            ? (int) $request->input('per_page', '50') : 50;
         $search = trim((string) $request->input('q', ''));
         $action = trim((string) $request->input('action', ''));
 
@@ -342,7 +344,52 @@ class SettingController extends Controller
             'total' => $total,
             'q' => $search,
             'action' => $action,
+            'per_page' => $perPage,
         ]);
+    }
+
+    /**
+     * v1.2.1 迭代: export the filtered audit trail as CSV.
+     * GET /admin/settings/logs/export?q=&action=  (admin-only, CSRF not needed for GET).
+     */
+    public function logsExport(Request $request): void
+    {
+        $search = trim((string) $request->input('q', ''));
+        $action = trim((string) $request->input('action', ''));
+
+        $where = [];
+        $params = [];
+        if ($search !== '') {
+            $where[] = '(username LIKE ? OR action LIKE ? OR detail LIKE ?)';
+            $like = '%' . $search . '%';
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+        }
+        if ($action !== '') {
+            $where[] = 'action = ?';
+            $params[] = $action;
+        }
+        $whereSql = $where !== [] ? 'WHERE ' . implode(' AND ', $where) : '';
+        $stmt = \App\Core\Database::getInstance()->prepare("SELECT * FROM audit_logs {$whereSql} ORDER BY id DESC");
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="moerng-audit-log-' . date('Ymd-His') . '.csv"');
+        $out = fopen('php://output', 'w');
+        fputcsv($out, ['time', 'username', 'action', 'detail', 'ip']);
+        foreach ($rows as $row) {
+            fputcsv($out, [
+                $row['created_at'] ?? '',
+                $row['username'] ?? '',
+                $row['action'] ?? '',
+                $row['detail'] ?? '',
+                $row['ip'] ?? '',
+            ]);
+        }
+        fclose($out);
+        exit;
     }
 
     /**

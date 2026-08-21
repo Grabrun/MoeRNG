@@ -46,6 +46,19 @@ document.addEventListener('click', function(e) {
     }
 });
 
+// v1.2.1 迭代: expand / collapse all in the category tree (admin UI audit C1).
+document.addEventListener('click', function(e) {
+    const expand = e.target.closest ? e.target.closest('#cat-expand-all') : null;
+    const collapse = e.target.closest ? e.target.closest('#cat-collapse-all') : null;
+    if (!expand && !collapse) return;
+    const tree = document.getElementById('category-tree');
+    if (!tree) return;
+    const show = !!expand;
+    tree.querySelectorAll('.cat-children, .cat-grandchildren').forEach(function(el) {
+        el.style.display = show ? '' : 'none';
+    });
+});
+
 // v1.1.1-beta.2: ESC closes the topmost open modal.
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
