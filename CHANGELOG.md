@@ -2,6 +2,31 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1-beta.2] - 2026-08-21
+
+### ✨ 新功能
+
+- 随机图功能增强：Lightbox 大图预览 + 下载 + localStorage 历史记录（10 条）+ 元信息行
+- 设置页按文档 §四 重排 5 组（基础/安全/图片与存储/系统维护/高级设置）
+- Logo 上传合并单按钮（选择即自动上传）+ 默认 Logo 预览
+- 本地存储实例支持 CDN 配置
+- 对象存储自定义源站域名（COS/OSS/AWS/OBS/UPYUN/Qiniu 六家）
+- SEO/a11y：Skip Link / JSON-LD / OG 补齐 / robots.txt
+
+### 🐛 修复
+
+- 数值字段 min/max 误按字符串长度校验（保留天数填 30 误报）
+- CSP 拦截对象存储跨域图片（img-src 按真实 driver URL 动态白名单）
+- 设置页操作后跳回错误分组（redirect 缺 ?tab=）
+- logo_url 相对路径校验误判
+- 备份目录 backups/ 与 .zip 后缀未受 nginx/.htaccess 防护（安全）
+
+### 🧹 其他
+
+- 设置项文案与实际行为对齐（备份周期/邮件加密/保留天数 0 语义）
+- 移除死配置 cdn_url（CDN 统一走存储管理）
+- 输入框宽度收敛 / 保存栏 sticky / 设置页排版优化
+
 ## [1.2.1-beta.1] - 2026-08-20
 
 ### 🔒 安全增强
