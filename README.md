@@ -1,4 +1,4 @@
-![MoeRNG Banner](./src/assets/banner-readme.png)
+![MoeRNG Banner](./assets/banner-readme.png)
 
 <h1 align="center">MoeRNG</h1>
 

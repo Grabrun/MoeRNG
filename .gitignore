@@ -32,5 +32,7 @@ tools/__pycache__/
 reference/
 
 # ── Brand design assets (user-provided source art; root-level only, NOT src/assets) ──
-/assets/
+/assets/*
+# ...except the README cover, which must live in the repo.
+!/assets/banner-readme.png
 
