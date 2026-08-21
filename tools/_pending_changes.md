@@ -12,3 +12,6 @@ _（暂无，继续迭代积累）_
 ---
 
 _（本清单由本地迭代维护，发版时清空）_
+- **应用 MoeRNG Design Tokens 视觉设计**（2026-08-21，设计源 D:/projects/2026-08-21-10-49-13）：软暖粉紫主题落地——主色 #C389E8 粉紫/辅色 #6FE3C2 薄荷/霓虹 #FF5FD2（仅抽卡高光）；深色底 #1E1630 / 亮色底 #FFF7FC；大圆角（--radius-sm 12/--radius 20/--radius-lg 28 + pill 999）；圆体字族（ZCOOL KuaiLe 标题 + Nunito 正文）；粉紫柔影；按钮 pill 化；badge/分页 pill；表单 48px 高 + 粉紫 focus 光环；CSS 变量名全部保留只换值（全局换肤零风险）；硬编码旧色全部替换为令牌 rgba；hero 统计渐变文字改纯色（遵守禁渐变文字铁律）
+- **gacha 抽卡动效**（新设计核心交互）：抽图成功时霓虹边框闪动 550ms + 图片过冲弹入 420ms（cubic-bezier(.34,1.56,.64,1)）；prefers-reduced-motion 自动降级；可关
+- **logo 保持不变**（用户明确要求：只应用视觉设计，logo 不变——未引入设计源 logo-01~10，现有 /assets/logo.png、favicon、banner 全部不动）
