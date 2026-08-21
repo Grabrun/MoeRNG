@@ -38,6 +38,7 @@
 - **移除死配置 `cdn_url`**（2026-08-21）：设置页「图片与存储」组的 CDN 域名字段实际只在旧库迁移时读取一次，真正生效的 CDN 在存储管理 profile 的 `cdn` 字段 → 从设置页 GROUPS 移除（media 组删除）、安装向导 step4 移除 local CDN 输入框、InstallController 不再写入；保留 Application.php 旧库迁移读取（老版本升级需把 cdn_url 迁入 profile）
 - **恢复「图片与存储」组占位**（2026-08-21）：用户要求保留该组（后续开发图片处理/缩略图等设置）→ media 组恢复为空 fields 占位（desc 注明"后续版本提供；CDN 请到存储管理"），视图对空组显示占位文案、隐藏无意义的保存按钮
 - **本地存储补 CDN 配置**（2026-08-21）：存储管理的 local profile 表单原来没有 CDN 输入框（LocalDriver 其实已支持 cdn 覆盖，只是 UI/后端未暴露）→ 表单加 CDN 字段（独立 id `cfg_cdn_local`，与 s3 的 `cfg_cdn` 区分）、JS 回填/提交按 driver 分支取值、后端 local 分支 config 保存 `cdn`
+- **修复：CSP 拦截对象存储图片**（2026-08-21）：COS/OSS 等跨域图片在页面加载失败（浏览器直接访问 URL 正常）——根因是 v1.2.1 加的 CSP `img-src 'self' data: blob:` 只放行同源；修复为 DB 就绪后重新发送 CSP，img-src 动态加入所有 storage profile 的 CDN 域名与 bucket 默认 host（COS `{bucket}.cos.{region}.myqcloud.com`、OSS/AWS/endpoint/UPYUN/Qiniu）；DB 不可用时回退基础 CSP
 
 _（继续迭代积累）_
 
