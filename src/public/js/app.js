@@ -216,6 +216,8 @@ function initApiTester() {
             await requestDone;
         } catch(e) {
             resultBox.innerHTML = '<pre style="color:var(--danger)">Error: ' + e.message + '</pre>';
+            // v1.2.1-beta.3 修复: 异常分支也要 resolve，否则 await requestDone 永远挂起 → 按钮卡 Loading
+            resolveRequest();
         }
 
         runBtn.disabled = false;
@@ -1202,8 +1204,12 @@ function initRandomDemo() {
         if (urlEl) urlEl.textContent = url;
         if (zoomBtn) zoomBtn.style.display = '';
         if (dlBtn) dlBtn.style.display = '';
+        // v1.2.1-beta.3 修复: "已签名"判断从 p= 改为 query 存在性——
+        // COS/OSS 签名 URL 用 q-sign-* 参数（无 p=），本地 /files 用 p=，
+        // 统一按「含 query 即临时签名链接」判断。
+        const isSigned = url.includes('?') || url.includes('&');
         if (metaEl) {
-            metaEl.textContent = '图片ID: ' + (url.split('&s=')[0].split('&e=')[0].split('p=')[1] ? '已签名' : '') + (category ? ' · 分类: ' + category : '');
+            metaEl.textContent = (isSigned ? '临时签名链接' : '永久链接') + (category ? ' · 分类: ' + category : '');
             metaEl.classList.remove('hidden');
         }
         // v1.2.1-beta.3 迭代: gacha 抽卡动效 — 霓虹边框闪动 + 过冲弹入（可关）。
