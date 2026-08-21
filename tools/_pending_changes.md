@@ -28,6 +28,7 @@
   - redirect 全部带 `?tab=` 参数（保存/校验失败/缓存清理/备份/测试邮件后正确停留在当前组，不再跳回基础设置）
   - 清除 4 处陈旧 anchor（`#performance`/`#backup`/`#mail` → `?tab=maintenance#maintenance`）
   - 补 `.settings-save-bar` sticky 底栏样式（此前遗漏，用户要求过"保存栏 sticky"）
+- **Logo 上传合并为单按钮**（2026-08-21）：「选择图片」+「上传」合并为一个「上传」按钮——点击唤起文件选择，选中后预览并立即自动上传；移除 `data-logo-choose` 绑定与 disabled 状态
 
 _（继续迭代积累）_
 
