@@ -116,6 +116,11 @@
                     <label>本地存储路径 <small class="text-muted">（相对项目根目录，可空默认 public/uploads）</small></label>
                     <input type="text" name="cfg_path" id="profile-cfg-path" class="form-control" placeholder="public/uploads">
                 </div>
+                <!-- v1.2.1 迭代: local CDN override (LocalDriver already supports it) -->
+                <div class="form-group">
+                    <label>CDN 加速域名（可选） <small class="text-muted">（本地图片经 CDN 域名提供，留空用本站地址）</small></label>
+                    <input type="text" name="cfg_cdn_local" id="profile-cfg-cdn-local" class="form-control" placeholder="https://cdn.example.com">
+                </div>
                 <div class="form-group">
                     <label>签名链接有效期（秒） <small class="text-muted">（本地文件经 /files 签名端点访问）</small></label>
                     <input type="text" name="cfg_signed_ttl_local" id="profile-cfg-signed-ttl-local" class="form-control" placeholder="300（默认 5 分钟）">
@@ -244,6 +249,7 @@
         let cfg = {};
         try { cfg = row ? JSON.parse(row.dataset.config || '{}') : {}; } catch (e) { cfg = {}; }
         document.getElementById('profile-cfg-path').value = cfg.path || '';
+        document.getElementById('profile-cfg-cdn-local').value = cfg.cdn || '';
         document.getElementById('profile-cfg-key').value = cfg.key || '';
         document.getElementById('profile-cfg-secret').value = cfg.secret || '';
         document.getElementById('profile-cfg-region').value = cfg.region || '';
@@ -272,6 +278,10 @@
         const _ttlEl = document.getElementById('profile-driver').value === 's3'
             ? document.getElementById('profile-cfg-signed-ttl')
             : document.getElementById('profile-cfg-signed-ttl-local');
+        // v1.2.1 迭代: local keeps its own CDN input too (same pattern as ttl).
+        const _cdnEl = document.getElementById('profile-driver').value === 's3'
+            ? document.getElementById('profile-cfg-cdn')
+            : document.getElementById('profile-cfg-cdn-local');
         const payload = {
             id: id,
             name: document.getElementById('profile-name').value.trim(),
@@ -282,7 +292,7 @@
             cfg_region: document.getElementById('profile-cfg-region').value.trim(),
             cfg_bucket: document.getElementById('profile-cfg-bucket').value.trim(),
             cfg_endpoint: document.getElementById('profile-cfg-endpoint').value.trim(),
-            cfg_cdn: document.getElementById('profile-cfg-cdn').value.trim(),
+            cfg_cdn: _cdnEl ? _cdnEl.value.trim() : '',
             cfg_signed_ttl: _ttlEl ? _ttlEl.value.trim() : '',
             cfg_path: document.getElementById('profile-cfg-path').value.trim(),
             is_default: document.getElementById('profile-is-default').checked ? '1' : '0'

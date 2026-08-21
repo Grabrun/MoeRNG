@@ -208,8 +208,10 @@ class StorageProfileController extends Controller
             }
         } else {
             // v1.2.0 迭代: local storage also carries signed_ttl (signed /files links).
+            // v1.2.1 迭代: local CDN override (LocalDriver uses it for image URLs).
             $config = [
                 'path'       => trim((string) $request->input('cfg_path', '')),
+                'cdn'        => trim((string) $request->input('cfg_cdn', '')),
                 'signed_ttl' => trim((string) $request->input('cfg_signed_ttl', '300')),
             ];
         }
