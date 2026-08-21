@@ -791,19 +791,18 @@ pre code { background: none; color: var(--text); padding: 0; }
     margin: 0; max-width: none; background: transparent;
     border: none; box-shadow: none; padding: 0;
 }
-/* v1.2.1-beta.3 迭代: rd-preview 固定 4:5 比例（Design Tokens §4）+ max-height
-   兜底，避免横版图把 hero-stage 卡片撑爆 */
+/* v1.2.1-beta.3 迭代: rd-preview 容器固定 1:1（最大 480px），图片 object-fit:contain
+   保留原比例不裁切（之前 4:5 + cover 把横版图裁成近正方形失真） */
 .random-demo .rd-preview {
     border-radius: var(--radius-sm); overflow: hidden;
-    aspect-ratio: 4 / 5; max-height: 360px;
+    width: 100%; max-width: 480px; aspect-ratio: 1 / 1;
     background: var(--bg-input); display: flex; align-items: center; justify-content: center;
     border: 1px solid var(--border); position: relative;
-    /* v1.2.1-beta.3 迭代: 在 hero-stage 内撑满父容器（默认 auto 会按内容收缩 → 图片右侧留白） */
-    width: 100%;
+    margin: 0 auto;
 }
 .random-demo .rd-preview img {
-    width: 100%; height: 100%; object-fit: cover; display: block;
-    transition: opacity 0.3s ease;
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    display: block; transition: opacity 0.3s ease;
 }
 .random-demo .rd-preview .rd-placeholder { color: var(--text-muted); font-size: 0.9rem; padding: 24px; text-align: center; }
 .random-demo .rd-loading {
