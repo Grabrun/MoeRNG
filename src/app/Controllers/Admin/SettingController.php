@@ -41,7 +41,7 @@ class SettingController extends Controller
             'fields' => [
                 'site_name' => ['type' => 'text', 'label' => '网站名称', 'default' => 'MoeRNG', 'maxlength' => 100, 'rules' => ['required' => true, 'max' => 100], 'help' => '显示在浏览器标题、首页与页脚'],
                 'site_slogan' => ['type' => 'text', 'label' => '网站标语', 'default' => '随机二次元图片 API 服务', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '首页 hero 区域副标题'],
-                'logo_url' => ['type' => 'logo', 'label' => 'Logo 图片', 'default' => '/assets/logo.png', 'maxlength' => 500, 'rules' => ['url' => true, 'max' => 500], 'help' => '支持本地上传（PNG/JPG/GIF/WebP，≤2MB）或填写外部 URL；留空使用文字标题'],
+                'logo_url' => ['type' => 'logo', 'label' => 'Logo 图片', 'default' => '/assets/logo.png', 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => '支持本地上传（PNG/JPG/GIF/WebP，≤2MB）；上传后立即生效，留空回退默认 Logo'],
                 'site_description' => ['type' => 'textarea', 'label' => '网站描述', 'default' => '', 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => 'SEO meta description，建议 50-160 字'],
                 'icp_number' => ['type' => 'text', 'label' => 'ICP 备案号', 'default' => '', 'maxlength' => 64, 'rules' => ['max' => 64], 'help' => '仅中国大陆部署需要；如 粤ICP备xxxxxxxx号，留空不显示'],
                 'copyright' => ['type' => 'text', 'label' => '版权信息', 'default' => '© {year} MoeRNG. All rights reserved.', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '页脚版权文字；{year} 会自动替换为当前年份'],

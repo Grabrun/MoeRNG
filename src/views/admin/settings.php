@@ -27,14 +27,16 @@ function renderField(string $key, array $def, array $settings): void
             . '<span class="toggle-text">' . ($checked ? '已开启' : '已关闭') . '</span>'
             . '</div>';
     } elseif ($type === 'logo') {
-        $previewSrc = $value !== '' ? $value : '';
-        $hasLogo = $previewSrc !== '';
+        // v1.2.1 迭代: always preview — fall back to the packaged default logo
+        // when no custom logo has been set (site renders /assets/logo.png).
+        $previewSrc = $value !== '' ? $value : '/assets/logo.png';
+        $hasLogo = $value !== '';
         echo '<div class="logo-uploader" data-field="' . $name . '">';
         echo '<div class="logo-preview-wrap" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">';
         echo '<img id="logo-preview-' . $name . '" src="' . h($previewSrc) . '" alt="当前 Logo" '
-            . 'style="max-height:48px;max-width:160px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;background:var(--bg-input);object-fit:contain;display:' . ($hasLogo ? 'block' : 'none') . '">';
+            . 'style="max-height:48px;max-width:160px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;background:var(--bg-input);object-fit:contain;display:block">';
         if (!$hasLogo) {
-            echo '<span class="text-muted" id="logo-empty-' . $name . '" style="font-size:0.85rem;color:var(--text-secondary)">未设置 Logo，站点将使用文字标题</span>';
+            echo '<span class="text-muted" id="logo-default-hint-' . $name . '" style="font-size:0.85rem;color:var(--text-secondary)">当前使用默认 Logo，上传后可替换</span>';
         }
         echo '</div>';
         echo '<div class="logo-upload-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
@@ -44,7 +46,9 @@ function renderField(string $key, array $def, array $settings): void
         if ($hasLogo) {
             echo '<button type="button" class="btn btn-sm" data-logo-remove="' . $name . '">移除 Logo</button>';
         }
-        echo '<input type="text" name="' . $name . '" class="form-control" style="max-width:280px" value="' . h($value) . '" placeholder="或粘贴外部 URL">';
+        // v1.2.1 迭代: no manual URL input — value travels as a hidden field so
+        // saving the form never wipes an uploaded/custom logo.
+        echo '<input type="hidden" name="' . $name . '" value="' . h($value) . '">';
         echo '</div>';
         echo '</div>';
     } elseif ($type === 'select') {
@@ -230,8 +234,8 @@ admin_header('系统设置');
                 var img = document.getElementById('logo-preview-' + field);
                 img.src = e.target.result;
                 img.style.display = 'block';
-                var empty = document.getElementById('logo-empty-' + field);
-                if (empty) empty.style.display = 'none';
+                var hint = document.getElementById('logo-default-hint-' + field);
+                if (hint) hint.style.display = 'none';
             };
             reader.readAsDataURL(f);
             // Upload immediately
@@ -250,6 +254,19 @@ admin_header('系统设置');
                         var img = document.getElementById('logo-preview-' + field);
                         img.src = res.url;
                         img.style.display = 'block';
+                        var hint = document.getElementById('logo-default-hint-' + field);
+                        if (hint) hint.style.display = 'none';
+                        // A custom logo is now set — ensure the 移除 Logo button exists.
+                        var row = btn.closest('.logo-upload-row');
+                        if (row && !row.querySelector('[data-logo-remove]')) {
+                            var rm = document.createElement('button');
+                            rm.type = 'button';
+                            rm.className = 'btn btn-sm';
+                            rm.setAttribute('data-logo-remove', field);
+                            rm.textContent = '移除 Logo';
+                            row.insertBefore(rm, urlInput);
+                            bindLogoRemove(rm);
+                        }
                         if (window.toast) toast('Logo 上传成功', 'success');
                         else alert('Logo 上传成功');
                     } else {
@@ -265,19 +282,20 @@ admin_header('系统设置');
                 });
         });
     });
-    document.querySelectorAll('[data-logo-remove]').forEach(function (btn) {
+    function bindLogoRemove(btn) {
         btn.addEventListener('click', function () {
             var field = btn.dataset.logoRemove;
             var urlInput = document.querySelector('.logo-uploader[data-field="' + field + '"] input[name="' + field + '"]');
             urlInput.value = '';
             var img = document.getElementById('logo-preview-' + field);
-            img.style.display = 'none';
-            img.removeAttribute('src');
-            var empty = document.getElementById('logo-empty-' + field);
-            if (empty) empty.style.display = '';
+            img.src = '/assets/logo.png';
+            img.style.display = 'block';
+            var hint = document.getElementById('logo-default-hint-' + field);
+            if (hint) hint.style.display = '';
             btn.style.display = 'none';
         });
-    });
+    }
+    document.querySelectorAll('[data-logo-remove]').forEach(bindLogoRemove);
 })();
 </script>
 
