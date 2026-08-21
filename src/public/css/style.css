@@ -791,13 +791,16 @@ pre code { background: none; color: var(--text); padding: 0; }
     margin: 0; max-width: none; background: transparent;
     border: none; box-shadow: none; padding: 0;
 }
+/* v1.2.1-beta.3 迭代: rd-preview 固定 4:5 比例（Design Tokens §4）+ max-height
+   兜底，避免横版图把 hero-stage 卡片撑爆 */
 .random-demo .rd-preview {
-    border-radius: var(--radius-sm); overflow: hidden; min-height: 240px;
+    border-radius: var(--radius-sm); overflow: hidden;
+    aspect-ratio: 4 / 5; max-height: 360px;
     background: var(--bg-input); display: flex; align-items: center; justify-content: center;
     border: 1px solid var(--border); position: relative;
 }
 .random-demo .rd-preview img {
-    width: 100%; height: 260px; object-fit: cover; display: block;
+    width: 100%; height: 100%; object-fit: cover; display: block;
     transition: opacity 0.3s ease;
 }
 .random-demo .rd-preview .rd-placeholder { color: var(--text-muted); font-size: 0.9rem; padding: 24px; text-align: center; }

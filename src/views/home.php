@@ -70,6 +70,8 @@
             background: var(--bg-card); border: 1px solid var(--border);
             border-radius: var(--radius-lg); padding: 24px;
             box-shadow: var(--shadow-floating);
+            /* v1.2.1-beta.3 迭代: 限制右栏宽度，避免横版图撑爆布局 */
+            max-width: 520px; justify-self: center; width: 100%;
         }
         .hero-banner-wrap { display: block; margin-bottom: 24px; }
         .hero-banner { width: 100%; height: auto; border-radius: var(--radius); }
