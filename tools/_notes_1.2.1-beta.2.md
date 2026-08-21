@@ -1,39 +1,46 @@
-## v1.2.1-beta.1
+# MoeRNG v1.2.1-beta.2 Release Notes
 
-**版本概述**：安全加固与稳定性修复版。基于两轮安全审计（2026-08-14 黑盒 + 2026-08-20 白盒/黑盒，综合评分 A+）完成全部应用层修复：会话加固、限流键可信化、签名密钥独立化（文件存储，与数据库完全隔离）、fail-closed 限流、安全响应头等；同时修复本地图片加载回归、移动端布局与导航等问题。
+## 版本概述
 
-### 🔒 安全增强（Security）
+v1.2.1-beta.2 是一次大规模迭代收口：完成设置页全面重构（按文档 §四 重排分组、优化排版、修复校验语义）、对象存储能力扩展（本地存储 CDN 配置、六家云存储自定义源站域名）、修复 CSP 拦截跨域图片的安全回归，并落地前端 UI 深度分析报告的其余项。
 
-- **会话加固**：Cookie 补 HttpOnly + SameSite=Lax + Secure（HTTPS/代理感知）、`session.use_strict_mode`、登录后 `session_regenerate_id(true)`（防会话固定）
-- **限流键可信化**：`Request::resolveIp()` 不再信任 X-Forwarded-For，只用 REMOTE_ADDR（API 限流 + 登录锁定键同时受益）
-- **签名密钥独立化**：HMAC 签名密钥改用独立随机密钥，文件存储（config/signing_key.php）——**不派生自 DB 密码、不存储在 DB**，DB 泄露不影响签名安全
-- **限流 fail-closed**：限流器目录不可用时拒绝请求而非放行（登录锁定保持有效）
-- **安全响应头全站**：CSP / X-Frame-Options DENY / X-Content-Type-Options nosniff / Referrer-Policy / Permissions-Policy / X-Robots-Tag
-- **信息泄露收敛**：`/api/v1/stats` 移除 version + storage_driver；首页 HTML 注释清理版本号
-- **security.txt**：新增 `/.well-known/security.txt`（专用安全邮箱）
-- **登录爆破防护**（已有）：失败锁定 + 可选验证码 + 审计日志
+## 新功能
 
-### ✨ 新功能（Features）
+- 随机图功能增强：大图预览 Lightbox（Esc/遮罩关闭）+ 下载按钮 + localStorage 历史记录（最近 10 条）+ 元信息行
+- 后台设置页按优化文档 §四 重排为 5 组：基础设置 / 安全设置 / 图片与存储 / 系统维护 / 高级设置
+- Logo 上传合并为单按钮（选择即自动上传），未设置时预览默认 Logo
+- 本地存储实例支持 CDN 加速域名配置
+- 对象存储自定义源站域名：COS / OSS / AWS S3 / 华为 OBS / 又拍云 / 七牛 六家全部支持（签名 URL 走自定义域名，替代默认 bucket 域名）
+- Skip Link、JSON-LD 结构化数据、OG/Twitter 卡片补齐、robots.txt（SEO/a11y）
 
-- **移动端汉堡导航**：5 项导航在移动端收进 `details` 折叠菜单（纯 HTML，无 JS 依赖），header 不再遮挡内容
-- **HEAD 路由支持**：动态路由 HEAD 按 GET 分发（健康检查不再 404）
-- **doctor.php 签名密钥自检**：round-trip + 稳定性检查，`SECRET CHANGES PER CALL` 直接定位 config/ 不可写
+## 增强
 
-### 🐛 Bug 修复（Bug Fixes）
+- 设置页排版：自适应列宽、短字段宽度收敛（420px）、长字段跨整行、保存栏 sticky
+- 设置项文案与实际行为对齐（备份周期间隔制、邮件加密说明、操作日志保留天数 0=不清理）
+- 操作日志保留天数规则允许填 0（不清理）
+- 图片列表 URL 使用真实存储驱动生成（CDN/签名 URL 一致）
 
-- **本地图片加载失败（严重）**：签名密钥生成回归——`file_put_contents` 失败返回 false 不抛异常导致每次请求新密钥，签名全失效；已修复（检查返回值 + 确定性回退）
-- **移动端 hero 布局**：统计数字三列挤压 → 竖排 + 字号/间距适配
-- **banner 显示**：宽高比锁定（`aspect-ratio: 1400/466`），修复压扁与上下留白；桌面加宽至 880px
+## 修复
 
-### 🧹 工程整理（Chores）
+- 修复：数值字段 min/max 被误按字符串长度校验（操作日志保留天数填 30 报「长度不能少于 7 字符」）
+- 修复：CSP 拦截对象存储跨域图片（COS/OSS 图片在页面加载失败，浏览器直接访问正常）——CSP img-src 动态加入存储 CDN/bucket 域名（按真实 driver URL 探针，零猜测）
+- 修复：设置页操作后跳回错误分组（redirect 缺 ?tab= 参数）
+- 修复：logo_url 相对路径被 FILTER_VALIDATE_URL 误判非法导致保存必失败
+- 修复：备份目录 backups/ 与 .zip 后缀未受 nginx/.htaccess 防护（备份包可被公网下载）
+- 移除死配置 cdn_url（实际只被旧库迁移读取；CDN 统一在存储管理配置）
 
-- **tools/ 目录整理**：一次性脚本（21 个）与历史 notes（8 个）归档至 archive/，顶层只留活跃工具
-- **根目录整理**：品牌素材归入 `assets/`（gitignore 锚定根级，不误伤 src/assets）
+## 文档
 
-### 升级指南（Upgrade Guide）
+- nginx.conf.example / .htaccess 同步加固（deny backups/、var/、.zip）
+- 待发版变更清单整理
 
-1. 下载 zip 覆盖部署（项目根 doc-root），重启 PHP-FPM。
-2. 首次访问触发签名密钥生成：`config/signing_key.php` 自动创建（config/ 需可写）；若曾部署过旧版，文件密钥保持有效，链接不中断。
-3. 运行 doctor.php：新增「Signing key file」与「Signing key stable + round-trip」检查应为绿色。
-4. 验证本地图片加载、移动端导航（汉堡菜单）、登录流程。
-5. 验证后删除 doctor.php。
+## 升级指南
+
+- 覆盖部署 zip 到站点根目录；重启 PHP-FPM（OPcache）
+- 更新 nginx 配置：新增 `backups|var` deny 路径与 `.zip` 后缀 deny（宝塔面板 → 网站设置 → 配置文件）
+- 原设置页的「CDN 加速域名」字段已移除——若之前配置过，请到「存储管理」对应存储实例的 CDN 字段重新填写（老库会自动迁移）
+- 浏览器需刷新缓存查看设置页新样式
+
+## 致谢
+
+感谢报告与验证：设置页布局问题、Logo 上传交互、CSP 图片加载失败、自定义源站域名需求；以及「全部按数据库存储的实际来」的严格标准。
