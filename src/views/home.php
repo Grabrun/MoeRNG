@@ -43,12 +43,10 @@
         .hero h1 { font-size: 4rem; margin-bottom: 12px; }
         .hero .subtitle { font-size: 1.25rem; color: var(--text-secondary); margin-bottom: 8px; }
         .hero .stats { display: flex; gap: 32px; justify-content: center; margin: 32px 0; }
-        /* v1.2.1 迭代: bolder stat numbers (UI audit V2) */
+        /* v1.2.1 迭代: bolder stat numbers (UI audit V2) — 纯色粉紫（禁止渐变文字铁律） */
         .hero .stats .stat-value {
             font-size: 2.4rem; font-weight: 800; line-height: 1.15;
-            background: linear-gradient(135deg, var(--primary), #ffb3d0);
-            -webkit-background-clip: text; background-clip: text;
-            -webkit-text-fill-color: transparent; color: var(--primary);
+            color: var(--primary);
         }
         .hero .stat { text-align: center; }
         .hero .stat .num { font-size: 2rem; font-weight: 700; color: var(--primary); }

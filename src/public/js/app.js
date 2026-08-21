@@ -1225,6 +1225,23 @@ function initRandomDemo() {
             metaEl.classList.remove('hidden');
         }
         saveHistory(url, category);
+
+        // v1.2.1-beta.3 迭代: gacha 抽卡动效 — 霓虹边框闪动 + 过冲弹入（可关）。
+        // 仅在用户未通过 prefers-reduced-motion 关闭动效时执行。
+        const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!reduceMotion) {
+            const stage = imgBox.closest('.rd-preview');
+            if (stage) {
+                stage.classList.remove('gacha-flash');
+                void stage.offsetWidth; // restart animation
+                stage.classList.add('gacha-flash');
+                setTimeout(() => stage.classList.remove('gacha-flash'), 700);
+            }
+            imgBox.classList.remove('gacha-pop');
+            void imgBox.offsetWidth;
+            imgBox.classList.add('gacha-pop');
+            setTimeout(() => imgBox.classList.remove('gacha-pop'), 450);
+        }
     }
 
     // v1.2.1 迭代: view-large (lightbox)
