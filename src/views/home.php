@@ -279,12 +279,6 @@
                 </div>
             </div>
         </div>
-
-        <!-- v1.2.1 迭代: lightbox for the random demo image -->
-        <div class="lb-overlay hidden" id="rd-lightbox" role="dialog" aria-modal="true" aria-label="图片大图预览">
-            <img id="rd-lb-img" src="" alt="大图预览">
-            <button type="button" class="lb-close" id="rd-lb-close" aria-label="关闭预览"><?= icon('x', 24) ?></button>
-        </div>
         </div>
     </section>
 
@@ -599,5 +593,11 @@
         });
     })();
     </script>
+<!-- v1.2.1-beta.3 修复: 移到 body 直接子元素下（之前嵌在 hero-stage 内被 .site-nav z-index:300 的 stacking context 困住，导致全屏 lightbox 没法覆盖 nav） -->
+<div class="lb-overlay hidden" id="rd-lightbox" role="dialog" aria-modal="true" aria-label="图片大图预览">
+    <img id="rd-lb-img" src="" alt="大图预览">
+    <button type="button" class="lb-close" id="rd-lb-close" aria-label="关闭预览"><?= icon('x', 24) ?></button>
+</div>
+
 </body>
 </html>

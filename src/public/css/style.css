@@ -727,11 +727,11 @@ pre code { background: none; color: var(--text); padding: 0; }
 
 /* v1.2.1 迭代: hero random-demo lightbox (separate from admin gallery lightbox) */
 .lb-overlay {
-    position: fixed; inset: 0; z-index: 1000;
+    position: fixed; inset: 0; z-index: 9999;
     display: flex; align-items: center; justify-content: center;
     background: rgba(8,8,18,0.88); padding: 24px;
 }
-.lb-overlay img { max-width: 92%; max-height: 88vh; border-radius: 12px; box-shadow: 0 12px 48px rgba(0,0,0,0.5); }
+.lb-overlay img { max-width: 92%; max-height: 88vh; object-fit: contain; border-radius: 12px; box-shadow: 0 12px 48px rgba(0,0,0,0.5); }
 .lb-overlay .lb-close {
     position: absolute; top: 18px; right: 18px;
     display: flex; align-items: center; justify-content: center;
