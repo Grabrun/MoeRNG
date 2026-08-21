@@ -39,7 +39,7 @@
 
 1. 将 `src/` 目录内容上传到站点根目录（或 `public/` 子目录，取决于你的 Nginx 配置）。
 2. 确保 `config/`、`public/uploads/` 目录可写。
-3. Nginx 配置参考 `nginx.conf.example`（将所有非静态资源请求 rewrite 到对应入口）。
+3. Nginx 配置参考 `nginx.conf.example`（将所有非静态资源请求 rewrite 到对应入口）。宝塔面板用户请直接使用 `docs/BT-DEPLOY.md` 中的「伪静态」配置。
 4. 浏览器访问站点根目录，进入安装向导：填写数据库信息、管理员账号、存储配置。
 5. 安装完成后进入 `/admin` 管理后台。
 
