@@ -35,6 +35,7 @@
   - `audit_log_retention_days`：规则 min 7 与文案「0 表示不清理」矛盾（填 0 会被校验拦截）→ min 改 0
   - `mail_encryption`：原文案「tls 按 ssl 处理」不实——实际 TLS/无 均为明文连接（未实现 STARTTLS）→ 文案如实说明，推荐 SSL
   - **安全修复**：备份目录 `backups/` 与 `.zip` 后缀未受 nginx/.htaccess 防护，备份 zip（含 DB+上传文件）可被公网下载 → 已加入 deny（nginx `location ~ ^/(...|backups|var)/` + `\.(sql|zip|...)`；apache 同步 `[F,L]` + FilesMatch zip）
+- **移除死配置 `cdn_url`**（2026-08-21）：设置页「图片与存储」组的 CDN 域名字段实际只在旧库迁移时读取一次，真正生效的 CDN 在存储管理 profile 的 `cdn` 字段 → 从设置页 GROUPS 移除（media 组删除）、安装向导 step4 移除 local CDN 输入框、InstallController 不再写入；保留 Application.php 旧库迁移读取（老版本升级需把 cdn_url 迁入 profile）
 
 _（继续迭代积累）_
 
