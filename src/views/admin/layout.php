@@ -6,9 +6,7 @@
     <meta name="csrf-token" content="<?= $csrf_token ?>">
     <title><?= h($title ?? '仪表盘') ?> - MoeRNG Admin</title>
     <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强，网络不可达自动回退） -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/fonts/fonts.css">
     <link rel="stylesheet" href="/public/css/style.css">
     <style>
         .admin-layout { display: flex; min-height: 100vh; }

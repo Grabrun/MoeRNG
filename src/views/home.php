@@ -40,9 +40,7 @@
     <link rel="stylesheet" href="/public/css/style.css">
     <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强——font-display=swap 不阻塞渲染；
          国内网络无法访问 Google Fonts 时自动回退到系统字体栈，不影响可用性） -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/fonts/fonts.css">
     <style>
         /* v1.2.1-beta.3 迭代: hero 双栏布局（Design Tokens §5 两栏 hero-grid） */
         .hero { padding: 96px 24px 64px; }
