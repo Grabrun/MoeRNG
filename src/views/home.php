@@ -46,11 +46,15 @@
     <style>
         /* v1.2.1-beta.3 迭代: hero 双栏布局（Design Tokens §5 两栏 hero-grid） */
         .hero { padding: 96px 24px 64px; }
-        .hero-inner { max-width: var(--maxw, 1120px); margin: 0 auto; }
+        .hero-inner { max-width: var(--maxw, 1120px); margin: 0 auto; padding: 0 24px; }
         .hero-grid {
             display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px;
-            align-items: center;
+            /* v1.2.1-beta.3 迭代: start 对齐——两栏按内容自然高度，不互相拉伸 */
+            align-items: start;
         }
+        /* v1.2.1-beta.3 迭代: grid item 默认 min-width:auto 会让内容撑爆布局
+           （banner 图/文字溢出导致整体左栏文字被截断），强制 min-width:0 */
+        .hero-left, .hero-stage { min-width: 0; }
         .hero-title {
             font-family: var(--font-display);
             font-size: 2.75rem; font-weight: 800; line-height: 1.2;
@@ -70,8 +74,8 @@
             background: var(--bg-card); border: 1px solid var(--border);
             border-radius: var(--radius-lg); padding: 24px;
             box-shadow: var(--shadow-floating);
-            /* v1.2.1-beta.3 迭代: 撑满 hero 右栏（之前 max-width:520px + justify-self:center 导致右侧大片空白） */
-            width: 100%;
+            /* v1.2.1-beta.3 迭代: 撑满 hero 右栏，按内容自然高度（不被左栏 banner 拉伸） */
+            width: 100%; align-self: start;
         }
         .hero-banner-wrap { display: block; margin-bottom: 24px; }
         .hero-banner { width: 100%; height: auto; border-radius: var(--radius); }
