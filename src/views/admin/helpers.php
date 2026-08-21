@@ -40,7 +40,12 @@ function admin_header($title) { ?>
         .page-header p { color: var(--text-secondary); font-size: 0.9rem; }
         #batch-bar { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg-card); border: 1px solid var(--primary); border-radius: var(--radius); padding: 12px 24px; display: flex; align-items: center; gap: 16px; z-index: 500; box-shadow: var(--shadow); }
         @media (max-width: 768px) {
-            .sidebar { width: 100%; position: relative; height: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 16px; }
+            /* v1.2.1 fix: don't override style.css's drawer (.sidebar translateX)
+               here — the internal <style> loads AFTER style.css and was forcing
+               the sidebar back to a full-width inline column, which crushed
+               .main-content to ~30px. Let the drawer (transform translateX(-100%))
+               defined in style.css do its job; the hamburger toggle (sidebar-toggle
+               button + sidebar.open class) reveals it. */
             .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
             .main-content { margin-left: 0; padding: 20px 16px; }
         }
