@@ -30,6 +30,11 @@
   - 补 `.settings-save-bar` sticky 底栏样式（此前遗漏，用户要求过"保存栏 sticky"）
 - **Logo 上传合并为单按钮**（2026-08-21）：「选择图片」+「上传」合并为一个「上传」按钮——点击唤起文件选择，选中后预览并立即自动上传；移除 `data-logo-choose` 绑定与 disabled 状态
 - **Logo 去掉 URL 粘贴框 + 默认预览**（2026-08-21）：删除「或粘贴外部 URL」输入框，改 hidden input 携带值（防保存清空）；未设置时预览默认 `/assets/logo.png` 并提示"当前使用默认 Logo"；移除 Logo 回退默认预览；**修复连带 bug**——logo_url 规则的 `url` 校验（FILTER_VALIDATE_URL）会把相对路径（`/assets/logo.png`、`/public/uploads/...`）判为非法导致保存必失败，已移除该校验
+- **文案与实际行为对齐**（2026-08-21）：
+  - `backup_period`：实现是间隔触发（24h/168h/720h），原文案误写「每周一/每月 1 号」→ 改为「每 24 小时/每 7 天/每 30 天」
+  - `audit_log_retention_days`：规则 min 7 与文案「0 表示不清理」矛盾（填 0 会被校验拦截）→ min 改 0
+  - `mail_encryption`：原文案「tls 按 ssl 处理」不实——实际 TLS/无 均为明文连接（未实现 STARTTLS）→ 文案如实说明，推荐 SSL
+  - **安全修复**：备份目录 `backups/` 与 `.zip` 后缀未受 nginx/.htaccess 防护，备份 zip（含 DB+上传文件）可被公网下载 → 已加入 deny（nginx `location ~ ^/(...|backups|var)/` + `\.(sql|zip|...)`；apache 同步 `[F,L]` + FilesMatch zip）
 
 _（继续迭代积累）_
 
