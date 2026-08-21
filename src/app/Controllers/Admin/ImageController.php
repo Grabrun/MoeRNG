@@ -319,6 +319,52 @@ class ImageController extends Controller
         $this->ok($message, ['deleted' => $deleted, 'failed' => $failed], self::PAGE);
     }
 
+    /**
+     * v1.2.1 迭代: bulk re-categorize selected images (admin UI audit I2).
+     * POST /admin/images/batch-categorize { ids: [], category_id: N|0 }
+     * category_id 0 clears the category.
+     */
+    public function batchCategorize(Request $request): void
+    {
+        $this->validateCsrf();
+        $ids = $request->input('ids', []);
+        if (!is_array($ids)) {
+            $ids = $ids === null || $ids === '' ? [] : [$ids];
+        }
+        $ids = array_values(array_filter(array_map('intval', $ids)));
+        if (empty($ids)) {
+            $this->fail('未选择任何图片。', 400, self::PAGE);
+        }
+        $categoryId = (int) $request->input('category_id', '0');
+        if ($categoryId < 0) {
+            $categoryId = 0;
+        }
+        if ($categoryId > 0 && !\App\Models\Category::find($categoryId)) {
+            $this->fail('分类不存在。', 400, self::PAGE);
+        }
+
+        $ok = 0;
+        foreach ($ids as $id) {
+            $image = Image::find($id);
+            if (!$image) {
+                continue;
+            }
+            if ($image->update(['category_id' => $categoryId === 0 ? null : $categoryId])) {
+                $ok++;
+            }
+        }
+        if ($ok === 0) {
+            $this->fail('未能更新任何图片分类。', 500, self::PAGE);
+        }
+        \App\Models\AuditLog::record('image_batch_category', [
+            'count' => $ok,
+            'category_id' => $categoryId,
+        ]);
+        $message = '已更新 ' . $ok . ' 张图片的'
+            . ($categoryId === 0 ? '分类（未分类）。' : '分类。');
+        $this->ok($message, ['updated' => $ok, 'category_id' => $categoryId], self::PAGE);
+    }
+
     public function sort(Request $request): void
     {
         $this->validateCsrf();

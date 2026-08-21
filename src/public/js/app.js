@@ -348,6 +348,38 @@ function initImageGrid() {
         deleteImages(ids);
     });
 
+    // v1.2.1 迭代: bulk re-categorize (admin UI audit I2)
+    const batchCat = document.getElementById('batch-category');
+    const batchCatBtn = document.getElementById('batch-categorize');
+    if (batchCat) {
+        batchCat.addEventListener('change', function() {
+            if (batchCatBtn) batchCatBtn.disabled = batchCat.value === '';
+        });
+    }
+    if (batchCatBtn) {
+        batchCatBtn.addEventListener('click', async function() {
+            const ids = selectedIds();
+            if (!batchCat || batchCat.value === '' || ids.length === 0) return;
+            if (!confirm('将选中的 ' + ids.length + ' 张图片移动到所选分类？')) return;
+            batchCatBtn.disabled = true;
+            try {
+                const result = await adminPost('/admin/images/batch-categorize', {
+                    'ids[]': ids,
+                    category_id: batchCat.value,
+                });
+                showToast(result.message || '分类更新成功', 'success');
+                // Refresh the grid so category filtering reflects the change.
+                if (window.location.search.includes('category')) {
+                    window.location.reload();
+                }
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                batchCatBtn.disabled = false;
+            }
+        });
+    }
+
     async function deleteImages(ids, name) {
         const label = ids.length === 1 ? ('「' + (name || '这张图片') + '」') : ('选中的 ' + ids.length + ' 张图片');
         if (!confirm('确定删除' + label + '？此操作不可撤销。')) return;

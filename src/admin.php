@@ -40,6 +40,7 @@ $router->group('/admin', function ($router) {
     $router->post('/images/update', [$images, 'update']);
     $router->post('/images/delete', [$images, 'delete']);
     $router->post('/images/batch-delete', [$images, 'batchDelete']);
+    $router->post('/images/batch-categorize', [$images, 'batchCategorize']);
     $router->post('/images/sort', [$images, 'sort']);
 
     // Categories

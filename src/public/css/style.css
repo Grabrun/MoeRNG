@@ -156,6 +156,27 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 
 /* Table */
 .table-wrap { overflow-x: auto; }
+/* v1.2.1 迭代: mobile table → stacked cards (admin UI audit U1) */
+@media (max-width: 768px) {
+    table.table-card { display: block; }
+    table.table-card thead { display: none; }
+    table.table-card tbody { display: block; }
+    table.table-card tr {
+        display: block; border: 1px solid var(--border);
+        border-radius: var(--radius-sm); padding: 4px 12px; margin-bottom: 10px;
+        background: var(--bg-card);
+    }
+    table.table-card td {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--border);
+        font-size: 0.88rem;
+    }
+    table.table-card td:last-child { border-bottom: none; }
+    table.table-card td::before {
+        content: attr(data-label); color: var(--text-muted);
+        font-size: 0.78rem; flex-shrink: 0;
+    }
+}
 table {
     width: 100%; border-collapse: collapse;
 }

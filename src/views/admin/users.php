@@ -10,7 +10,7 @@
 
 <div class="card">
     <div class="table-wrap">
-        <table>
+        <table class="table-card">
             <thead>
                 <tr>
                     <th>ID</th>
@@ -24,12 +24,12 @@
             <tbody>
                 <?php foreach ($users as $user): ?>
                 <tr>
-                    <td><?= $user->id ?></td>
-                    <td><?= h($user->username) ?></td>
-                    <td><?= h($user->email) ?></td>
-                    <td><span class="badge badge-<?= $user->role === 'admin' ? 'primary' : 'info' ?>"><?= h($user->role) ?></span></td>
-                    <td><span class="badge badge-<?= $user->status === 'active' ? 'success' : 'danger' ?>"><?= h($user->status) ?></span></td>
-                    <td>
+                    <td data-label="ID"><?= $user->id ?></td>
+                    <td data-label="用户名"><?= h($user->username) ?></td>
+                    <td data-label="邮箱"><?= h($user->email) ?></td>
+                    <td data-label="角色"><span class="badge badge-<?= $user->role === 'admin' ? 'primary' : 'info' ?>"><?= h($user->role) ?></span></td>
+                    <td data-label="状态"><span class="badge badge-<?= $user->status === 'active' ? 'success' : 'danger' ?>"><?= h($user->status) ?></span></td>
+                    <td data-label="操作">
                         <div class="flex gap-1">
                             <button class="btn btn-outline btn-sm" onclick="editUser(<?= $user->id ?>, '<?= h($user->username) ?>', '<?= h($user->email) ?>', '<?= h($user->role) ?>')">编辑</button>
                             <form method="POST" action="/admin/users/toggle-status" style="display:inline">

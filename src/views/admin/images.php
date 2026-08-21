@@ -83,6 +83,15 @@
 <!-- Batch Bar -->
 <div id="batch-bar" class="hidden">
     <span>已选 <strong class="count">0</strong> 项</span>
+    <!-- v1.2.1 迭代: bulk re-categorize (admin UI audit I2) -->
+    <select id="batch-category" class="form-control" style="width:auto" aria-label="批量修改分类">
+        <option value="">批量改分类…</option>
+        <option value="0">未分类</option>
+        <?php foreach ($categories as $cat): ?>
+        <option value="<?= (int) $cat->id ?>"><?= h($cat->name) ?></option>
+        <?php endforeach; ?>
+    </select>
+    <button class="btn btn-outline btn-sm" id="batch-categorize" disabled>应用</button>
     <button class="btn btn-danger btn-sm" id="batch-delete">批量删除</button>
     <button class="btn btn-outline btn-sm" id="clear-selection">取消选择</button>
 </div>
