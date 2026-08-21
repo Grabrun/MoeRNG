@@ -33,8 +33,8 @@ class SettingController extends Controller
      * Rules: required, max, min, numeric, integer, email, url, in:[a,b]
      */
     public const GROUPS = [
-        // v1.2.1 迭代: regrouped per settings-optimization doc —
-        // 基础设置 / 安全设置 / 媒体与缓存 / 邮件与备份 (4 smart groups).
+        // v1.2.1 迭代: 5 groups per settings-optimization doc §4 —
+        // 基础设置 / 安全设置 / 图片与存储 / 系统维护 / 高级设置(折叠).
         'basic' => [
             'label' => '基础设置',
             'desc' => '站点名称、Logo、备案、版权等基础信息',
@@ -60,22 +60,20 @@ class SettingController extends Controller
                 'api_rate_limit_enabled' => ['type' => 'toggle', 'label' => '接口频率限制', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '对公开 API（/api/v1）按 IP 限流，防止滥用'],
                 'api_rate_limit_per_minute' => ['type' => 'number', 'label' => '每分钟最大请求数', 'default' => '100', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1000], 'help' => '单个 IP 每分钟允许的请求数（仅限流开启时生效）'],
                 'api_key_auth_required' => ['type' => 'toggle', 'label' => 'API Key 认证（实验性）', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后公开 API 必须携带有效 X-API-Key 头；默认关闭（公开 API 保持开放）'],
-                'cors_origins' => ['type' => 'text', 'label' => 'CORS 允许来源', 'default' => '', 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => '逗号分隔的域名白名单，如 https://a.com,https://b.com；留空=不发送 CORS 头（浏览器默认同源限制）'],
-                'audit_log_retention_days' => ['type' => 'number', 'label' => '操作日志保留天数', 'default' => '90', 'rules' => ['numeric' => true, 'min' => 7, 'max' => 3650], 'help' => '超过该天数的操作日志自动清理；0 表示不清理'],
             ],
         ],
         'media' => [
-            'label' => '媒体与缓存',
-            'desc' => '图片 CDN 域名与输出压缩',
+            'label' => '图片与存储',
+            'desc' => '图片 CDN 域名（图片处理与存储优化设置后续版本提供）',
             'fields' => [
                 'cdn_url' => ['type' => 'text', 'label' => 'CDN 加速域名', 'default' => '', 'maxlength' => 200, 'rules' => ['url' => true, 'max' => 200], 'help' => '配置后图片 URL 将通过 CDN 域名提供（本地与对象存储均支持）'],
-                'gzip_level' => ['type' => 'select', 'label' => 'Gzip 压缩级别', 'default' => '6', 'options' => ['0' => '0 - 不压缩', '1' => '1 - 最快', '4' => '4 - 平衡', '6' => '6 - 推荐', '9' => '9 - 最小体积'], 'rules' => ['in:0,1,4,6,9'], 'help' => '页面/API 输出 Gzip 压缩级别；0 关闭'],
             ],
         ],
-        'mailbackup' => [
-            'label' => '邮件与备份',
-            'desc' => 'SMTP 通知与自动备份',
+        'maintenance' => [
+            'label' => '系统维护',
+            'desc' => '备份恢复、日志保留、邮件通知与缓存管理',
             'fields' => [
+                'audit_log_retention_days' => ['type' => 'number', 'label' => '操作日志保留天数', 'default' => '90', 'rules' => ['numeric' => true, 'min' => 7, 'max' => 3650], 'help' => '超过该天数的操作日志自动清理；0 表示不清理'],
                 'mail_enabled' => ['type' => 'toggle', 'label' => '邮件通知开关', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '总开关：关闭后所有邮件通知不发送'],
                 'mail_host' => ['type' => 'text', 'label' => 'SMTP 服务器', 'default' => '', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '如 smtp.qq.com / smtp.exmail.qq.com'],
                 'mail_port' => ['type' => 'number', 'label' => 'SMTP 端口', 'default' => '465', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 65535], 'help' => 'SSL 加密通常 465，TLS 通常 587'],
@@ -90,6 +88,15 @@ class SettingController extends Controller
                 'backup_period' => ['type' => 'select', 'label' => '备份周期', 'default' => 'weekly', 'options' => ['daily' => '每天', 'weekly' => '每周', 'monthly' => '每月'], 'rules' => ['in:daily,weekly,monthly'], 'help' => 'daily 每天一次；weekly 每周一；monthly 每月 1 号'],
                 'backup_path' => ['type' => 'text', 'label' => '备份存储路径', 'default' => 'backups', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '相对项目根目录，或绝对路径；请勿放在 public 下（会被下载）'],
                 'backup_keep' => ['type' => 'number', 'label' => '保留份数', 'default' => '14', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 60], 'help' => '超出份数的旧备份自动删除；建议 3-14 份'],
+            ],
+        ],
+        'advanced' => [
+            'label' => '高级设置',
+            'desc' => '性能调优与开发者选项（默认折叠）',
+            'collapsed' => true,
+            'fields' => [
+                'gzip_level' => ['type' => 'select', 'label' => 'Gzip 压缩级别', 'default' => '6', 'options' => ['0' => '0 - 不压缩', '1' => '1 - 最快', '4' => '4 - 平衡', '6' => '6 - 推荐', '9' => '9 - 最小体积'], 'rules' => ['in:0,1,4,6,9'], 'help' => '页面/API 输出 Gzip 压缩级别；0 关闭'],
+                'cors_origins' => ['type' => 'text', 'label' => 'CORS 允许来源', 'default' => '', 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => '逗号分隔的域名白名单，如 https://a.com,https://b.com；留空=不发送 CORS 头（浏览器默认同源限制）'],
             ],
         ],
     ];

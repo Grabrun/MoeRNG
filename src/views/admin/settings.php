@@ -88,6 +88,7 @@ admin_header('系统设置');
 </div>
 
 <?php foreach ($groups as $gid => $gdef): ?>
+<?php $isCollapsed = !empty($gdef['collapsed']); ?>
 <section class="settings-group" id="<?= h($gid) ?>" data-group="<?= h($gid) ?>" <?= $gid !== $activeGroup ? 'style="display:none"' : '' ?>>
     <form method="POST" action="/admin/settings/save">
         <?= $csrf_field ?>
@@ -98,9 +99,17 @@ admin_header('系统设置');
                 <span><?= h($gdef['label']) ?></span>
                 <small style="font-weight:400;color:var(--text-secondary)"><?= h($gdef['desc']) ?></small>
             </h3>
-            <div class="grid grid-2">
-                <?php foreach ($gdef['fields'] as $fkey => $fdef) renderField($fkey, $fdef, $settings); ?>
+            <!-- v1.2.1 迭代: advanced group is collapsed by default -->
+            <div class="settings-group-body" <?= $isCollapsed ? 'style="display:none"' : '' ?>>
+                <div class="grid grid-2">
+                    <?php foreach ($gdef['fields'] as $fkey => $fdef) renderField($fkey, $fdef, $settings); ?>
+                </div>
             </div>
+            <?php if ($isCollapsed): ?>
+            <div style="margin-top:4px">
+                <button type="button" class="btn btn-sm btn-outline settings-collapse-toggle" data-target="settings-group-body" aria-expanded="false">展开高级设置</button>
+            </div>
+            <?php endif; ?>
         </div>
 
         <div class="mb-3">
@@ -108,7 +117,7 @@ admin_header('系统设置');
         </div>
     </form>
 
-    <?php if ($gid === 'media'): ?>
+    <?php if ($gid === 'maintenance'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">缓存清理</h3>
         <p class="text-muted" style="font-size:0.85rem;color:var(--text-secondary)">清理 OPcache 与限流计数等运行时缓存。</p>
@@ -119,7 +128,7 @@ admin_header('系统设置');
     </div>
     <?php endif; ?>
 
-    <?php if ($gid === 'mailbackup'): ?>
+    <?php if ($gid === 'maintenance'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">测试邮件</h3>
         <p class="text-muted" style="font-size:0.85rem;color:var(--text-secondary)">使用上方 SMTP 参数向「测试收件邮箱」发送一封测试邮件，验证配置是否正确。</p>
@@ -175,6 +184,17 @@ admin_header('系统设置');
 
 <script>
 (function () {
+    // v1.2.1 迭代: collapsed-group toggle (advanced settings)
+    document.querySelectorAll('.settings-collapse-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var body = btn.closest('.card').querySelector('.settings-group-body');
+            if (!body) return;
+            var open = body.style.display !== 'none';
+            body.style.display = open ? 'none' : '';
+            btn.textContent = open ? '展开高级设置' : '收起高级设置';
+            btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+        });
+    });
     // Group tabs
     var tabs = document.querySelectorAll('.settings-tab');
     var groups = document.querySelectorAll('.settings-group');
