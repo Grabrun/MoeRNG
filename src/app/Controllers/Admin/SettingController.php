@@ -134,7 +134,7 @@ class SettingController extends Controller
 
         if ($errors !== []) {
             Session::flash('error', '表单校验未通过：' . implode('；', array_values($errors)));
-            $this->redirect('/admin/settings#' . $group);
+            $this->redirect('/admin/settings?tab=' . $group . '#' . $group);
             return;
         }
 
@@ -165,7 +165,7 @@ class SettingController extends Controller
         Config::reload();
 
         Session::flash('success', '「' . self::GROUPS[$group]['label'] . '」已保存' . ($diff === [] ? '（无变更）' : '，变更 ' . count($diff) . ' 项'));
-        $this->redirect('/admin/settings#' . $group);
+        $this->redirect('/admin/settings?tab=' . $group . '#' . $group);
     }
 
     /**
@@ -254,7 +254,7 @@ class SettingController extends Controller
         $cleared[] = '限流计数 ' . count($files) . ' 项（如需重置计数）';
         AuditLog::record('cache_clear', ['opcache' => in_array('OPcache', $cleared, true)]);
         Session::flash('success', '缓存已清理：' . implode('、', $cleared));
-        $this->redirect('/admin/settings#performance');
+        $this->redirect('/admin/settings?tab=maintenance#maintenance');
     }
 
     /**
@@ -266,7 +266,7 @@ class SettingController extends Controller
         [$ok, $msg] = BackupService::create();
         AuditLog::record($ok ? 'backup_run' : 'backup_failed', ['message' => $msg]);
         Session::flash($ok ? 'success' : 'error', $msg);
-        $this->redirect('/admin/settings#backup');
+        $this->redirect('/admin/settings?tab=maintenance#maintenance');
     }
 
     /**
@@ -279,7 +279,7 @@ class SettingController extends Controller
         $ok = $stamp !== '' && BackupService::delete($stamp);
         AuditLog::record('backup_delete', ['stamp' => $stamp, 'deleted' => $ok]);
         Session::flash($ok ? 'success' : 'error', $ok ? "已删除备份 {$stamp}" : '备份删除失败或不存在');
-        $this->redirect('/admin/settings#backup');
+        $this->redirect('/admin/settings?tab=maintenance#maintenance');
     }
 
     /**
@@ -291,7 +291,7 @@ class SettingController extends Controller
         [$ok, $msg] = Mailer::test();
         AuditLog::record($ok ? 'mail_test_ok' : 'mail_test_failed', ['message' => $msg]);
         Session::flash($ok ? 'success' : 'error', $msg);
-        $this->redirect('/admin/settings#mail');
+        $this->redirect('/admin/settings?tab=maintenance#maintenance');
     }
 
     /**

@@ -141,6 +141,29 @@ textarea.form-control { resize: vertical; min-height: 80px; }
     .setting-item-wide { grid-column: auto; }
 }
 
+/* Settings group body + sticky save bar (v1.2.1) */
+.settings-group-body { padding-top: 2px; }
+.settings-save-bar {
+    margin-top: 4px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+}
+@media (min-width: 769px) {
+    .settings-save-bar {
+        position: sticky;
+        bottom: 12px;
+        z-index: 5;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 12px 16px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    }
+    [data-theme="light"] .settings-save-bar { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); }
+}
+
 /* Cards */
 .card {
     background: var(--bg-card); border: 1px solid var(--border);
