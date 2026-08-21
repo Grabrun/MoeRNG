@@ -11,7 +11,7 @@
 - **gacha 抽卡动效**（新设计核心交互）：抽图成功时霓虹边框闪动 550ms + 图片过冲弹入 420ms（cubic-bezier(.34,1.56,.64,1)）；prefers-reduced-motion 自动降级
 - **圆体字族加载**：home/后台 layout/登录/install 5 页统一引入 Google Fonts（ZCOOL KuaiLe 标题 + Nunito 正文 + JetBrains Mono 代码），font-display=swap 不阻塞渲染；国内网络不可达自动回退系统字体栈
 - **hero 双栏布局**（Design Tokens §5）：左栏 banner + 副标题 + CTA + 统计，右栏抽图舞台卡片化（hero-stage 大圆角 + 粉紫浮影）；≤900px 单列
-- **hero 抽图宽度修复**（用户反馈图片比例不匹配、右侧留白）：.rd-preview 加 width:100% 撑满父容器；.hero-stage 去掉 max-width:520px + justify-self:center 改为 width:100% 撑满右栏（用户反馈横版图把 hero-stage 撑爆）：.rd-preview 固定 aspect-ratio 4/5 + max-height 360px；图片 width/height 100% + object-fit cover（容器比例固定 → 图片比例恒定）；.hero-stage 加 max-width 520px + justify-self center 防止右栏过宽
+- **hero 抽图比例修正**（用户反馈图片比例不对不匹配）：.rd-preview 改 1:1 + max-width 480px + margin auto（容器稳定 480x480）；img 改 max-width/max-height 100% + object-fit contain（保留图片原比例不裁切，之前 4:5 + cover 把横版图裁成近正方形失真）（用户反馈图片比例不匹配、右侧留白）：.rd-preview 加 width:100% 撑满父容器；.hero-stage 去掉 max-width:520px + justify-self:center 改为 width:100% 撑满右栏（用户反馈横版图把 hero-stage 撑爆）：.rd-preview 固定 aspect-ratio 4/5 + max-height 360px；图片 width/height 100% + object-fit cover（容器比例固定 → 图片比例恒定）；.hero-stage 加 max-width 520px + justify-self center 防止右栏过宽
 - **移除历史缩略图**（用户反馈：签名链接默认 5 分钟 TTL 过期后历史图全裂，功能无用）：删除 home.php rd-history HTML 区块、app.js saveHistory/renderHistory/HISTORY_KEY 整套逻辑
 - **Hero CTA 居中**（用户反馈电脑端按钮没居中）：.hero .btn-group / .stats 加 justify-content: center、.hero .stat text-align center
 - **导航微调**（用户反馈）：菜单文字居中（inline-flex + justify-content: center，横排/汉堡两态一致）；导航 logo 34px→40px（设计规范桌面 ≥32px）
