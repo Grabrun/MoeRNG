@@ -41,6 +41,7 @@
 - **修复：CSP 拦截对象存储图片**（2026-08-21）：COS/OSS 等跨域图片在页面加载失败（浏览器直接访问 URL 正常）——根因是 v1.2.1 加的 CSP `img-src 'self' data: blob:` 只放行同源；修复为 DB 就绪后重新发送 CSP，img-src 动态加入所有 storage profile 的 CDN 域名与 bucket 默认 host（COS `{bucket}.cos.{region}.myqcloud.com`、OSS/AWS/endpoint/UPYUN/Qiniu）；DB 不可用时回退基础 CSP
   - **按 provider 精确推导**（用户指正）：AWS 是通用 S3（可接 MinIO/R2 等 S3 兼容网关）→ 有 endpoint 时只放行 endpoint host，不再无差别猜 `s3.{region}.amazonaws.com`；仅无 endpoint 时兜底 AWS 官方默认域名；COS/OSS/UPYUN/Qiniu/OBS 各按自身规则推导（SELECT 增加 provider 列）
   - **零猜测：真实 driver URL 探针**（用户再指正）：不再按 provider 猜域名——遍历所有启用 profile → `$profile->driver()->url('__csp_probe__.png')` 生成真实图片 URL（纯本地计算，无网络 I/O）→ 解析其 host 加入 img-src：配了 CDN 就是 CDN host，否则是 SDK 实际签名的 bucket 域名（MinIO→minio.internal、COS→{bucket}.cos.{region}.myqcloud.com…）；Local 无 CDN 返回相对 /files 路径 → 无 host → 同源跳过；driver 异常/不可用 skip（绝不致命）
+- **COS 自定义源站域名支持**（2026-08-21，用户截图反馈）：用户在 COS 控制台给 bucket 绑定了 `images-cos.grabrun.top`，期望 MoeRNG 签名 URL 用这个源站域名（绑证书 / 作 CDN 回源）→ storage profile config 新增 `source_domain` 字段；CosSdkDriver 接受 sourceDomain 构造，传入 cos-sdk-v5 的 `domain` 配置（Client.php:312 默认 null，CommandToRequestTransformer.php:28 用 domain 拼 URL），签名 URL 走自定义源站域名（替代默认 `{bucket}.cos.{region}.myqcloud.com`）；S3Driver loadProfile 两个分支读取 `source_domain` 传给 CosSdkDriver；存储页表单新增「自定义源站域名」字段（PV_FIELDS 仅 cos 显示，其他服务商 PV_FIELDS 无定义 → applyProvider 自动隐藏）；后端 StorageProfileController s3 分支 config 保存 `source_domain`
 
 _（继续迭代积累）_
 
