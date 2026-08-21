@@ -106,15 +106,23 @@ admin_header('系统设置');
             </h3>
             <!-- v1.2.1 迭代: settings layout — adaptive columns + full-width wide fields -->
             <div class="settings-group-body">
+                <?php if ($gdef['fields'] === []): ?>
+                <p class="text-muted" style="color:var(--text-secondary);font-size:0.9rem;padding:8px 0">
+                    该分组暂无可用设置项，敬请期待后续版本。
+                </p>
+                <?php else: ?>
                 <div class="settings-grid">
                     <?php foreach ($gdef['fields'] as $fkey => $fdef) renderField($fkey, $fdef, $settings); ?>
                 </div>
+                <?php endif; ?>
             </div>
         </div>
 
+        <?php if ($gdef['fields'] !== []): ?>
         <div class="settings-save-bar mb-3">
             <button type="submit" class="btn btn-primary">保存「<?= h($gdef['label']) ?>」</button>
         </div>
+        <?php endif; ?>
     </form>
 
     <?php if ($gid === 'maintenance'): ?>

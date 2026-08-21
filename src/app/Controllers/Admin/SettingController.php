@@ -62,6 +62,11 @@ class SettingController extends Controller
                 'api_key_auth_required' => ['type' => 'toggle', 'label' => 'API Key 认证（实验性）', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后公开 API 必须携带有效 X-API-Key 头；默认关闭（公开 API 保持开放）'],
             ],
         ],
+        'media' => [
+            'label' => '图片与存储',
+            'desc' => '图片处理、缩略图与存储优化设置（后续版本提供）；CDN 加速请到「存储管理」配置',
+            'fields' => [],
+        ],
         'maintenance' => [
             'label' => '系统维护',
             'desc' => '备份恢复、日志保留、邮件通知与缓存管理',
