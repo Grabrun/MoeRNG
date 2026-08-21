@@ -12,6 +12,30 @@ use App\Models\Category;
 class ApiController extends Controller
 {
     /**
+     * v1.2.1 迭代: dynamic CORS from settings.cors_origins (comma-separated
+     * origin whitelist). Empty = no CORS header (browser default same-origin).
+     */
+    protected function json(mixed $data, int $status = 200): never
+    {
+        try {
+            $origins = trim((string) \App\Models\Setting::get('cors_origins', ''));
+            if ($origins !== '') {
+                $allowed = array_map('trim', explode(',', $origins));
+                $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+                if ($origin !== '' && in_array($origin, $allowed, true)) {
+                    header('Access-Control-Allow-Origin: ' . $origin);
+                    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+                    header('Access-Control-Allow-Headers: Content-Type, X-API-Key');
+                    header('Vary: Origin');
+                }
+            }
+        } catch (\Throwable) {
+            // settings table may be missing during install — ignore
+        }
+        parent::json($data, $status);
+    }
+
+    /**
      * GET /api/v1/random
      * Get a random image
      */

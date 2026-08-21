@@ -41,7 +41,7 @@ class SettingController extends Controller
                 'site_slogan' => ['type' => 'text', 'label' => '网站标语', 'default' => '随机二次元图片 API 服务', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '首页 hero 区域副标题'],
                 'logo_url' => ['type' => 'logo', 'label' => 'Logo 图片', 'default' => '/assets/logo.png', 'maxlength' => 500, 'rules' => ['url' => true, 'max' => 500], 'help' => '支持本地上传（PNG/JPG/GIF/WebP，≤2MB）或填写外部 URL；留空使用文字标题'],
                 'site_description' => ['type' => 'textarea', 'label' => '网站描述', 'default' => '', 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => 'SEO meta description，建议 50-160 字'],
-                'icp_number' => ['type' => 'text', 'label' => 'ICP 备案号', 'default' => '', 'maxlength' => 64, 'rules' => ['max' => 64], 'help' => '如 粤ICP备xxxxxxxx号；留空不显示'],
+                'icp_number' => ['type' => 'text', 'label' => 'ICP 备案号', 'default' => '', 'maxlength' => 64, 'rules' => ['max' => 64], 'help' => '仅中国大陆部署需要；如 粤ICP备xxxxxxxx号，留空不显示'],
                 'copyright' => ['type' => 'text', 'label' => '版权信息', 'default' => '© {year} MoeRNG. All rights reserved.', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '页脚版权文字；{year} 会自动替换为当前年份'],
                 'footer_html' => ['type' => 'textarea', 'label' => '页脚自定义信息', 'default' => '', 'maxlength' => 1000, 'rules' => ['max' => 1000], 'help' => '页脚底部追加的纯文本（自动转义），支持多行'],
                 'cdn_url' => ['type' => 'text', 'label' => 'CDN 加速域名', 'default' => '', 'maxlength' => 200, 'rules' => ['url' => true, 'max' => 200], 'help' => '配置后图片 URL 将通过 CDN 域名提供（本地与对象存储均支持）'],
@@ -57,14 +57,19 @@ class SettingController extends Controller
                 'login_max_attempts' => ['type' => 'number', 'label' => '登录失败最大次数', 'default' => '5', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 20], 'help' => '同一 IP 在窗口期内连续失败达到次数后锁定登录'],
                 'login_lockout_minutes' => ['type' => 'number', 'label' => '锁定时间（分钟）', 'default' => '15', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1440], 'help' => '锁定期内该 IP 无法登录（成功登录自动重置计数）'],
                 'api_rate_limit_enabled' => ['type' => 'toggle', 'label' => '接口频率限制', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '对公开 API（/api/v1）按 IP 限流，防止滥用'],
-                'api_rate_limit_per_minute' => ['type' => 'number', 'label' => '每分钟最大请求数', 'default' => '60', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1000], 'help' => '单个 IP 每分钟允许的请求数（仅限流开启时生效）'],
+                'api_rate_limit_per_minute' => ['type' => 'number', 'label' => '每分钟最大请求数', 'default' => '100', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1000], 'help' => '单个 IP 每分钟允许的请求数（仅限流开启时生效）'],
+                // v1.2.1 迭代: audit log retention (settings optimization doc).
+                'audit_log_retention_days' => ['type' => 'number', 'label' => '操作日志保留天数', 'default' => '90', 'rules' => ['numeric' => true, 'min' => 7, 'max' => 3650], 'help' => '超过该天数的操作日志自动清理；0 表示不清理'],
+                // v1.2.1 迭代: CORS origins (settings optimization doc).
+                'cors_origins' => ['type' => 'text', 'label' => 'CORS 允许来源', 'default' => '', 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => '逗号分隔的域名白名单，如 https://a.com,https://b.com；留空=不发送 CORS 头（浏览器默认同源限制）'],
             ],
         ],
         'performance' => [
             'label' => '性能与缓存',
             'desc' => '输出压缩与缓存参数',
             'fields' => [
-                'cache_ttl' => ['type' => 'number', 'label' => '缓存时长（秒）', 'default' => '3600', 'rules' => ['numeric' => true, 'min' => 0, 'max' => 86400], 'help' => '预留：API 响应缓存时长；0 表示禁用缓存'],
+                // v1.2.1 迭代: cache_ttl removed — it was a reserved placeholder
+                // with no backing implementation (settings optimization doc).
                 'gzip_level' => ['type' => 'select', 'label' => 'Gzip 压缩级别', 'default' => '6', 'options' => ['0' => '0 - 不压缩', '1' => '1 - 最快', '4' => '4 - 平衡', '6' => '6 - 推荐', '9' => '9 - 最小体积'], 'rules' => ['in:0,1,4,6,9'], 'help' => '页面/API 输出 Gzip 压缩级别；0 关闭'],
             ],
         ],
@@ -89,9 +94,9 @@ class SettingController extends Controller
             'desc' => '数据库与上传文件的自动备份',
             'fields' => [
                 'backup_enabled' => ['type' => 'toggle', 'label' => '自动备份开关', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后按周期在访问时触发检查并自动备份'],
-                'backup_period' => ['type' => 'select', 'label' => '备份周期', 'default' => 'daily', 'options' => ['daily' => '每天', 'weekly' => '每周', 'monthly' => '每月'], 'rules' => ['in:daily,weekly,monthly'], 'help' => 'daily 每天一次；weekly 每周一；monthly 每月 1 号'],
+                'backup_period' => ['type' => 'select', 'label' => '备份周期', 'default' => 'weekly', 'options' => ['daily' => '每天', 'weekly' => '每周', 'monthly' => '每月'], 'rules' => ['in:daily,weekly,monthly'], 'help' => 'daily 每天一次；weekly 每周一；monthly 每月 1 号'],
                 'backup_path' => ['type' => 'text', 'label' => '备份存储路径', 'default' => 'backups', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '相对项目根目录，或绝对路径；请勿放在 public 下（会被下载）'],
-                'backup_keep' => ['type' => 'number', 'label' => '保留份数', 'default' => '7', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 60], 'help' => '超出份数的旧备份自动删除；建议 3-14 份'],
+                'backup_keep' => ['type' => 'number', 'label' => '保留份数', 'default' => '14', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 60], 'help' => '超出份数的旧备份自动删除；建议 3-14 份'],
             ],
         ],
     ];
@@ -295,6 +300,18 @@ class SettingController extends Controller
      */
     public function logs(Request $request): void
     {
+        // v1.2.1 迭代: opportunistic audit-log retention cleanup (settings doc).
+        try {
+            $days = (int) \App\Models\Setting::get('audit_log_retention_days', '90');
+            if ($days > 0) {
+                \App\Core\Database::getInstance()
+                    ->prepare('DELETE FROM audit_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)')
+                    ->execute([$days]);
+            }
+        } catch (\Throwable) {
+            // best effort — cleanup must never break the page
+        }
+
         $page = max(1, (int) $request->input('page', '1'));
         // v1.2.1 迭代: per-page selector (50/100/200/500) for long audit trails.
         $perPage = in_array((int) $request->input('per_page', '50'), [50, 100, 200, 500], true)
