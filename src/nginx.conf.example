@@ -70,6 +70,13 @@ server {
         add_header Cache-Control "public";
         try_files $uri =404;
     }
+    # v1.2.1-beta.2 迭代: /assets/ 静态目录（logo / favicon / 字体 / og-image 等）。
+    # 之前未路由导致 /assets/fonts/fonts.css 等资源 404；宝塔伪静态用户必须同步。
+    location ^~ /assets/ {
+        expires 7d;
+        add_header Cache-Control "public";
+        try_files $uri =404;
+    }
 
     # -------------------------------------------------------------------------
     # Front controllers.

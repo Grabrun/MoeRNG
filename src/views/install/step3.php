@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
     <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强） -->
-    <link rel="stylesheet" href="/assets/fonts/fonts.css">
+    <link rel="stylesheet" href="/public/css/fonts.css">
     <link rel="stylesheet" href="/public/css/style.css">
     <style>.install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; } .install-header { text-align: center; margin-bottom: 40px; } .install-header h1 { color: var(--primary); font-size: 2.2rem; }</style>
 </head>
