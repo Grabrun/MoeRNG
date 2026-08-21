@@ -44,10 +44,6 @@
                         <label>本地存储路径</label>
                         <input type="text" name="storage_local_path" class="form-control" value="public/uploads" placeholder="public/uploads">
                     </div>
-                    <div class="form-group">
-                        <label>CDN 加速域名（可选）</label>
-                        <input type="text" name="cdn_url" class="form-control" placeholder="https://cdn.example.com">
-                    </div>
                 </div>
 
                 <div id="s3-fields" class="hidden">

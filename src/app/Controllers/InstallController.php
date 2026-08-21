@@ -96,7 +96,6 @@ class InstallController extends Controller
             'storage' => [
                 'driver' => 'local',
                 'local_path' => 'public/uploads',
-                'cdn_url' => '',
             ],
         ]);
     }
@@ -158,7 +157,6 @@ class InstallController extends Controller
                 'site_slogan' => '随机二次元图片 API 服务',
                 'logo_url' => '/assets/logo.png',
                 'per_page' => '20',
-                'cdn_url' => $request->input('cdn_url', ''),
             ];
 
             $insertStmt = $db->prepare("INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)");

@@ -62,13 +62,6 @@ class SettingController extends Controller
                 'api_key_auth_required' => ['type' => 'toggle', 'label' => 'API Key 认证（实验性）', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后公开 API 必须携带有效 X-API-Key 头；默认关闭（公开 API 保持开放）'],
             ],
         ],
-        'media' => [
-            'label' => '图片与存储',
-            'desc' => '图片 CDN 域名（图片处理与存储优化设置后续版本提供）',
-            'fields' => [
-                'cdn_url' => ['type' => 'text', 'label' => 'CDN 加速域名', 'default' => '', 'maxlength' => 200, 'rules' => ['url' => true, 'max' => 200], 'help' => '配置后图片 URL 将通过 CDN 域名提供（本地与对象存储均支持）'],
-            ],
-        ],
         'maintenance' => [
             'label' => '系统维护',
             'desc' => '备份恢复、日志保留、邮件通知与缓存管理',
