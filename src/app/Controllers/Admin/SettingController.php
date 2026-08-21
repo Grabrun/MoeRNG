@@ -427,11 +427,16 @@ class SettingController extends Controller
             if ($value === '') {
                 continue; // optional & empty → OK
             }
-            if (isset($rules['max']) && mb_strlen($value) > (int) $rules['max']) {
-                $errors[$key] = $def['label'] . ' 长度不能超过 ' . $rules['max'] . ' 字符';
-            }
-            if (isset($rules['min']) && mb_strlen($value) < (int) $rules['min']) {
-                $errors[$key] = $def['label'] . ' 长度不能少于 ' . $rules['min'] . ' 字符';
+            // Length bounds apply to string fields only; numeric fields use
+            // the numeric min/max checks below (v1.2.1 fix — retention days
+            // min:7 was wrongly enforced as "at least 7 chars").
+            if (empty($rules['numeric'])) {
+                if (isset($rules['max']) && mb_strlen($value) > (int) $rules['max']) {
+                    $errors[$key] = $def['label'] . ' 长度不能超过 ' . $rules['max'] . ' 字符';
+                }
+                if (isset($rules['min']) && mb_strlen($value) < (int) $rules['min']) {
+                    $errors[$key] = $def['label'] . ' 长度不能少于 ' . $rules['min'] . ' 字符';
+                }
             }
             if (!empty($rules['numeric']) && !is_numeric($value)) {
                 $errors[$key] = $def['label'] . ' 必须是数字';
