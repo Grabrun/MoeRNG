@@ -22,6 +22,8 @@
 - **设置分组按文档 §四 重排为 5 组**：基础设置 / 安全设置 / 图片与存储 / 系统维护 / 高级设置（gzip+cors 性能项归入）
 - **取消高级设置默认折叠**：5 组平铺展示，移除折叠按钮与相关 JS（用户明确要求）
 - **排版优化**：`.settings-grid` 自适应列宽（不再固定 2 列）；logo/textarea 等长字段跨整行（`setting-item-wide`）；help 文案统一 `.setting-help` 样式；保存按钮独立 `.settings-save-bar` 底栏
+- **输入框宽度收敛**（2026-08-21）：短字段（input/select/toggle）max-width 420px，textarea 760px 上限，Logo 跨整行；移动端 ≤768px 恢复全宽
+- **修复：数值字段 min/max 校验语义错误**（2026-08-21）：`audit_log_retention_days` 填 30 被误报"长度不能少于 7 字符"——根因是 min/max 被无条件按字符串长度校验；修复为数值字段只走数值范围校验，字符串字段才做长度校验
 
 _（继续迭代积累）_
 
