@@ -60,11 +60,12 @@
             font-size: 1.125rem; color: var(--text-secondary);
             max-width: 520px; margin-bottom: 24px; line-height: 1.7;
         }
-        .hero .stats { display: flex; gap: 28px; margin: 28px 0; }
-        .hero .stat { text-align: left; }
+        .hero .stats { display: flex; gap: 28px; margin: 28px 0; justify-content: center; }
+        .hero .stat { text-align: center; }
         .hero .stat .num { font-size: 2rem; font-weight: 700; color: var(--primary); font-family: var(--font-display); }
         .hero .stat .label { font-size: 0.85rem; color: var(--text-muted); }
-        .hero .btn-group { gap: 12px; }
+        /* v1.2.1-beta.3 迭代: hero CTA 按钮组居中（用户反馈电脑端按钮没居中） */
+        .hero .btn-group { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
         .hero-stage {
             background: var(--bg-card); border: 1px solid var(--border);
             border-radius: var(--radius-lg); padding: 24px;
