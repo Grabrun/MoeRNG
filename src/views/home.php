@@ -154,7 +154,7 @@
             <span><?= h($siteName) ?></span>
             <?php endif; ?>
         </a>
-        <details class="site-nav-menu">
+        <details class="site-nav-menu" open>
             <summary aria-label="打开菜单"><?= icon('menu', 22) ?></summary>
             <nav class="site-nav-links">
                 <a href="/" class="active">首页</a>
@@ -534,6 +534,18 @@
                 links.forEach(function (x) { x.classList.remove('active'); });
                 a.classList.add('active');
             });
+        });
+    })();
+    // v1.2.1 迭代: collapse the mobile nav on small viewports (the open
+    // attribute is needed on desktop so the native <details> shows the
+    // links — the JS removes it on mobile so the hamburger toggle works).
+    (function () {
+        var menu = document.querySelector('.site-nav-menu');
+        if (!menu) return;
+        var sync = function () { menu.removeAttribute('open'); };
+        if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) sync();
+        window.addEventListener('resize', function () {
+            if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) sync();
         });
     })();
     </script>
