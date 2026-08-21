@@ -39,8 +39,8 @@ function renderField(string $key, array $def, array $settings): void
         echo '</div>';
         echo '<div class="logo-upload-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
         echo '<input type="file" id="logo-file-' . $name . '" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">';
-        echo '<button type="button" class="btn btn-sm btn-outline" data-logo-choose="' . $name . '">选择图片</button>';
-        echo '<button type="button" class="btn btn-sm btn-primary" data-logo-upload="' . $name . '" disabled>上传</button>';
+        // v1.2.1 迭代: single "上传" button — pick file then upload in one flow.
+        echo '<button type="button" class="btn btn-sm btn-primary" data-logo-upload="' . $name . '">上传</button>';
         if ($hasLogo) {
             echo '<button type="button" class="btn btn-sm" data-logo-remove="' . $name . '">移除 Logo</button>';
         }
@@ -210,35 +210,31 @@ admin_header('系统设置');
         });
     });
 
-    // Logo uploader (AJAX)
+    // Logo uploader (AJAX) — v1.2.1: single "上传" button opens the picker,
+    // selecting a file previews it and uploads immediately.
     var csrf = document.querySelector('meta[name="csrf-token"]').content;
-    document.querySelectorAll('[data-logo-choose]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            document.getElementById('logo-file-' + btn.dataset.logoChoose).click();
-        });
-    });
     document.querySelectorAll('[data-logo-upload]').forEach(function (btn) {
         var field = btn.dataset.logoUpload;
         var fileInput = document.getElementById('logo-file-' + field);
         var urlInput = document.querySelector('.logo-uploader[data-field="' + field + '"] input[name="' + field + '"]');
+        // Click 上传 → open the file picker
+        btn.addEventListener('click', function () {
+            fileInput.click();
+        });
         fileInput.addEventListener('change', function () {
             var f = fileInput.files[0];
-            btn.disabled = !f;
-            if (f) {
-                var reader = new FileReader();
-                reader.onload = function (e) {
-                    var img = document.getElementById('logo-preview-' + field);
-                    img.src = e.target.result;
-                    img.style.display = 'block';
-                    var empty = document.getElementById('logo-empty-' + field);
-                    if (empty) empty.style.display = 'none';
-                };
-                reader.readAsDataURL(f);
-            }
-        });
-        btn.addEventListener('click', function () {
-            var f = fileInput.files[0];
             if (!f) return;
+            // Preview
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                var img = document.getElementById('logo-preview-' + field);
+                img.src = e.target.result;
+                img.style.display = 'block';
+                var empty = document.getElementById('logo-empty-' + field);
+                if (empty) empty.style.display = 'none';
+            };
+            reader.readAsDataURL(f);
+            // Upload immediately
             var fd = new FormData();
             fd.append('logo_file', f);
             fd.append('_csrf_token', csrf);
