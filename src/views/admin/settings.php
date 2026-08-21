@@ -34,7 +34,7 @@ function renderField(string $key, array $def, array $settings): void
         echo '<div class="logo-uploader" data-field="' . $name . '">';
         echo '<div class="logo-preview-wrap" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">';
         echo '<img id="logo-preview-' . $name . '" src="' . h($previewSrc) . '" alt="当前 Logo" '
-            . 'style="max-height:48px;max-width:160px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;background:var(--bg-input);object-fit:contain;display:block">';
+            . 'style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;background:var(--bg-input);display:block">';
         if (!$hasLogo) {
             echo '<span class="text-muted" id="logo-default-hint-' . $name . '" style="font-size:0.85rem;color:var(--text-secondary)">当前使用默认 Logo，上传后可替换</span>';
         }
