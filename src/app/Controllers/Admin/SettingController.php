@@ -34,7 +34,7 @@ class SettingController extends Controller
      */
     public const GROUPS = [
         // v1.2.1 迭代: 5 groups per settings-optimization doc §4 —
-        // 基础设置 / 安全设置 / 图片与存储 / 系统维护 / 高级设置(折叠).
+        // 基础设置 / 安全设置 / 图片与存储 / 系统维护 / 高级设置(不折叠).
         'basic' => [
             'label' => '基础设置',
             'desc' => '站点名称、Logo、备案、版权等基础信息',
@@ -92,8 +92,7 @@ class SettingController extends Controller
         ],
         'advanced' => [
             'label' => '高级设置',
-            'desc' => '性能调优与开发者选项（默认折叠）',
-            'collapsed' => true,
+            'desc' => '性能调优与开发者选项',
             'fields' => [
                 'gzip_level' => ['type' => 'select', 'label' => 'Gzip 压缩级别', 'default' => '6', 'options' => ['0' => '0 - 不压缩', '1' => '1 - 最快', '4' => '4 - 平衡', '6' => '6 - 推荐', '9' => '9 - 最小体积'], 'rules' => ['in:0,1,4,6,9'], 'help' => '页面/API 输出 Gzip 压缩级别；0 关闭'],
                 'cors_origins' => ['type' => 'text', 'label' => 'CORS 允许来源', 'default' => '', 'maxlength' => 500, 'rules' => ['max' => 500], 'help' => '逗号分隔的域名白名单，如 https://a.com,https://b.com；留空=不发送 CORS 头（浏览器默认同源限制）'],

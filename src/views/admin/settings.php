@@ -13,9 +13,11 @@ function renderField(string $key, array $def, array $settings): void
     $help = $def['help'] ?? '';
     $name = h($key);
     $maxlength = isset($def['maxlength']) ? ' maxlength="' . (int)$def['maxlength'] . '"' : '';
+    // v1.2.1 迭代: wide fields (logo / textarea) span the full row.
+    $wide = in_array($type, ['logo', 'textarea'], true) ? ' setting-item-wide' : '';
 
-    echo '<div class="form-group setting-item" data-search="' . h(strtolower($label . ' ' . ($help ?? ''))) . '">';
-    echo '<label>' . $label . '</label>';
+    echo '<div class="form-group setting-item' . $wide . '" data-search="' . h(strtolower($label . ' ' . ($help ?? ''))) . '">';
+    echo '<label class="setting-label">' . $label . '</label>';
 
     if ($type === 'toggle') {
         $checked = $value === '1' ? ' checked' : '';
@@ -62,7 +64,7 @@ function renderField(string $key, array $def, array $settings): void
     }
 
     if ($help !== '') {
-        echo '<small class="text-muted" style="display:block;margin-top:6px;color:var(--text-secondary);font-size:0.8rem">' . h($help) . '</small>';
+        echo '<small class="text-muted setting-help" style="display:block;margin-top:6px;color:var(--text-secondary);font-size:0.8rem">' . h($help) . '</small>';
     }
     echo '</div>';
 }
@@ -88,7 +90,6 @@ admin_header('系统设置');
 </div>
 
 <?php foreach ($groups as $gid => $gdef): ?>
-<?php $isCollapsed = !empty($gdef['collapsed']); ?>
 <section class="settings-group" id="<?= h($gid) ?>" data-group="<?= h($gid) ?>" <?= $gid !== $activeGroup ? 'style="display:none"' : '' ?>>
     <form method="POST" action="/admin/settings/save">
         <?= $csrf_field ?>
@@ -99,20 +100,15 @@ admin_header('系统设置');
                 <span><?= h($gdef['label']) ?></span>
                 <small style="font-weight:400;color:var(--text-secondary)"><?= h($gdef['desc']) ?></small>
             </h3>
-            <!-- v1.2.1 迭代: advanced group is collapsed by default -->
-            <div class="settings-group-body" <?= $isCollapsed ? 'style="display:none"' : '' ?>>
-                <div class="grid grid-2">
+            <!-- v1.2.1 迭代: settings layout — adaptive columns + full-width wide fields -->
+            <div class="settings-group-body">
+                <div class="settings-grid">
                     <?php foreach ($gdef['fields'] as $fkey => $fdef) renderField($fkey, $fdef, $settings); ?>
                 </div>
             </div>
-            <?php if ($isCollapsed): ?>
-            <div style="margin-top:4px">
-                <button type="button" class="btn btn-sm btn-outline settings-collapse-toggle" data-target="settings-group-body" aria-expanded="false">展开高级设置</button>
-            </div>
-            <?php endif; ?>
         </div>
 
-        <div class="mb-3">
+        <div class="settings-save-bar mb-3">
             <button type="submit" class="btn btn-primary">保存「<?= h($gdef['label']) ?>」</button>
         </div>
     </form>
@@ -184,17 +180,6 @@ admin_header('系统设置');
 
 <script>
 (function () {
-    // v1.2.1 迭代: collapsed-group toggle (advanced settings)
-    document.querySelectorAll('.settings-collapse-toggle').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var body = btn.closest('.card').querySelector('.settings-group-body');
-            if (!body) return;
-            var open = body.style.display !== 'none';
-            body.style.display = open ? 'none' : '';
-            btn.textContent = open ? '展开高级设置' : '收起高级设置';
-            btn.setAttribute('aria-expanded', open ? 'false' : 'true');
-        });
-    });
     // Group tabs
     var tabs = document.querySelectorAll('.settings-tab');
     var groups = document.querySelectorAll('.settings-group');
