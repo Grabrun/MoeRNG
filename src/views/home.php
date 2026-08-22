@@ -35,10 +35,10 @@
     </script>
     <!-- preload LCP banner so the hero paints immediately -->
     <link rel="preload" as="image" href="/assets/banner.webp" fetchpriority="high">
-    <link rel="stylesheet" href="/public/css/style.css">
+    <link rel="stylesheet" href="/public/css/style.css?v=<?= APP_VERSION ?>">
     <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强——font-display=swap 不阻塞渲染；
          国内网络无法访问 Google Fonts 时自动回退到系统字体栈，不影响可用性） -->
-    <link rel="stylesheet" href="/public/css/fonts.css">
+    <link rel="stylesheet" href="/public/css/fonts.css?v=<?= APP_VERSION ?>">
     
 </head>
 <body>
@@ -446,8 +446,8 @@
         </footer>
     </div>
 
-    <script src="/public/js/helpers.js"></script>
-    <script src="/public/js/app.js"></script><!-- v1.2.1-beta.3 修复: 移到 body 直接子元素下（之前嵌在 hero-stage 内被 .site-nav z-index:300 的 stacking context 困住，导致全屏 lightbox 没法覆盖 nav） -->
+    <script src="/public/js/helpers.js?v=<?= APP_VERSION ?>"></script>
+    <script src="/public/js/app.js?v=<?= APP_VERSION ?>"></script><!-- v1.2.1-beta.3 修复: 移到 body 直接子元素下（之前嵌在 hero-stage 内被 .site-nav z-index:300 的 stacking context 困住，导致全屏 lightbox 没法覆盖 nav） -->
 <div class="lb-overlay hidden" id="rd-lightbox" role="dialog" aria-modal="true" aria-label="图片大图预览">
     <img id="rd-lb-img" src="" alt="大图预览">
     <button type="button" class="lb-close" id="rd-lb-close" aria-label="关闭预览"><?= icon('x', 24) ?></button>

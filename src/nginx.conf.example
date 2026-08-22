@@ -21,6 +21,18 @@ server {
 
     charset      utf-8;
 
+    # -------------------------------------------------------------------------
+    # v1.2.1 性能优化: gzip 压缩（HTML/CSS/JS/JSON 传输体积降 ~70%）。
+    # 宝塔用户若已在「网站 → 设置 → 性能调整」开启过 gzip，可跳过此块。
+    # -------------------------------------------------------------------------
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_types text/plain text/css application/json application/javascript text/javascript
+               application/xml text/xml image/svg+xml font/woff2 application/x-font-woff2;
+
     # ssl_certificate     /www/server/panel/vhost/cert/your-domain.com/fullchain.pem;
     # ssl_certificate_key /www/server/panel/vhost/cert/your-domain.com/privkey.pem;
 

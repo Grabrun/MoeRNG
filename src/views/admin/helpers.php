@@ -11,7 +11,7 @@ function admin_header($title) { ?>
     <!-- v1.2.0 迭代: brand favicon on admin pages too -->
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
-    <link rel="stylesheet" href="/public/css/style.css">
+    <link rel="stylesheet" href="/public/css/style.css?v=<?= APP_VERSION ?>">
     
 </head>
 <body>
@@ -73,8 +73,8 @@ function admin_flash() {
 function admin_footer() { ?>
         </main>
     </div>
-    <script src="/public/js/helpers.js"></script>
-    <script src="/public/js/app.js"></script>
+    <script src="/public/js/helpers.js?v=<?= APP_VERSION ?>"></script>
+    <script src="/public/js/app.js?v=<?= APP_VERSION ?>"></script>
 </body>
 </html>
 <?php }
