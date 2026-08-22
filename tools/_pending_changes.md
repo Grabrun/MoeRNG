@@ -1,3 +1,4 @@
+- **修复 CSP V-02: 移除 unsafe-inline**（2026-08-22 12:15）：创建 CspNonce 工具类生成每请求 nonce；CSP 头改为 script-src/style-src 使用 nonce；迁移 9 个内联 script 块到 helpers.js；迁移 10 个内联 style 块到 style.css；9 个视图添加 helpers.js 引用；CSP 完全移除 unsafe-inline
 # 待发版变更清单（本地迭代累积区）
 
 > 本地迭代规则（用户规则 2026-08-11）：同一版本号迭代，每次输出 zip 但不发布 GitHub；
