@@ -171,7 +171,7 @@
             </div>
         </form>
         <div class="btn-group">
-            <button type="button" class="btn btn-outline" onclick="document.getElementById('profile-modal').classList.remove('active')">取消</button>
+            <button type="button" class="btn btn-outline" data-toggle-class="profile-modal" data-class="active">取消</button>
             <button type="button" class="btn btn-primary" id="profile-submit">保存</button>
         </div>
     </div>

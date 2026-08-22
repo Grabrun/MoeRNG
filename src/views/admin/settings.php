@@ -133,7 +133,7 @@ admin_header('系统设置');
         <p class="text-muted" style="font-size:0.85rem;color:var(--text-secondary)">清理 OPcache 与限流计数等运行时缓存。</p>
         <form method="POST" action="/admin/settings/cache-clear">
             <?= $csrf_field ?>
-            <button type="submit" class="btn btn-warning" onclick="return confirm('确认清理缓存？')">立即清理缓存</button>
+            <button type="submit" class="btn btn-warning" data-confirm="确认清理缓存？">立即清理缓存</button>
         </form>
     </div>
     <?php endif; ?>
@@ -153,7 +153,7 @@ admin_header('系统设置');
         <div class="d-flex" style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
             <form method="POST" action="/admin/settings/backup">
                 <?= $csrf_field ?>
-                <button type="submit" class="btn btn-warning" onclick="return confirm('立即执行一次完整备份（数据库 + 上传文件）？')">立即备份</button>
+                <button type="submit" class="btn btn-warning" data-confirm="立即执行一次完整备份（数据库 + 上传文件）？">立即备份</button>
             </form>
             <small class="text-muted" style="color:var(--text-secondary)">自动备份按周期在上方「备份与恢复」表单中配置，访问时自动触发检查。</small>
         </div>
@@ -173,7 +173,7 @@ admin_header('系统设置');
                         <form method="POST" action="/admin/settings/backup-delete" style="display:inline">
                             <?= $csrf_field ?>
                             <input type="hidden" name="stamp" value="<?= h($b['stamp']) ?>">
-                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('确认删除该备份？此操作不可恢复')">删除</button>
+                            <button type="submit" class="btn btn-danger btn-sm" data-confirm="确认删除该备份？此操作不可恢复">删除</button>
                         </form>
                     </td>
                 </tr>

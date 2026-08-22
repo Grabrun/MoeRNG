@@ -9,7 +9,7 @@
         <!-- v1.2.1 迭代: expand/collapse all (admin UI audit C1) -->
         <button type="button" class="btn btn-outline btn-sm" id="cat-expand-all">展开全部</button>
         <button type="button" class="btn btn-outline btn-sm" id="cat-collapse-all">折叠全部</button>
-        <button class="btn btn-primary btn-sm" onclick="openModal('category-modal')">新建分类</button>
+        <button class="btn btn-primary btn-sm" data-open-modal="category-modal">新建分类</button>
     </div>
 </div>
 
@@ -43,7 +43,14 @@
                 <?php endif; ?>
             </div>
             <div class="actions">
-                <button class="btn btn-outline btn-sm" onclick="editCategory(<?= $root['id'] ?>, '<?= h($root['name']) ?>', '<?= h($root['slug']) ?>', '<?= h($root['description'] ?? '') ?>', '<?= $root['parent_id'] ?? '' ?>', '<?= $root['sort_order'] ?? 0 ?>')">编辑</button>
+                <button class="btn btn-outline btn-sm" data-edit-category='<?= h(json_encode([
+                    'id' => (int)$root['id'],
+                    'name' => (string)($root['name'] ?? ''),
+                    'slug' => (string)($root['slug'] ?? ''),
+                    'desc' => (string)($root['description'] ?? ''),
+                    'parent_id' => $root['parent_id'] ?? '',
+                    'sort_order' => (int)($root['sort_order'] ?? 0),
+                ], JSON_UNESCAPED_UNICODE)) ?>'>编辑</button>
                 <button type="button" class="btn btn-danger btn-sm" data-category-delete="<?= $root['id'] ?>" data-name="<?= h($root['name']) ?>">删除</button>
             </div>
         </div>
@@ -69,7 +76,15 @@
                     }
                     echo '</div>';
                     echo '<div class="actions">';
-                    echo '<button class="btn btn-outline btn-sm" onclick="editCategory(' . (int)$n['id'] . ', \'' . h($n['name']) . '\', \'' . h($n['slug']) . '\', \'' . h($n['description'] ?? '') . '\', \'' . ($n['parent_id'] ?? '') . '\', \'' . ($n['sort_order'] ?? 0) . '\')">编辑</button>';
+                    $editJson = json_encode([
+                        'id' => (int)$n['id'],
+                        'name' => (string)($n['name'] ?? ''),
+                        'slug' => (string)($n['slug'] ?? ''),
+                        'desc' => (string)($n['description'] ?? ''),
+                        'parent_id' => $n['parent_id'] ?? '',
+                        'sort_order' => (int)($n['sort_order'] ?? 0),
+                    ], JSON_UNESCAPED_UNICODE);
+                    echo '<button class="btn btn-outline btn-sm" data-edit-category="' . h($editJson) . '">编辑</button>';
                     echo '<button type="button" class="btn btn-danger btn-sm" data-category-delete="' . (int)$n['id'] . '" data-name="' . h($n['name']) . '">删除</button>';
                     echo '</div>';
                     echo '</div>';
@@ -126,7 +141,7 @@
                 <input type="number" name="sort_order" id="cat-sort" class="form-control" value="0">
             </div>
             <div class="btn-group">
-                <button type="button" class="btn btn-outline" onclick="closeModal('category-modal')">取消</button>
+                <button type="button" class="btn btn-outline" data-close-modal="category-modal">取消</button>
                 <button type="submit" class="btn btn-primary">保存</button>
             </div>
         </form>

@@ -34,7 +34,7 @@
             <form method="POST" action="/install/complete">
                 <div class="form-group">
                     <label>存储驱动</label>
-                    <select name="storage_driver" class="form-control" id="storage-driver-select" onchange="toggleStorageFields()">
+                    <select name="storage_driver" class="form-control" id="storage-driver-select" data-storage-driver-toggle>
                         <option value="local">本地存储（推荐）</option>
                         <option value="s3">对象存储 (S3/OSS/COS)</option>
                     </select>

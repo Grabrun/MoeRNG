@@ -91,7 +91,7 @@
                 </div>
             </div>
             <div class="btn-group">
-                <button type="button" class="btn btn-outline" onclick="closeModal('apikey-modal')">取消</button>
+                <button type="button" class="btn btn-outline" data-close-modal="apikey-modal">取消</button>
                 <button type="submit" class="btn btn-primary" id="apikey-submit">生成</button>
             </div>
         </form>
@@ -110,7 +110,7 @@
             <textarea id="newkey-value" class="form-control" rows="3" readonly style="font-family:monospace;font-size:0.85rem"></textarea>
         </div>
         <div class="btn-group">
-            <button type="button" class="btn btn-outline" onclick="closeModal('newkey-modal')">关闭</button>
+            <button type="button" class="btn btn-outline" data-close-modal="newkey-modal">关闭</button>
             <button type="button" class="btn btn-primary" id="newkey-copy">复制 Key</button>
         </div>
     </div>

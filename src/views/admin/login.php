@@ -45,7 +45,7 @@
                         <label>验证码</label>
                         <input type="text" name="captcha" class="form-control" required maxlength="5" placeholder="输入图中字符" autocomplete="off">
                     </div>
-                    <img src="/admin/captcha" alt="验证码" title="点击刷新" style="height:42px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" onclick="this.src='/admin/captcha?'+Date.now()">
+                    <img src="/admin/captcha" alt="验证码" title="点击刷新" style="height:42px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" data-refresh-captcha>
                 </div>
                 <?php endif; ?>
                 <button type="submit" class="btn btn-primary w-full" <?= $locked ? 'disabled' : '' ?>>登录</button>

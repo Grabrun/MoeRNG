@@ -16,6 +16,101 @@
 
 
 /**
+ * v1.2.1 CSP nonce 修复 (V-02): 统一事件委托层。
+ * CSP 移除 'unsafe-inline' 后，inline onclick/onchange 属性全部被浏览器拦截，
+ * 所有后台交互（modal 开关/编辑按钮/验证码刷新/自动提交等）迁移到 data-* 委托。
+ */
+(function () {
+    'use strict';
+
+    // openModal/closeModal 全局函数（供部分未迁移点兼容）
+    if (!window.openModal) {
+        window.openModal = function (id) {
+            var el = document.getElementById(id);
+            if (el) el.classList.add('active');
+        };
+    }
+    if (!window.closeModal) {
+        window.closeModal = function (id) {
+            var el = document.getElementById(id);
+            if (el) el.classList.remove('active');
+        };
+    }
+
+    // 委托：data-open-modal / data-close-modal（modal 开关）
+    document.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-open-modal]');
+        if (t) { openModal(t.getAttribute('data-open-modal')); return; }
+        t = e.target.closest('[data-close-modal]');
+        if (t) { closeModal(t.getAttribute('data-close-modal')); return; }
+        t = e.target.closest('[data-refresh-captcha]');
+        if (t) { t.src = '/admin/captcha?' + Date.now(); return; }
+        t = e.target.closest('[data-auto-submit]');
+        if (t) { var f = t.closest('form'); if (f) f.submit(); return; }
+    });
+
+    // 委托：编辑分类按钮（data-edit-category 携带 JSON）
+    document.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-edit-category]');
+        if (!t) return;
+        var d;
+        try { d = JSON.parse(t.getAttribute('data-edit-category') || '{}'); }
+        catch (err) { return; }
+        if (window.editCategory) {
+            window.editCategory(d.id, d.name || '', d.slug || '', d.desc || '', d.parent_id != null ? d.parent_id : '', d.sort_order != null ? d.sort_order : 0);
+        }
+    });
+
+    // 委托：编辑用户按钮（data-edit-user 携带 JSON）
+    document.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-edit-user]');
+        if (!t) return;
+        var d;
+        try { d = JSON.parse(t.getAttribute('data-edit-user') || '{}'); }
+        catch (err) { return; }
+        if (window.editUser) {
+            window.editUser(d.id, d.username || '', d.email || '', d.role || '');
+        }
+    });
+
+    // 委托：上传图片按钮 / 预览关闭（data-toggle-class="id" + data-class="active"）
+    document.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-toggle-class]');
+        if (!t) return;
+        var el = document.getElementById(t.getAttribute('data-toggle-class'));
+        if (!el) return;
+        el.classList.toggle(t.getAttribute('data-class') || 'active');
+    });
+
+    // 委托：storage 驱动切换（data-storage-driver-toggle）
+    document.addEventListener('change', function (e) {
+        var t = e.target.closest('[data-storage-driver-toggle]');
+        if (!t) return;
+        if (window.toggleStorageFields) window.toggleStorageFields();
+    });
+
+    // 委托：确认对话框 — data-confirm（click 型）/ data-confirm-submit（submit 型）
+    document.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-confirm]');
+        if (!t) return;
+        var msg = t.getAttribute('data-confirm') || '确定执行该操作？';
+        if (!window.confirm(msg)) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
+    document.addEventListener('submit', function (e) {
+        var t = e.target.closest('[data-confirm-submit]');
+        if (!t) return;
+        var msg = t.getAttribute('data-confirm-submit') || '确定执行该操作？';
+        if (!window.confirm(msg)) {
+            e.preventDefault();
+        }
+    }, true);
+})();
+
+
+/**
  * Nav: active-anchor highlight + mobile-hamburger sync.
  */
 (function () {
@@ -113,7 +208,8 @@
 
     // Logo uploader (AJAX) — v1.2.1: single "上传" button opens the picker,
     // selecting a file previews it and uploads immediately.
-    var csrf = document.querySelector('meta[name="csrf-token"]').content;
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    var csrf = csrfMeta ? csrfMeta.content : '';
     document.querySelectorAll('[data-logo-upload]').forEach(function (btn) {
         var field = btn.dataset.logoUpload;
         var fileInput = document.getElementById('logo-file-' + field);
@@ -197,6 +293,7 @@
 
 
 // === Migrated from src/views\admin\users.php (CSP nonce migration) ===
+if (document.getElementById('user-modal')) {
 function editUser(id, username, email, role) {
     document.getElementById('user-modal-title').textContent = '编辑用户';
     document.getElementById('user-id').value = id;
@@ -217,6 +314,7 @@ document.querySelector('[onclick="openModal(\'user-modal\')"]').addEventListener
     document.getElementById('pwd-hint').textContent = '';
     document.getElementById('user-form').action = '/admin/users/create';
 });
+}
 
 
 // === Migrated from src/views\home.php (CSP nonce migration) ===
@@ -255,6 +353,7 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
 // === Migrated from src/views\admin\storage.php (CSP nonce migration) ===
 (function() {
     const table = document.getElementById('profile-table');
+    if (!table) return;  // not the storage admin page — skip
     const form = document.getElementById('profile-form');
     const modal = document.getElementById('profile-modal');
     const submitBtn = document.getElementById('profile-submit');
@@ -449,6 +548,7 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
 
 
 // === Migrated from src/views\admin\categories.php (CSP nonce migration) ===
+if (document.getElementById('category-modal')) {
 function editCategory(id, name, slug, desc, parentId, sort) {
     document.getElementById('category-modal-title').textContent = '编辑分类';
     document.getElementById('cat-id').value = id;
@@ -472,6 +572,7 @@ document.querySelector('[onclick="openModal(\'category-modal\')"]').addEventList
     document.getElementById('cat-sort').value = '0';
     document.getElementById('category-form').action = '/admin/categories/create';
 });
+}
 
 
 // === Migrated from src/views\admin\helpers.php (CSP nonce migration) ===

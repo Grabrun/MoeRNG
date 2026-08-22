@@ -19,7 +19,7 @@ if ($success): ?>
         <h1>用户管理</h1>
         <p>管理后台管理员账号</p>
     </div>
-    <button class="btn btn-primary btn-sm" onclick="openModal('user-modal')">新建用户</button>
+    <button class="btn btn-primary btn-sm" data-open-modal="user-modal">新建用户</button>
 </div>
 
 <div class="card">
@@ -47,7 +47,12 @@ if ($success): ?>
                     <td data-label="最后登录"><?= !empty($user->last_login) ? h(date('Y-m-d H:i', strtotime((string)$user->last_login))) : '<span class="text-muted">从未登录</span>' ?></td>
                     <td data-label="操作">
                         <div class="flex gap-1">
-                            <button class="btn btn-outline btn-sm" onclick="editUser(<?= $user->id ?>, '<?= h($user->username) ?>', '<?= h($user->email) ?>', '<?= h($user->role) ?>')">编辑</button>
+                            <button class="btn btn-outline btn-sm" data-edit-user='<?= h(json_encode([
+                                'id' => (int)$user->id,
+                                'username' => (string)$user->username,
+                                'email' => (string)$user->email,
+                                'role' => (string)$user->role,
+                            ], JSON_UNESCAPED_UNICODE)) ?>'>编辑</button>
                             <form method="POST" action="/admin/users/toggle-status" style="display:inline">
                                 <?= $csrf_field ?>
                                 <input type="hidden" name="id" value="<?= $user->id ?>">
@@ -55,7 +60,7 @@ if ($success): ?>
                                     <?= $user->status === 'active' ? '禁用' : '启用' ?>
                                 </button>
                             </form>
-                            <form method="POST" action="/admin/users/delete" style="display:inline" onsubmit="return confirm('确定删除此用户？')">
+                            <form method="POST" action="/admin/users/delete" style="display:inline" data-confirm-submit="确定删除此用户？">
                                 <?= $csrf_field ?>
                                 <input type="hidden" name="id" value="<?= $user->id ?>">
                                 <button type="submit" class="btn btn-danger btn-sm">删除</button>
@@ -89,7 +94,7 @@ if ($success): ?>
                 </select>
             </div>
             <div class="btn-group">
-                <button type="button" class="btn btn-outline" onclick="closeModal('user-modal')">取消</button>
+                <button type="button" class="btn btn-outline" data-close-modal="user-modal">取消</button>
                 <button type="submit" class="btn btn-primary">保存</button>
             </div>
         </form>

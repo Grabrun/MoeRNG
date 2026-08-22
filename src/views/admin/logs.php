@@ -23,7 +23,7 @@
         </div>
         <button type="submit" class="btn btn-primary btn-sm">筛选</button>
         <!-- v1.2.1 迭代: per-page selector + CSV export -->
-        <select name="per_page" class="form-control" style="width:auto" onchange="this.form.submit()" aria-label="每页数量">
+        <select name="per_page" class="form-control" style="width:auto" data-auto-submit aria-label="每页数量">
             <?php foreach ([50, 100, 200, 500] as $n): ?>
             <option value="<?= $n ?>" <?= ($per_page ?? 50) == $n ? 'selected' : '' ?>><?= $n ?> 条/页</option>
             <?php endforeach; ?>

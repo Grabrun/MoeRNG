@@ -6,7 +6,7 @@
         <p>共 <span id="image-total" data-total="<?= $total ?>"><?= number_format($total) ?></span> 张图片</p>
     </div>
     <div class="flex gap-2">
-        <button class="btn btn-primary btn-sm" onclick="document.getElementById('upload-modal').classList.add('active')">上传图片</button>
+        <button class="btn btn-primary btn-sm" data-toggle-class="upload-modal" data-class="active">上传图片</button>
         <button class="btn btn-outline btn-sm" id="select-all">全选本页</button>
         <button class="btn btn-outline btn-sm" id="select-all-all">全选</button>
     </div>
@@ -53,7 +53,7 @@
     <h3>暂无图片</h3>
     <p>点击「上传图片」开始添加你的第一张图，或直接拖拽文件到上传窗口</p>
     <div class="empty-actions">
-        <button class="btn btn-primary btn-sm" onclick="document.getElementById('upload-modal').classList.add('active')"><?= icon('upload', 16) ?> 上传图片</button>
+        <button class="btn btn-primary btn-sm" data-toggle-class="upload-modal" data-class="active"><?= icon('upload', 16) ?> 上传图片</button>
     </div>
 </div>
 
@@ -134,7 +134,7 @@
             <div class="fill" style="width:0%"></div>
         </div>
         <div class="btn-group">
-            <button type="button" class="btn btn-outline" onclick="document.getElementById('upload-modal').classList.remove('active')">取消</button>
+            <button type="button" class="btn btn-outline" data-toggle-class="upload-modal" data-class="active">取消</button>
             <button type="button" class="btn btn-primary" id="upload-submit">开始上传</button>
         </div>
     </div>
@@ -145,7 +145,7 @@
     <div class="modal" style="max-width:800px">
         <div class="flex-between mb-2">
             <h2 id="preview-title">预览</h2>
-            <button class="btn btn-outline btn-sm" aria-label="关闭预览" onclick="document.getElementById('preview-modal').classList.remove('active')"><?= icon('x', 16) ?></button>
+            <button class="btn btn-outline btn-sm" aria-label="关闭预览" data-toggle-class="preview-modal" data-class="active"><?= icon('x', 16) ?></button>
         </div>
         <img id="preview-image" src="" style="width:100%;max-height:500px;object-fit:contain;border-radius:var(--radius-sm)">
         <a id="preview-link" href="#" target="_blank" rel="noopener" class="text-muted" style="display:block;margin-top:8px;font-size:0.8rem;word-break:break-all"></a>
