@@ -1372,6 +1372,9 @@ body.modal-open { overflow: hidden; }
             background: color-mix(in srgb, var(--bg) 84%, transparent);
             border-bottom: 1px solid var(--border);
         }
+        /* v1.2.1-beta.3 迭代: nav-links 居中显示——<details> flex:1 占满剩余空间，
+           内容居中；logo 左、theme-toggle 右、链接居中 */
+        .site-nav-menu { flex: 1; display: flex; justify-content: center; }
         /* v1.2.0 迭代: mobile nav — collapse 5 links into a hamburger button
            so the fixed header stops hogging space and overlapping content. */
         .site-nav-menu > summary { display: none; cursor: pointer; list-style: none; }
@@ -1379,6 +1382,8 @@ body.modal-open { overflow: hidden; }
         .site-nav-menu > summary svg { display: block; }
         @media (max-width: 768px) {
             .site-nav { gap: 8px; }
+            /* v1.2.1-beta.3 迭代: 移动端取消 flex 居中，让 details 收缩到 summary 宽度 */
+            .site-nav-menu { flex: 0; justify-content: flex-end; }
             .site-nav-menu > summary {
                 display: inline-flex; align-items: center; justify-content: center;
                 width: 40px; height: 40px; border-radius: var(--radius-sm);
