@@ -1,3 +1,4 @@
+- **应用 UI 深度分析报告（2026-08-22 13:30，P0/P1 全部）**：前台——theme-toggle 44px / hero 统计来源说明 / 特性「核心」徽章 / API 文档 sticky 锚点侧边栏 / 在线测试响应时间+状态码+localStorage 历史（文本不依赖签名 URL）；后台——仪表盘快捷操作网格 / 设置未保存提示（save-hint+beforeunload）/ 用户最后登录时间（users.last_login 运行时自迁移）/ 分类树图片数徽章（单次 GROUP BY）；已存在跳过：汉堡菜单/Lightbox/日志分页+CSV导出/API Key安全提示/settings搜索/展开折叠/滚动动画
 - **修复 CSP V-02: 移除 unsafe-inline**（2026-08-22 12:15）：创建 CspNonce 工具类生成每请求 nonce；CSP 头改为 script-src/style-src 使用 nonce；迁移 9 个内联 script 块到 helpers.js；迁移 10 个内联 style 块到 style.css；9 个视图添加 helpers.js 引用；CSP 完全移除 unsafe-inline
 # 待发版变更清单（本地迭代累积区）
 
