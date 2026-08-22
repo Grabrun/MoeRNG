@@ -88,6 +88,13 @@ class AuthController extends Controller
         Session::set('user_id', $user->id);
         Session::set('user_role', $user->role);
         Session::set('user_name', (string) $user->username);
+        // v1.2.1 UI 深度分析 (UI-10): record last login timestamp.
+        try {
+            $user->last_login = date('Y-m-d H:i:s');
+            $user->save();
+        } catch (\Throwable) {
+            // best-effort — login must never fail because of a missing column
+        }
         AuditLog::record('login_success', ['ip' => $ip], (int) $user->id, (string) $user->username);
         $this->redirect('/admin');
     }

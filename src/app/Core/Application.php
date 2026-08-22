@@ -185,6 +185,8 @@ class Application
             $this->ensureAuditLogTable($db);
             // v1.2.0 迭代: daily counters for API calls & site visits.
             $this->ensureStatsTables($db);
+            // v1.2.1 UI 深度分析 (UI-10): last_login column on users.
+            $migrationError .= $this->ensureUserLastLogin($db);
         } catch (\Throwable $e) {
             $migrationError = $migrationError !== ''
                 ? $migrationError . ' | ' . $e->getMessage()
@@ -285,6 +287,27 @@ class Application
         }
 
         return '';
+    }
+
+    /**
+     * v1.2.1 UI 深度分析 (UI-10): ensure the users.last_login column exists.
+     * Idempotent: SHOW COLUMNS probe → ALTER with 1060 swallowed.
+     */
+    private function ensureUserLastLogin(\PDO $db): string
+    {
+        try {
+            if ($this->columnExists($db, 'users', 'last_login')) {
+                return '';
+            }
+            $db->exec("ALTER TABLE `users` ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`");
+            return '';
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            if (stripos($msg, '1060') !== false || stripos($msg, 'duplicate column') !== false) {
+                return '';
+            }
+            return 'ADD COLUMN users.last_login failed: ' . $msg;
+        }
     }
 
     private function columnExists(\PDO $db, string $table, string $col): bool

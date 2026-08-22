@@ -32,6 +32,7 @@ if ($success): ?>
                     <th>邮箱</th>
                     <th>角色</th>
                     <th>状态</th>
+                    <th>最后登录</th>
                     <th>操作</th>
                 </tr>
             </thead>
@@ -43,6 +44,7 @@ if ($success): ?>
                     <td data-label="邮箱"><?= h($user->email) ?></td>
                     <td data-label="角色"><span class="badge badge-<?= $user->role === 'admin' ? 'primary' : 'info' ?>"><?= h($user->role) ?></span></td>
                     <td data-label="状态"><span class="badge badge-<?= $user->status === 'active' ? 'success' : 'danger' ?>"><?= h($user->status) ?></span></td>
+                    <td data-label="最后登录"><?= !empty($user->last_login) ? h(date('Y-m-d H:i', strtotime((string)$user->last_login))) : '<span class="text-muted">从未登录</span>' ?></td>
                     <td data-label="操作">
                         <div class="flex gap-1">
                             <button class="btn btn-outline btn-sm" onclick="editUser(<?= $user->id ?>, '<?= h($user->username) ?>', '<?= h($user->email) ?>', '<?= h($user->role) ?>')">编辑</button>

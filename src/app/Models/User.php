@@ -8,7 +8,7 @@ use App\Core\Model;
 class User extends Model
 {
     protected static string $table = 'users';
-    protected static array $fillable = ['username', 'email', 'password', 'role', 'status'];
+    protected static array $fillable = ['username', 'email', 'password', 'role', 'status', 'last_login'];
 
     public function setPassword(string $password): void
     {

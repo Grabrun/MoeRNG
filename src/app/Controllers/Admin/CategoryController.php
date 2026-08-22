@@ -14,9 +14,24 @@ class CategoryController extends Controller
     {
         $categories = Category::getTree();
 
+        // v1.2.1 UI 深度分析 (分类-02): per-category image counts for badges.
+        // One aggregate query (GROUP BY category_id) instead of N+1 lookups.
+        $counts = [];
+        try {
+            $rows = \App\Core\Database::getInstance()
+                ->query("SELECT category_id, COUNT(*) AS c FROM `images` GROUP BY category_id")
+                ->fetchAll(\PDO::FETCH_ASSOC);
+            foreach ($rows as $r) {
+                $counts[(int) $r['category_id']] = (int) $r['c'];
+            }
+        } catch (\Throwable) {
+            // images table may not exist yet (fresh install)
+        }
+
         $this->render('admin/categories', [
             'title' => '分类管理',
             'categories' => $categories,
+            'imageCounts' => $counts,
         ]);
     }
 

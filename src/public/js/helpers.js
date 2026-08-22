@@ -83,6 +83,34 @@
         });
     });
 
+    // v1.2.1 UI 深度分析 (UI-04): 未保存修改提示 — 监听当前分组表单内
+    // input/select/textarea 的修改，标记 dirty 并更新保存按钮旁提示。
+    (function () {
+        var hint = document.getElementById('save-hint');
+        if (!hint) return;
+        var form = hint.closest('form');
+        if (!form) return;
+        var dirty = false;
+        var mark = function () {
+            if (dirty) return;
+            dirty = true;
+            hint.textContent = '有未保存的修改，请记得点击保存';
+            hint.style.color = 'var(--warning)';
+        };
+        form.addEventListener('input', mark);
+        form.addEventListener('change', mark);
+        // 保存成功后（页面跳转刷新）dirty 自动重置；表单提交时清掉提示避免误导。
+        form.addEventListener('submit', function () {
+            dirty = false;
+        });
+        // 防离开丢失：仅当有修改且非提交时提示
+        window.addEventListener('beforeunload', function (e) {
+            if (!dirty) return;
+            e.preventDefault();
+            e.returnValue = '';
+        });
+    })();
+
     // Logo uploader (AJAX) — v1.2.1: single "上传" button opens the picker,
     // selecting a file previews it and uploads immediately.
     var csrf = document.querySelector('meta[name="csrf-token"]').content;

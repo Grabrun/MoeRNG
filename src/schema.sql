@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS `users` (
     `password` VARCHAR(255) NOT NULL,
     `role` ENUM('admin', 'editor') NOT NULL DEFAULT 'admin',
     `status` ENUM('active', 'disabled') NOT NULL DEFAULT 'active',
+    `last_login` DATETIME NULL DEFAULT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX `idx_email` (`email`),

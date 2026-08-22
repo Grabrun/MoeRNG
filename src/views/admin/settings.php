@@ -121,6 +121,8 @@ admin_header('系统设置');
         <?php if ($gdef['fields'] !== []): ?>
         <div class="settings-save-bar mb-3">
             <button type="submit" class="btn btn-primary">保存「<?= h($gdef['label']) ?>」</button>
+            <!-- v1.2.1 UI 深度分析 (UI-04): 未保存修改提示 -->
+            <span class="save-hint" id="save-hint" style="margin-left:12px;font-size:.85rem;color:var(--text-muted)"></span>
         </div>
         <?php endif; ?>
     </form>

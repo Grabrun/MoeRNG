@@ -108,6 +108,7 @@
                         <div class="label">服务可用性</div>
                     </div>
                 </div>
+                <p class="stats-note">以上为实时统计，图片与分类数据随后台更新</p>
             </div>
 
             <!-- 右栏：抽图舞台（hero-stage 卡片化，设计核心交互） -->
@@ -146,12 +147,12 @@
         <section class="feature-grid">
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('dice', 28) ?></div>
-                <h3>真随机算法</h3>
+                <h3>真随机算法 <span class="badge badge-primary">核心</span></h3>
                 <p>数据库级 ORDER BY RAND() 确保每次请求独立随机的图片，无缓存无重复规律</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('folder-tree', 28) ?></div>
-                <h3>多级分类</h3>
+                <h3>多级分类 <span class="badge badge-primary">核心</span></h3>
                 <p>无限层级分类树，API 指定分类返回该分类及其子分类下随机图片</p>
             </div>
             <div class="feature-card reveal">
@@ -180,7 +181,19 @@
         <section id="docs" class="section reveal">
             <h2 class="section-title">API 文档</h2>
 
-            <div class="doc-endpoint">
+
+            <div class="docs-layout">
+            <aside class="docs-sidebar" aria-label="文档目录">
+                <h4>API 文档</h4>
+                <nav>
+                    <a href="#endpoint-random" class="active">随机图片</a>
+                    <a href="#endpoint-images">图片列表</a>
+                    <a href="#endpoint-categories">分类列表</a>
+                    <a href="#endpoint-stats">服务统计</a>
+                </nav>
+            </aside>
+            <div class="docs-content">
+            <div class="doc-endpoint" id="endpoint-random">
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/random</span>
@@ -253,7 +266,7 @@
                 </div>
             </div>
 
-            <div class="doc-endpoint">
+            <div class="doc-endpoint" id="endpoint-images">
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/images</span>
@@ -272,7 +285,7 @@
                 </div>
             </div>
 
-            <div class="doc-endpoint">
+            <div class="doc-endpoint" id="endpoint-categories">
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/categories</span>
@@ -283,7 +296,7 @@
                 </div>
             </div>
 
-            <div class="doc-endpoint">
+            <div class="doc-endpoint" id="endpoint-stats">
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/stats</span>
@@ -312,6 +325,8 @@
 }</code></pre>
                     </div>
                 </div>
+            </div>
+        </div>
             </div>
         </section>
 
@@ -380,6 +395,10 @@
                 </p>
                 <div class="preview-box" id="test-result">
                     <span class="text-muted">点击「Send Request」查看结果</span>
+                </div>
+                <div class="test-meta hidden" id="test-meta" style="display:none;margin-top:10px;font-size:.8rem;color:var(--text-secondary)">
+                    <span id="test-status" class="badge"></span>
+                    <span id="test-duration" style="margin-left:8px"></span>
                 </div>
             </div>
         </section>

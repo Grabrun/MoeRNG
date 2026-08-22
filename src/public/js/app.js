@@ -137,6 +137,36 @@ function initApiTester() {
     const resultBox = document.getElementById('test-result');
     const urlDisplay = document.getElementById('test-url');
     const curlDisplay = document.getElementById('test-curl');
+    const statusBadge = document.getElementById('test-status');
+    const durationEl = document.getElementById('test-duration');
+    const metaBox = document.getElementById('test-meta');
+
+    // v1.2.1 UI 深度分析 (TEST-01): 最近 10 次请求历史（localStorage 文本记录，
+    // 与已移除的随机图缩略图历史不同——这里保存的是请求/响应文本，不依赖签名 URL）。
+    const TEST_HISTORY_KEY = 'moerng_test_history';
+
+    function showMeta(status, statusText, ms) {
+        if (!metaBox) return;
+        const ok = status >= 200 && status < 400;
+        metaBox.style.display = '';
+        if (statusBadge) {
+            statusBadge.textContent = status + ' ' + statusText;
+            statusBadge.className = 'badge ' + (ok ? 'badge-success' : 'badge-danger');
+        }
+        if (durationEl) durationEl.textContent = '响应时间 ' + formatDuration(ms);
+    }
+    function formatDuration(ms) {
+        if (ms < 1000) return Math.round(ms) + 'ms';
+        return (ms / 1000).toFixed(2) + 's';
+    }
+    function saveTestHistory(url, summary) {
+        try {
+            let h = JSON.parse(localStorage.getItem(TEST_HISTORY_KEY) || '[]');
+            h.unshift({ url: url, summary: summary, time: Date.now() });
+            if (h.length > 10) h = h.slice(0, 10);
+            localStorage.setItem(TEST_HISTORY_KEY, JSON.stringify(h));
+        } catch (e) { /* private mode — ignore */ }
+    }
 
     function updateUrl() {
         const category = categorySelect.value;
@@ -159,12 +189,14 @@ function initApiTester() {
         runBtn.disabled = true;
         runBtn.textContent = 'Loading...';
         resultBox.innerHTML = '<div class="spinner"></div>';
+        if (metaBox) metaBox.style.display = 'none';
 
         const category = categorySelect.value;
         const type = typeSelect.value;
         const params = new URLSearchParams();
         if (category) params.set('category', category);
         if (type) params.set('type', type);
+        const t0 = performance.now();
 
         // Promise wrapper so finally runs in BOTH json/redirect branches,
         // regardless of which branch executes. Without this, the redirect
@@ -190,32 +222,47 @@ function initApiTester() {
                 tester.alt = 'Random Image';
                 tester.style.cssText = 'max-width:100%;max-height:400px;object-fit:contain;';
                 tester.onload = function() {
+                    const ms = performance.now() - t0;
                     tester.removeAttribute('style');
                     tester.style.cssText = 'max-width:100%;max-height:400px;object-fit:contain;display:block;margin:0 auto;';
                     resultBox.innerHTML = '';
                     resultBox.appendChild(tester);
+                    showMeta(200, 'OK', ms);
+                    saveTestHistory(apiPath, '302 → 图片 (200 OK, ' + formatDuration(ms) + ')');
                     resolveRequest();
                 };
                 tester.onerror = function() {
+                    const ms = performance.now() - t0;
                     resultBox.innerHTML =
                         '<pre style="color:var(--danger)">重定向目标无法加载（目标地址不可达或返回非图片）。'
                         + '\n这是一个客户端 CORS 探测限制 —— 在 curl / 服务器端 HTTP 客户端中跟随 302 是正常的，'
                         + '浏览器 fetch 在跨域时会拦截（Failed to fetch）。'
                         + '\n本测试改用 img 探测，已绕开此限制。'
                         + '\n\n请求 URL：' + apiPath + '</pre>';
+                    showMeta(0, 'Failed', ms);
+                    saveTestHistory(apiPath, '加载失败 (' + formatDuration(ms) + ')');
                     resolveRequest();
                 };
                 tester.src = apiPath;
             } else {
                 const resp = await fetch(apiPath);
-                const data = await resp.json();
-                resultBox.innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                const ms = performance.now() - t0;
+                let text = await resp.text();
+                let pretty;
+                try { pretty = JSON.stringify(JSON.parse(text), null, 2); }
+                catch (e) { pretty = text; }
+                resultBox.innerHTML = '<pre>' + pretty + '</pre>';
+                showMeta(resp.status, resp.statusText || (resp.ok ? 'OK' : 'Error'), ms);
+                saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
                 resolveRequest();
             }
 
             await requestDone;
         } catch(e) {
+            const ms = performance.now() - t0;
             resultBox.innerHTML = '<pre style="color:var(--danger)">Error: ' + e.message + '</pre>';
+            showMeta(0, 'Network Error', ms);
+            saveTestHistory('/api/v1/random?' + params.toString(), 'Error: ' + e.message);
             // v1.2.1-beta.3 修复: 异常分支也要 resolve，否则 await requestDone 永远挂起 → 按钮卡 Loading
             resolveRequest();
         }

@@ -342,7 +342,8 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 /* Theme toggle button (admin sidebar) — shows the icon of the mode you switch TO */
 .theme-toggle {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 36px; height: 36px; flex-shrink: 0;
+    /* v1.2.1 迭代 (UI-02/NAV-03): 触摸目标 36px → 44px（WCAG 2.5.5 最小 44×44） */
+    width: 44px; height: 44px; flex-shrink: 0;
     border: 1px solid var(--border); border-radius: var(--radius-sm);
     background: var(--bg-input); color: var(--text-secondary);
     cursor: pointer; transition: all var(--transition);
@@ -1446,3 +1447,57 @@ body.modal-open { overflow: hidden; }
             .hero h1 { font-size: 2.5rem; }
             .hero { padding: 60px 16px 40px; }
         }
+
+/* ============================================================
+   v1.2.1 UI 深度分析 (DOC-01): docs 锚点导航侧边栏
+   桌面端 sticky 目录 + 滚动高亮；移动端降为横向滚动条
+   ============================================================ */
+.docs-layout { display: grid; grid-template-columns: 200px 1fr; gap: 32px; align-items: start; }
+.docs-sidebar {
+    position: sticky; top: 80px;
+    border-left: 3px solid var(--border); padding-left: 12px;
+}
+.docs-sidebar h4 { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; }
+.docs-sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+.docs-sidebar a {
+    padding: 6px 10px; border-radius: var(--radius-sm);
+    color: var(--text-secondary); text-decoration: none;
+    font-size: 0.88rem; transition: all var(--transition);
+}
+.docs-sidebar a:hover { background: var(--bg-input); color: var(--text); }
+.docs-sidebar a.active { color: var(--primary); background: var(--bg-input); font-weight: 600; }
+.docs-sidebar a.active::before { content: ''; position: absolute; left: -15px; width: 3px; height: 20px; background: var(--primary); border-radius: 2px; }
+.docs-sidebar a { position: relative; }
+.docs-content { min-width: 0; }
+@media (max-width: 900px) {
+    .docs-layout { grid-template-columns: 1fr; gap: 12px; }
+    .docs-sidebar { position: static; border-left: none; border-bottom: 1px solid var(--border); padding: 0 0 10px; overflow-x: auto; }
+    .docs-sidebar nav { flex-direction: row; gap: 8px; }
+    .docs-sidebar a { white-space: nowrap; }
+}
+
+/* v1.2.1 UI 深度分析 (HERO-05): 统计来源说明小字 */
+.stats-note {
+    grid-column: 1 / -1; text-align: center;
+    font-size: 0.72rem; color: var(--text-muted); margin: 4px 0 0;
+}
+.feature-card h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.feature-card h3 .badge { font-size: 0.68rem; padding: 2px 8px; }
+
+/* v1.2.1 UI 深度分析 (DASH-04): 快捷操作网格 */
+.quick-actions {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+}
+.action-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 16px 12px; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    text-decoration: none; color: var(--text);
+    font-size: 0.85rem; transition: all var(--transition);
+}
+.action-btn:hover {
+    border-color: var(--primary); transform: translateY(-2px);
+    box-shadow: var(--shadow-sm); color: var(--primary);
+}
+.action-icon { color: var(--primary); display: inline-flex; }

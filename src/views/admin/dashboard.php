@@ -29,6 +29,34 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     <p>欢迎回到 MoeRNG 管理面板</p>
 </div>
 
+<!-- v1.2.1 UI 深度分析 (DASH-04): 快捷操作入口 -->
+<div class="quick-actions reveal">
+    <a href="/admin/images" class="action-btn">
+        <span class="action-icon"><?= icon('upload', 22) ?></span>
+        <span>上传图片</span>
+    </a>
+    <a href="/admin/categories" class="action-btn">
+        <span class="action-icon"><?= icon('folder-tree', 22) ?></span>
+        <span>管理分类</span>
+    </a>
+    <a href="/admin/storage" class="action-btn">
+        <span class="action-icon"><?= icon('cloud', 22) ?></span>
+        <span>存储管理</span>
+    </a>
+    <a href="/admin/settings" class="action-btn">
+        <span class="action-icon"><?= icon('settings', 22) ?></span>
+        <span>系统设置</span>
+    </a>
+    <a href="/admin/apikeys" class="action-btn">
+        <span class="action-icon"><?= icon('key', 22) ?></span>
+        <span>API Keys</span>
+    </a>
+    <a href="/admin/users" class="action-btn">
+        <span class="action-icon"><?= icon('users', 22) ?></span>
+        <span>用户管理</span>
+    </a>
+</div>
+
 <!-- 1. 顶部统计卡 -->
 <div class="grid grid-4">
     <div class="stat-card">

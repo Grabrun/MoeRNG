@@ -38,6 +38,9 @@
                 <span class="text-muted" style="margin-left:6px">· <?= $descCount ?> 个子分类</span>
                 <?php endif; ?>
                 <span class="text-muted" style="margin-left:6px">· 排序 <?= (int)($root['sort_order'] ?? 0) ?></span>
+                <?php if (isset($imageCounts[(int)$root['id']]) && $imageCounts[(int)$root['id']] > 0): ?>
+                <span class="badge badge-success" style="margin-left:6px"><?= (int)$imageCounts[(int)$root['id']] ?> 图</span>
+                <?php endif; ?>
             </div>
             <div class="actions">
                 <button class="btn btn-outline btn-sm" onclick="editCategory(<?= $root['id'] ?>, '<?= h($root['name']) ?>', '<?= h($root['slug']) ?>', '<?= h($root['description'] ?? '') ?>', '<?= $root['parent_id'] ?? '' ?>', '<?= $root['sort_order'] ?? 0 ?>')">编辑</button>
@@ -58,6 +61,9 @@
                     echo '<span class="cat-name">' . h($n['name']) . '</span>';
                     echo '<small class="text-muted">(' . h($n['slug']) . ')</small>';
                     echo '<span class="text-muted">· 排序 ' . (int)($n['sort_order'] ?? 0) . '</span>';
+                    if (isset($imageCounts[(int)$n['id']]) && $imageCounts[(int)$n['id']] > 0) {
+                        echo '<span class="badge badge-success" style="margin-left:6px">' . (int)$imageCounts[(int)$n['id']] . ' 图</span>';
+                    }
                     if (!empty($n['description'])) {
                         echo '<div class="cat-desc text-muted">' . h($n['description']) . '</div>';
                     }
