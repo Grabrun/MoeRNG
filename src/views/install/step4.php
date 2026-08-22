@@ -9,7 +9,7 @@
     <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强） -->
     <link rel="stylesheet" href="/public/css/fonts.css">
     <link rel="stylesheet" href="/public/css/style.css">
-    <style>.install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; } .install-header { text-align: center; margin-bottom: 40px; } .install-header h1 { color: var(--primary); font-size: 2.2rem; }</style>
+    
 </head>
 <body>
     <div class="install-container">
@@ -83,13 +83,6 @@
                 </div>
             </form>
         </div>
-    </div>
-    <script>
-    function toggleStorageFields() {
-        const val = document.getElementById('storage-driver-select').value;
-        document.getElementById('local-fields').classList.toggle('hidden', val !== 'local');
-        document.getElementById('s3-fields').classList.toggle('hidden', val !== 's3');
-    }
-    </script>
+    </div>    <script src="/public/js/helpers.js"></script>
 </body>
 </html>

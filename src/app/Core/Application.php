@@ -39,8 +39,9 @@ class Application
         ini_set('log_errors', '1');
 
         // v1.2.1 security: baseline security headers on every response.
-        // CSP intentionally allows 'unsafe-inline' — the pages ship inline
-        // theme JS and <style> blocks; tightening it needs a refactor first.
+        // CSP uses nonce for script-src and style-src (see CspNonce).
+        // Inline theme JS and <style> blocks carry the nonce so they are
+        // allowed while the CSP otherwise blocks all untrusted scripts/styles.
         // Re-sent after DB load with storage CDN domains (see below).
         $this->sendSecurityHeaders(false);
         header('X-Robots-Tag: noindex, nofollow');
@@ -111,7 +112,8 @@ class Application
                 $imgSrc .= ' https://' . $h;
             }
         }
-        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src {$imgSrc}; connect-src 'self'; frame-ancestors 'self'");
+        $nonce = \App\Core\CspNonce::token();
+        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}'; style-src 'self' 'nonce-{$nonce}'; img-src {$imgSrc}; connect-src 'self'; frame-ancestors 'self'");
     }
 
     /**

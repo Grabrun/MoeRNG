@@ -92,29 +92,4 @@ if ($success): ?>
             </div>
         </form>
     </div>
-</div>
-
-<script>
-function editUser(id, username, email, role) {
-    document.getElementById('user-modal-title').textContent = '编辑用户';
-    document.getElementById('user-id').value = id;
-    document.getElementById('user-username').value = username;
-    document.getElementById('user-email').value = email;
-    document.getElementById('user-role').value = role;
-    document.getElementById('user-password').value = '';
-    document.getElementById('pwd-hint').textContent = '(留空不修改)';
-    document.getElementById('user-form').action = '/admin/users/update';
-    document.getElementById('user-modal').classList.add('active');
-}
-document.querySelector('[onclick="openModal(\'user-modal\')"]').addEventListener('click', function() {
-    document.getElementById('user-modal-title').textContent = '新建用户';
-    document.getElementById('user-id').value = '';
-    document.getElementById('user-username').value = '';
-    document.getElementById('user-email').value = '';
-    document.getElementById('user-password').value = '';
-    document.getElementById('pwd-hint').textContent = '';
-    document.getElementById('user-form').action = '/admin/users/create';
-});
-</script>
-
-<?php admin_footer(); ?>
+</div><?php admin_footer(); ?>

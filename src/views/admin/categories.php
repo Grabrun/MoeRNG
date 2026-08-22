@@ -125,32 +125,4 @@
             </div>
         </form>
     </div>
-</div>
-
-<script>
-function editCategory(id, name, slug, desc, parentId, sort) {
-    document.getElementById('category-modal-title').textContent = '编辑分类';
-    document.getElementById('cat-id').value = id;
-    document.getElementById('cat-name').value = name;
-    document.getElementById('cat-slug').value = slug;
-    document.getElementById('cat-desc').value = desc;
-    document.getElementById('cat-parent').value = parentId;
-    document.getElementById('cat-sort').value = sort;
-    document.getElementById('category-form').action = '/admin/categories/update';
-    document.getElementById('category-modal').classList.add('active');
-}
-
-// Reset form for new category
-document.querySelector('[onclick="openModal(\'category-modal\')"]').addEventListener('click', function() {
-    document.getElementById('category-modal-title').textContent = '新建分类';
-    document.getElementById('cat-id').value = '';
-    document.getElementById('cat-name').value = '';
-    document.getElementById('cat-slug').value = '';
-    document.getElementById('cat-desc').value = '';
-    document.getElementById('cat-parent').value = '';
-    document.getElementById('cat-sort').value = '0';
-    document.getElementById('category-form').action = '/admin/categories/create';
-});
-</script>
-
-<?php admin_footer(); ?>
+</div><?php admin_footer(); ?>

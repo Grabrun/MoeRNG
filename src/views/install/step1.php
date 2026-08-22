@@ -8,14 +8,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
     <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强） -->
     <link rel="stylesheet" href="/public/css/fonts.css">
-    <link rel="stylesheet" href="/public/css/style.css">
-    <style>
-        .install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; }
-        .install-header { text-align: center; margin-bottom: 40px; }
-        .install-header h1 { color: var(--primary); font-size: 2.2rem; }
-        .install-logo { display: block; width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 14px; }
-    </style>
-</head>
+    <link rel="stylesheet" href="/public/css/style.css"></head>
 <body>
     <div class="install-container">
         <div class="install-header">
@@ -61,5 +54,6 @@
             <?php endif; ?>
         </div>
     </div>
+    <script src="/public/js/helpers.js"></script>
 </body>
 </html>

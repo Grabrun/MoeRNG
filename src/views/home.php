@@ -3,9 +3,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script>var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentElement.setAttribute('data-theme',t);</script>
-    <meta name="csrf-token" content="<?= $csrf_token ?>">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="csrf-token" content="<?= $csrf_token ?>">
     <title><?= h($siteName) ?> - <?= h($siteSlogan) ?></title>
     <!--: PNG favicon first (modern browsers), ICO fallback, ?v= busts the browser's stubborn favicon cache -->
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
@@ -41,144 +39,7 @@
     <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强——font-display=swap 不阻塞渲染；
          国内网络无法访问 Google Fonts 时自动回退到系统字体栈，不影响可用性） -->
     <link rel="stylesheet" href="/public/css/fonts.css">
-    <style>
-        /* v1.2.1-beta.3 迭代: hero 双栏布局（Design Tokens §5 两栏 hero-grid） */
-        .hero { padding: 96px 24px 64px; }
-        .hero-inner { max-width: var(--maxw, 1120px); margin: 0 auto; padding: 0 24px; }
-        .hero-grid {
-            display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px;
-            /* v1.2.1-beta.3 迭代: start 对齐——两栏按内容自然高度，不互相拉伸 */
-            align-items: start;
-        }
-        /* v1.2.1-beta.3 迭代: grid item 默认 min-width:auto 会让内容撑爆布局
-           （banner 图/文字溢出导致整体左栏文字被截断），强制 min-width:0 */
-        .hero-left, .hero-stage { min-width: 0; }
-        .hero-title {
-            font-family: var(--font-display);
-            font-size: 2.75rem; font-weight: 800; line-height: 1.2;
-            margin-bottom: 16px; color: var(--text);
-        }
-        .hero-sub {
-            font-size: 1.125rem; color: var(--text-secondary);
-            max-width: 520px; margin-bottom: 24px; line-height: 1.7;
-        }
-        .hero .stats { display: flex; gap: 28px; margin: 28px 0; justify-content: center; }
-        .hero .stat { text-align: center; }
-        .hero .stat .num { font-size: 2rem; font-weight: 700; color: var(--primary); font-family: var(--font-display); }
-        .hero .stat .label { font-size: 0.85rem; color: var(--text-muted); }
-        /* v1.2.1-beta.3 迭代: hero CTA 按钮组居中（用户反馈电脑端按钮没居中） */
-        .hero .btn-group { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-        .hero-stage {
-            background: var(--bg-card); border: 1px solid var(--border);
-            border-radius: var(--radius-lg); padding: 24px;
-            box-shadow: var(--shadow-floating);
-            /* v1.2.1-beta.3 迭代: 撑满 hero 右栏，按内容自然高度（不被左栏 banner 拉伸） */
-            width: 100%; align-self: start;
-        }
-        .hero-banner-wrap { display: block; margin-bottom: 24px; }
-        .hero-banner { width: 100%; height: auto; border-radius: var(--radius); }
-        @media (max-width: 900px) {
-            .hero-grid { grid-template-columns: 1fr; gap: 32px; }
-            .hero-title { font-size: 2.1rem; }
-        }
-        .hero h1 { font-size: 4rem; margin-bottom: 12px; }
-        .hero .subtitle { font-size: 1.25rem; color: var(--text-secondary); margin-bottom: 8px; }
-        /* v1.2.1 迭代: bolder stat numbers (UI audit V2) — 纯色粉紫（禁止渐变文字铁律） */
-        .hero .stats .stat-value {
-            font-size: 2.4rem; font-weight: 800; line-height: 1.15;
-            color: var(--primary);
-        }
-        .hero .stat { text-align: center; }
-        .hero .stat .num { font-size: 2rem; font-weight: 700; color: var(--primary); }
-        .hero .stat .label { font-size: 0.85rem; color: var(--text-muted); }
-        .endpoint-path { 
-            font-family: var(--font-mono); color: var(--accent);
-            font-size: 1.1rem; word-break: break-all;
-        }
-        .param-table { width: 100%; margin: 12px 0; }
-        .param-table td, .param-table th { font-size: 0.9rem; padding: 8px 12px; }
-        .rate-tier { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 16px 0; }
-        .rate-tier .tier-card { background: var(--bg-input); border-radius: var(--radius-sm); padding: 16px; text-align: center; border: 1px solid var(--border); }
-        .rate-tier .tier-card .tier-name { font-weight: 600; margin-bottom: 4px; }
-        .rate-tier .tier-card .tier-limit { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
-        /* v1.1.0-beta.7: fixed top navigation bar (brand left, links + theme right) */
-        .site-nav {
-            position: fixed; top: 0; left: 0; right: 0; z-index: 300;
-            display: flex; align-items: center; gap: 24px;
-            height: 56px; padding: 0 20px;
-            background: color-mix(in srgb, var(--bg) 84%, transparent);
-            border-bottom: 1px solid var(--border);
-        }
-        /* v1.2.0 迭代: mobile nav — collapse 5 links into a hamburger button
-           so the fixed header stops hogging space and overlapping content. */
-        .site-nav-menu > summary { display: none; cursor: pointer; list-style: none; }
-        .site-nav-menu > summary::-webkit-details-marker { display: none; }
-        .site-nav-menu > summary svg { display: block; }
-        @media (max-width: 768px) {
-            .site-nav { gap: 8px; }
-            .site-nav-menu > summary {
-                display: inline-flex; align-items: center; justify-content: center;
-                width: 40px; height: 40px; border-radius: var(--radius-sm);
-                color: var(--text); margin-left: auto;
-            }
-            .site-nav-menu > summary:hover { background: var(--bg-card); }
-            .site-nav-links {
-                position: absolute; top: 56px; left: 0; right: 0;
-                background: var(--bg); border-bottom: 1px solid var(--border);
-                padding: 12px 20px; display: none;
-                flex-direction: column; align-items: stretch; gap: 4px;
-                box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-            }
-            .site-nav-menu[open] .site-nav-links { display: flex; }
-            .site-nav-links a { padding: 10px 12px; border-radius: var(--radius-sm); }
-            .site-nav-links a:hover { background: var(--bg-card); }
-        }
-        .site-nav-brand {
-            display: inline-flex; align-items: center; gap: 8px;
-            text-decoration: none; color: var(--text);
-            font-weight: 700; font-size: 1.1rem; white-space: nowrap;
-            padding: 4px 6px; border-radius: var(--radius-sm);
-            transition: opacity var(--transition);
-        }
-        .site-nav-brand:hover { opacity: 0.85; }
-        /* v1.2.1-beta.3 迭代: 导航 logo 放大（40px，设计规范桌面 ≥32px） */
-        .site-nav-brand img { max-height: 40px; max-width: 180px; object-fit: contain; display: block; }
-        .site-nav-links { display: flex; align-items: center; gap: 2px; margin-left: auto; }
-        .site-nav-links a {
-            padding: 6px 14px; border-radius: var(--radius-pill);
-            color: var(--text-secondary); text-decoration: none;
-            font-size: 0.9rem; transition: all var(--transition); white-space: nowrap;
-            /* v1.2.1-beta.3 迭代: 菜单文字居中（横排/汉堡展开两态一致） */
-            display: inline-flex; align-items: center; justify-content: center; text-align: center;
-        }
-        .site-nav-links a:hover { background: var(--bg-input); color: var(--text); }
-        .site-nav-links a.active { color: var(--primary); font-weight: 600; }
-        .site-nav .theme-toggle-float { position: static; border-radius: var(--radius-sm); box-shadow: none; }
-        html { scroll-padding-top: 76px; }
-        /* v1.1.1: nav wraps on small screens so all items stay reachable */
-        @media (max-width: 640px) {
-            .site-nav { gap: 8px; padding: 8px 12px; height: auto; min-height: 52px; flex-wrap: wrap; }
-            .site-nav-brand { font-size: 1rem; }
-            .site-nav-brand img { max-height: 28px; max-width: 120px; }
-            .site-nav-links { order: 3; width: 100%; margin-left: 0; justify-content: flex-start; padding: 4px 0 2px; overflow-x: auto; }
-            .site-nav-links a { padding: 5px 10px; font-size: 0.85rem; flex-shrink: 0; }
-            .site-nav .theme-toggle-float { margin-left: auto; }
-        }
-        /* v1.1.1: hero hierarchy polish */
-        .hero h1 { font-weight: 800; letter-spacing: -0.02em; }
-        .hero .stats { gap: 40px; }
-        .hero .stat .num { font-size: 2.2rem; font-weight: 800; }
-        .hero .stat { transition: transform var(--transition); }
-        .hero .stat:hover { transform: translateY(-2px); }
-        .site-logo { filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); }
-        /* v1.1.1: docs & tester polish */
-        .section-title { letter-spacing: -0.01em; }
-        #tester .api-tester { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
-        @media (max-width: 768px) {
-            .hero h1 { font-size: 2.5rem; }
-            .hero { padding: 60px 16px 40px; }
-        }
-    </style>
+    
 </head>
 <body>
     <div class="toast-container"></div>
@@ -566,32 +427,8 @@
         </footer>
     </div>
 
-    <script src="/public/js/app.js"></script>
-    <script>
-    // v1.1.0-beta.8: nav active state follows the clicked anchor
-    (function () {
-        var links = document.querySelectorAll('.site-nav-links a');
-        links.forEach(function (a) {
-            a.addEventListener('click', function () {
-                links.forEach(function (x) { x.classList.remove('active'); });
-                a.classList.add('active');
-            });
-        });
-    })();
-    // v1.2.1 迭代: collapse the mobile nav on small viewports (the open
-    // attribute is needed on desktop so the native <details> shows the
-    // links — the JS removes it on mobile so the hamburger toggle works).
-    (function () {
-        var menu = document.querySelector('.site-nav-menu');
-        if (!menu) return;
-        var sync = function () { menu.removeAttribute('open'); };
-        if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) sync();
-        window.addEventListener('resize', function () {
-            if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) sync();
-        });
-    })();
-    </script>
-<!-- v1.2.1-beta.3 修复: 移到 body 直接子元素下（之前嵌在 hero-stage 内被 .site-nav z-index:300 的 stacking context 困住，导致全屏 lightbox 没法覆盖 nav） -->
+    <script src="/public/js/helpers.js"></script>
+    <script src="/public/js/app.js"></script><!-- v1.2.1-beta.3 修复: 移到 body 直接子元素下（之前嵌在 hero-stage 内被 .site-nav z-index:300 的 stacking context 困住，导致全屏 lightbox 没法覆盖 nav） -->
 <div class="lb-overlay hidden" id="rd-lightbox" role="dialog" aria-modal="true" aria-label="图片大图预览">
     <img id="rd-lb-img" src="" alt="大图预览">
     <button type="button" class="lb-close" id="rd-lb-close" aria-label="关闭预览"><?= icon('x', 24) ?></button>
