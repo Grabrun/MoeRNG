@@ -27,12 +27,18 @@
             <form method="POST" action="/admin/login">
                 <?= $csrf_field ?>
                 <div class="form-group">
-                    <label>邮箱</label>
-                    <input type="email" name="email" class="form-control" required autofocus placeholder="admin@example.com">
+                    <label>用户名或邮箱</label>
+                    <input type="text" name="login" class="form-control" required autofocus autocomplete="username" placeholder="用户名或邮箱">
                 </div>
                 <div class="form-group">
                     <label>密码</label>
-                    <input type="password" name="password" class="form-control" required placeholder="Enter password">
+                    <input type="password" name="password" class="form-control" required autocomplete="current-password" placeholder="Enter password">
+                </div>
+                <div class="form-group login-options">
+                    <label class="remember-label">
+                        <input type="checkbox" name="remember" value="1">
+                        <span class="remember-text">记住我（7 天内自动登录）</span>
+                    </label>
                 </div>
                 <?php if ($locked): ?>
                 <div class="alert alert-error mb-3">登录尝试过于频繁，请 <?= (int) ceil(($lock_seconds ?? 0) / 60) ?> 分钟后再试。</div>

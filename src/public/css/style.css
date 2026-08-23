@@ -1145,6 +1145,11 @@ body.modal-open { overflow: hidden; }
         .login-card .login-logo { display: block; width: 72px; height: 72px; margin: 0 auto 12px; border-radius: 16px; object-fit: contain; }
         .login-card h1 { text-align: center; margin-bottom: 8px; color: var(--primary); }
         .login-card .subtitle { text-align: center; color: var(--text-secondary); margin-bottom: 32px; }
+        /* v1.2.1 登录增强: remember-me checkbox row */
+        .login-card .login-options { margin: 4px 0 16px; }
+        .login-card .remember-label { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 0.88rem; color: var(--text-secondary); }
+        .login-card .remember-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+        .login-card .remember-text { line-height: 1; }
 
 
 /* === Migrated from src/views/settings.php (CSP nonce migration) === */
@@ -1282,6 +1287,11 @@ body.modal-open { overflow: hidden; }
         .login-card .login-logo { display: block; width: 72px; height: 72px; margin: 0 auto 12px; border-radius: 16px; object-fit: contain; }
         .login-card h1 { text-align: center; margin-bottom: 8px; color: var(--primary); }
         .login-card .subtitle { text-align: center; color: var(--text-secondary); margin-bottom: 32px; }
+        /* v1.2.1 登录增强: remember-me checkbox row */
+        .login-card .login-options { margin: 4px 0 16px; }
+        .login-card .remember-label { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 0.88rem; color: var(--text-secondary); }
+        .login-card .remember-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+        .login-card .remember-text { line-height: 1; }
 
 
 /* === Migrated from src/views\admin\settings.php (CSP nonce migration) === */

@@ -13,6 +13,27 @@ class AuthMiddleware
     public function handle(Request $request, callable $next): mixed
     {
         $userId = Session::get('user_id');
+
+        // v1.2.1 登录增强: remember-me auto-login — if there's no session but a
+        // valid remember cookie exists, restore the session from it. This lets
+        // a checked-in admin return to /admin without re-entering credentials.
+        if (!$userId) {
+            $raw = (string) ($_COOKIE['moerng_remember'] ?? '');
+            if ($raw !== '') {
+                try {
+                    $user = User::findByRememberToken($raw);
+                    if ($user && $user->isActive()) {
+                        Session::set('user_id', $user->id);
+                        Session::set('user_role', $user->role);
+                        Session::set('user_name', (string) $user->username);
+                        $userId = $user->id;
+                    }
+                } catch (\Throwable) {
+                    $userId = null; // ignore — fall through to the redirect below
+                }
+            }
+        }
+
         if (!$userId) {
             // Redirect to login for non-AJAX requests
             if ($request->wantsJson()) {

@@ -187,6 +187,8 @@ class Application
             $this->ensureStatsTables($db);
             // v1.2.1 UI 深度分析 (UI-10): last_login column on users.
             $migrationError .= $this->ensureUserLastLogin($db);
+            // v1.2.1 登录增强: remember-me (auto-login) token columns on users.
+            $migrationError .= $this->ensureUserRemember($db);
         } catch (\Throwable $e) {
             $migrationError = $migrationError !== ''
                 ? $migrationError . ' | ' . $e->getMessage()
@@ -308,6 +310,38 @@ class Application
             }
             return 'ADD COLUMN users.last_login failed: ' . $msg;
         }
+    }
+
+    /**
+     * v1.2.1 登录增强: ensure the users.remember_token + remember_expires columns
+     * exist (remember-me / auto-login). Idempotent via columnExists probe.
+     * remember_token holds a HASH (not the raw cookie value); remember_expires
+     * bounds how long a "记住我" session may auto-login.
+     */
+    private function ensureUserRemember(\PDO $db): string
+    {
+        $err = '';
+        if (!$this->columnExists($db, 'users', 'remember_token')) {
+            try {
+                $db->exec("ALTER TABLE `users` ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`");
+            } catch (\Throwable $e) {
+                $msg = $e->getMessage();
+                if (stripos($msg, '1060') === false && stripos($msg, 'duplicate column') === false) {
+                    $err .= 'ADD COLUMN users.remember_token failed: ' . $msg . ' | ';
+                }
+            }
+        }
+        if (!$this->columnExists($db, 'users', 'remember_expires')) {
+            try {
+                $db->exec("ALTER TABLE `users` ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`");
+            } catch (\Throwable $e) {
+                $msg = $e->getMessage();
+                if (stripos($msg, '1060') === false && stripos($msg, 'duplicate column') === false) {
+                    $err .= 'ADD COLUMN users.remember_expires failed: ' . $msg;
+                }
+            }
+        }
+        return $err;
     }
 
     private function columnExists(\PDO $db, string $table, string $col): bool

@@ -15,6 +15,36 @@
 })();
 
 
+// =====================================================================
+// Theme toggle (dark / light), persisted to localStorage('moerng-theme').
+// Lives in helpers.js (loaded on EVERY page, incl. the standalone login
+// page) so the toggle works wherever a .theme-toggle button exists —
+// previously it only worked on app.js pages, breaking the login screen.
+// =====================================================================
+// This mirrors the definitions that used to live only in app.js; app.js
+// still calls initThemeToggle() on DOM ready, which now finds this copy.
+window.toggleTheme = function () {
+    var root = document.documentElement;
+    var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('moerng-theme', next); } catch (e) { /* private mode */ }
+};
+
+function initThemeToggle() {
+    document.querySelectorAll('.theme-toggle').forEach(function (btn) {
+        btn.addEventListener('click', window.toggleTheme);
+    });
+}
+
+// If the login page (which loads helpers.js but NOT app.js) has a toggle,
+// wire it up immediately — no DOM-ready dependency on app.js.
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initThemeToggle);
+} else {
+    initThemeToggle();
+}
+
+
 /**
  * v1.2.1 CSP nonce 修复 (V-02): 统一事件委托层。
  * CSP 移除 'unsafe-inline' 后，inline onclick/onchange 属性全部被浏览器拦截，

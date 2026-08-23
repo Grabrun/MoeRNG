@@ -1076,20 +1076,10 @@ function initDeleteButtons() {
 }
 
 // ---------------------------------------------------------------------------
-// Theme toggle (dark / light), persisted to localStorage('moerng-theme')
+// Theme toggle (dark / light) — moved to helpers.js (loaded on every page,
+// incl. the login page where app.js is absent). initThemeToggle() below now
+// resolves to the helpers.js copy.
 // ---------------------------------------------------------------------------
-window.toggleTheme = function() {
-    const root = document.documentElement;
-    const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-    root.setAttribute('data-theme', next);
-    try { localStorage.setItem('moerng-theme', next); } catch (e) { /* private mode */ }
-};
-
-function initThemeToggle() {
-    document.querySelectorAll('.theme-toggle').forEach(function(btn) {
-        btn.addEventListener('click', window.toggleTheme);
-    });
-}
 
 // Init all on DOM ready
 document.addEventListener('DOMContentLoaded', function() {
