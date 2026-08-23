@@ -5,11 +5,11 @@
 $success = \App\Core\Session::flash('success');
 $error   = \App\Core\Session::flash('error');
 if ($success): ?>
-<div class="alert alert-success" style="margin-bottom:16px;padding:12px 16px;border-radius:var(--radius-sm);background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:var(--text)">
+<div class="alert alert-success alert-inline-success">
     <?= h($success) ?>
 </div>
 <?php endif; if ($error): ?>
-<div class="alert alert-error" style="margin-bottom:16px;padding:12px 16px;border-radius:var(--radius-sm);background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:var(--text)">
+<div class="alert alert-error alert-inline-danger">
     <?= h($error) ?>
 </div>
 <?php endif; ?>
@@ -53,14 +53,14 @@ if ($success): ?>
                                 'email' => (string)$user->email,
                                 'role' => (string)$user->role,
                             ], JSON_UNESCAPED_UNICODE)) ?>'>编辑</button>
-                            <form method="POST" action="/admin/users/toggle-status" style="display:inline">
+                            <form method="POST" action="/admin/users/toggle-status" class="inline">
                                 <?= $csrf_field ?>
                                 <input type="hidden" name="id" value="<?= $user->id ?>">
                                 <button type="submit" class="btn btn-sm <?= $user->status === 'active' ? 'btn-danger' : 'btn-outline' ?>">
                                     <?= $user->status === 'active' ? '禁用' : '启用' ?>
                                 </button>
                             </form>
-                            <form method="POST" action="/admin/users/delete" style="display:inline" data-confirm-submit="确定删除此用户？">
+                            <form method="POST" action="/admin/users/delete" class="inline" data-confirm-submit="确定删除此用户？">
                                 <?= $csrf_field ?>
                                 <input type="hidden" name="id" value="<?= $user->id ?>">
                                 <button type="submit" class="btn btn-danger btn-sm">删除</button>

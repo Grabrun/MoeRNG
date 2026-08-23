@@ -1,6 +1,6 @@
 <?php include __DIR__ . '/helpers.php'; admin_header('操作日志'); ?>
 
-<div class="page-header flex-between" style="display:flex;align-items:center;justify-content:space-between">
+<div class="page-header flex-between" class="flex flex-between">
     <div>
         <h1>操作日志</h1>
         <p>管理员操作审计记录（设置变更 / 备份 / 缓存 / 登录）</p>
@@ -9,11 +9,11 @@
 </div>
 
 <div class="card mb-3">
-    <form method="GET" action="/admin/settings/logs" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <div class="form-group" style="margin:0;flex:1;min-width:220px">
+    <form method="GET" action="/admin/settings/logs" class="flex gap-12 align-center flex-wrap">
+        <div class="form-group m-0 flex-1 min-w-220">
             <input type="search" name="q" class="form-control" placeholder="搜索用户名 / 动作 / 详情…" value="<?= h($q ?? '') ?>">
         </div>
-        <div class="form-group" style="margin:0">
+        <div class="form-group" class="m-0">
             <select name="action" class="form-control">
                 <option value="">全部动作</option>
                 <?php foreach (($actions ?? []) as $a): ?>
@@ -23,7 +23,7 @@
         </div>
         <button type="submit" class="btn btn-primary btn-sm">筛选</button>
         <!-- v1.2.1 迭代: per-page selector + CSV export -->
-        <select name="per_page" class="form-control" style="width:auto" data-auto-submit aria-label="每页数量">
+        <select name="per_page" class="form-control" class="w-auto" data-auto-submit aria-label="每页数量">
             <?php foreach ([50, 100, 200, 500] as $n): ?>
             <option value="<?= $n ?>" <?= ($per_page ?? 50) == $n ? 'selected' : '' ?>><?= $n ?> 条/页</option>
             <?php endforeach; ?>
@@ -37,23 +37,23 @@
 
 <div class="card">
     <?php if ($logs): ?>
-    <table class="table" style="width:100%;border-collapse:collapse">
+    <table class="table" class="table-full">
         <thead>
             <tr>
-                <th style="text-align:left;padding:10px">时间</th>
-                <th style="text-align:left;padding:10px">用户</th>
-                <th style="text-align:left;padding:10px">动作</th>
-                <th style="text-align:left;padding:10px">详情</th>
-                <th style="text-align:left;padding:10px">IP</th>
+                <th class="text-left p-10">时间</th>
+                <th class="text-left p-10">用户</th>
+                <th class="text-left p-10">动作</th>
+                <th class="text-left p-10">详情</th>
+                <th class="text-left p-10">IP</th>
             </tr>
         </thead>
         <tbody>
         <?php foreach ($logs as $log): ?>
             <tr>
-                <td style="padding:10px;white-space:nowrap"><?= h($log['created_at']) ?></td>
-                <td style="padding:10px"><?= h($log['username'] !== '' ? $log['username'] : '—') ?></td>
-                <td style="padding:10px"><code><?= h($log['action']) ?></code></td>
-                <td style="padding:10px;font-size:0.85rem;max-width:420px;word-break:break-all">
+                <td class="p-10 nowrap"><?= h($log['created_at']) ?></td>
+                <td class="p-10"><?= h($log['username'] !== '' ? $log['username'] : '—') ?></td>
+                <td class="p-10"><code><?= h($log['action']) ?></code></td>
+                <td class="p-10 text-small max-w-420 wrap-all">
                     <?php
                     $detail = json_decode((string) $log['detail'], true);
                     if (is_array($detail)) {
@@ -67,22 +67,22 @@
                     }
                     ?>
                 </td>
-                <td style="padding:10px;white-space:nowrap"><?= h($log['ip'] !== '' ? $log['ip'] : '—') ?></td>
+                <td class="p-10 nowrap"><?= h($log['ip'] !== '' ? $log['ip'] : '—') ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>
     </table>
     <?php else: ?>
-    <p class="text-muted" style="padding:16px;color:var(--text-secondary)">暂无操作日志记录。</p>
+    <p class="text-muted p-16 text-secondary">暂无操作日志记录。</p>
     <?php endif; ?>
 </div>
 
 <?php if ($pages > 1): ?>
-<div class="mt-3" style="display:flex;gap:8px;align-items:center">
+<div class="mt-3" class="flex gap-8">
     <?php if ($page > 1): ?>
     <a class="btn btn-sm" href="?page=<?= $page - 1 ?>&q=<?= urlencode($q ?? '') ?>&action=<?= urlencode($action ?? '') ?>">上一页</a>
     <?php endif; ?>
-    <span class="text-muted" style="font-size:0.85rem">第 <?= $page ?> / <?= $pages ?> 页 · 共 <?= $total ?> 条</span>
+    <span class="text-muted" class="text-small">第 <?= $page ?> / <?= $pages ?> 页 · 共 <?= $total ?> 条</span>
     <?php if ($page < $pages): ?>
     <a class="btn btn-sm" href="?page=<?= $page + 1 ?>&q=<?= urlencode($q ?? '') ?>&action=<?= urlencode($action ?? '') ?>">下一页</a>
     <?php endif; ?>

@@ -35,8 +35,8 @@
                     data-permissions="<?= h(json_encode($perms, JSON_UNESCAPED_UNICODE)) ?>">
                     <td><?= h($key->name) ?></td>
                     <td>
-                        <div class="flex gap-1" style="align-items:center">
-                            <code style="font-size:0.8rem"><?= h(substr($key->key, 0, 16)) ?>...</code>
+                        <div class="flex gap-1 align-center">
+                            <code class="text-xs"><?= h(substr($key->key, 0, 16)) ?>...</code>
                             <button type="button" class="btn btn-outline btn-sm" data-key-action="copy" title="复制完整 Key" aria-label="复制完整 Key"><?= icon('copy', 16) ?></button>
                         </div>
                     </td>
@@ -75,9 +75,9 @@
             <div class="form-group">
                 <label>权限范围</label>
                 <div class="flex gap-2 flex-wrap">
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" name="permissions[]" value="read" checked> read</label>
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" name="permissions[]" value="write"> write</label>
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" name="permissions[]" value="admin"> admin</label>
+                    <label class="flex gap-6 align-center pointer"><input type="checkbox" name="permissions[]" value="read" checked> read</label>
+                    <label class="flex gap-6 align-center pointer"><input type="checkbox" name="permissions[]" value="write"> write</label>
+                    <label class="flex gap-6 align-center pointer"><input type="checkbox" name="permissions[]" value="admin"> admin</label>
                 </div>
             </div>
             <div class="grid grid-2">
@@ -100,14 +100,14 @@
 
 <!-- Generated key reveal modal -->
 <div class="modal-overlay" id="newkey-modal">
-    <div class="modal" style="max-width:600px">
+    <div class="modal" class="max-w-600">
         <h2>API Key 已生成</h2>
-        <p class="text-muted" style="font-size:0.85rem;margin-bottom:12px">
+        <p class="text-muted" class="text-small mb-2">
             请立即复制保存，关闭后将无法再次查看完整 Key。
         </p>
         <div class="form-group">
             <label>名称：<span id="newkey-name"></span></label>
-            <textarea id="newkey-value" class="form-control" rows="3" readonly style="font-family:monospace;font-size:0.85rem"></textarea>
+            <textarea id="newkey-value" class="form-control" rows="3" readonly class="font-mono text-small"></textarea>
         </div>
         <div class="btn-group">
             <button type="button" class="btn btn-outline" data-close-modal="newkey-modal">关闭</button>

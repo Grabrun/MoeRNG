@@ -37,15 +37,15 @@
                     <input type="password" name="password" class="form-control" required placeholder="Enter password">
                 </div>
                 <?php if ($locked): ?>
-                <div class="alert alert-error" style="margin-bottom:16px">登录尝试过于频繁，请 <?= (int) ceil(($lock_seconds ?? 0) / 60) ?> 分钟后再试。</div>
+                <div class="alert alert-error" class="mb-3">登录尝试过于频繁，请 <?= (int) ceil(($lock_seconds ?? 0) / 60) ?> 分钟后再试。</div>
                 <?php endif; ?>
                 <?php if ($captcha_enabled): ?>
-                <div class="form-group" style="display:flex;gap:10px;align-items:flex-end">
-                    <div style="flex:1">
+                <div class="form-group" class="flex gap-10 align-end">
+                    <div class="flex-1">
                         <label>验证码</label>
                         <input type="text" name="captcha" class="form-control" required maxlength="5" placeholder="输入图中字符" autocomplete="off">
                     </div>
-                    <img src="/admin/captcha" alt="验证码" title="点击刷新" style="height:42px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer" data-refresh-captcha>
+                    <img src="/admin/captcha" alt="验证码" title="点击刷新" class="captcha-img" data-refresh-captcha>
                 </div>
                 <?php endif; ?>
                 <button type="submit" class="btn btn-primary w-full" <?= $locked ? 'disabled' : '' ?>>登录</button>

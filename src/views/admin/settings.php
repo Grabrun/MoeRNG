@@ -32,15 +32,15 @@ function renderField(string $key, array $def, array $settings): void
         $previewSrc = $value !== '' ? $value : '/assets/logo.png';
         $hasLogo = $value !== '';
         echo '<div class="logo-uploader" data-field="' . $name . '">';
-        echo '<div class="logo-preview-wrap" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">';
+        echo '<div class="logo-preview-wrap">';
         echo '<img id="logo-preview-' . $name . '" src="' . h($previewSrc) . '" alt="当前 Logo" '
-            . 'style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;background:var(--bg-input);display:block">';
+            . 'class="logo-preview-img">';
         if (!$hasLogo) {
-            echo '<span class="text-muted" id="logo-default-hint-' . $name . '" style="font-size:0.85rem;color:var(--text-secondary)">当前使用默认 Logo，上传后可替换</span>';
+            echo '<span class="text-muted text-small text-secondary" id="logo-default-hint-' . $name . '">当前使用默认 Logo，上传后可替换</span>';
         }
         echo '</div>';
-        echo '<div class="logo-upload-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
-        echo '<input type="file" id="logo-file-' . $name . '" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">';
+        echo '<div class="logo-upload-row" class="flex gap-8 flex-wrap">';
+        echo '<input type="file" id="logo-file-' . $name . '" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden">';
         // v1.2.1 迭代: single "上传" button — pick file then upload in one flow.
         echo '<button type="button" class="btn btn-sm btn-primary" data-logo-upload="' . $name . '">上传</button>';
         if ($hasLogo) {
@@ -68,7 +68,7 @@ function renderField(string $key, array $def, array $settings): void
     }
 
     if ($help !== '') {
-        echo '<small class="text-muted setting-help" style="display:block;margin-top:6px;color:var(--text-secondary);font-size:0.8rem">' . h($help) . '</small>';
+        echo '<small class="text-muted setting-help block mt-1 text-secondary text-xs">' . h($help) . '</small>';
     }
     echo '</div>';
 }
@@ -81,33 +81,33 @@ admin_header('系统设置');
     <p>站点、安全、性能、邮件与备份配置（仅管理员可修改，所有变更记录到操作日志）</p>
 </div>
 
-<div class="settings-toolbar" style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-    <div class="settings-tabs" style="display:flex;gap:4px;flex-wrap:wrap">
+<div class="settings-toolbar" class="flex gap-12 flex-wrap mb-3">
+    <div class="settings-tabs" class="flex gap-4 flex-wrap">
         <?php foreach ($groups as $gid => $gdef): ?>
         <a href="?tab=<?= h($gid) ?>#<?= h($gid) ?>"
            class="settings-tab btn btn-sm <?= $gid === $activeGroup ? 'btn-primary' : '' ?>"
-           style="text-decoration:none"><?= h($gdef['label']) ?></a>
+           class="no-underline"><?= h($gdef['label']) ?></a>
         <?php endforeach; ?>
     </div>
-    <div style="flex:1"></div>
-    <input type="search" id="settings-search" class="form-control" style="max-width:260px" placeholder="搜索设置项…">
+    <div class="flex-1"></div>
+    <input type="search" id="settings-search" class="form-control" class="max-w-260" placeholder="搜索设置项…">
 </div>
 
 <?php foreach ($groups as $gid => $gdef): ?>
-<section class="settings-group" id="<?= h($gid) ?>" data-group="<?= h($gid) ?>" <?= $gid !== $activeGroup ? 'style="display:none"' : '' ?>>
+<section class="settings-group" id="<?= h($gid) ?>" data-group="<?= h($gid) ?>" <?= $gid !== $activeGroup ? 'class="hidden"' : '' ?>>
     <form method="POST" action="/admin/settings/save">
         <?= $csrf_field ?>
         <input type="hidden" name="group" value="<?= h($gid) ?>">
 
         <div class="card mb-3">
-            <h3 class="mb-2" style="display:flex;align-items:center;justify-content:space-between">
+            <h3 class="mb-2" class="flex flex-between">
                 <span><?= h($gdef['label']) ?></span>
-                <small style="font-weight:400;color:var(--text-secondary)"><?= h($gdef['desc']) ?></small>
+                <small class="font-normal text-secondary"><?= h($gdef['desc']) ?></small>
             </h3>
             <!-- v1.2.1 迭代: settings layout — adaptive columns + full-width wide fields -->
             <div class="settings-group-body">
                 <?php if ($gdef['fields'] === []): ?>
-                <p class="text-muted" style="color:var(--text-secondary);font-size:0.9rem;padding:8px 0">
+                <p class="text-muted text-secondary text-sm py-2">
                     该分组暂无可用设置项，敬请期待后续版本。
                 </p>
                 <?php else: ?>
@@ -122,7 +122,7 @@ admin_header('系统设置');
         <div class="settings-save-bar mb-3">
             <button type="submit" class="btn btn-primary">保存「<?= h($gdef['label']) ?>」</button>
             <!-- v1.2.1 UI 深度分析 (UI-04): 未保存修改提示 -->
-            <span class="save-hint" id="save-hint" style="margin-left:12px;font-size:.85rem;color:var(--text-muted)"></span>
+            <span class="save-hint text-small" id="save-hint"></span>
         </div>
         <?php endif; ?>
     </form>
@@ -130,7 +130,7 @@ admin_header('系统设置');
     <?php if ($gid === 'maintenance'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">缓存清理</h3>
-        <p class="text-muted" style="font-size:0.85rem;color:var(--text-secondary)">清理 OPcache 与限流计数等运行时缓存。</p>
+        <p class="text-muted text-small text-secondary">清理 OPcache 与限流计数等运行时缓存。</p>
         <form method="POST" action="/admin/settings/cache-clear">
             <?= $csrf_field ?>
             <button type="submit" class="btn btn-warning" data-confirm="确认清理缓存？">立即清理缓存</button>
@@ -141,7 +141,7 @@ admin_header('系统设置');
     <?php if ($gid === 'maintenance'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">测试邮件</h3>
-        <p class="text-muted" style="font-size:0.85rem;color:var(--text-secondary)">使用上方 SMTP 参数向「测试收件邮箱」发送一封测试邮件，验证配置是否正确。</p>
+        <p class="text-muted text-small text-secondary">使用上方 SMTP 参数向「测试收件邮箱」发送一封测试邮件，验证配置是否正确。</p>
         <form method="POST" action="/admin/settings/test-mail">
             <?= $csrf_field ?>
             <button type="submit" class="btn btn-warning">发送测试邮件</button>
@@ -150,27 +150,27 @@ admin_header('系统设置');
 
     <div class="card mb-3">
         <h3 class="mb-2">备份管理</h3>
-        <div class="d-flex" style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+        <div class="d-flex" class="flex gap-12 mb-3">
             <form method="POST" action="/admin/settings/backup">
                 <?= $csrf_field ?>
                 <button type="submit" class="btn btn-warning" data-confirm="立即执行一次完整备份（数据库 + 上传文件）？">立即备份</button>
             </form>
-            <small class="text-muted" style="color:var(--text-secondary)">自动备份按周期在上方「备份与恢复」表单中配置，访问时自动触发检查。</small>
+            <small class="text-muted" class="text-secondary">自动备份按周期在上方「备份与恢复」表单中配置，访问时自动触发检查。</small>
         </div>
 
         <?php if ($backups): ?>
-        <table class="table" style="width:100%;border-collapse:collapse">
+        <table class="table" class="table-full">
             <thead>
-                <tr><th style="text-align:left;padding:8px">备份文件</th><th style="text-align:left;padding:8px">大小</th><th style="text-align:left;padding:8px">时间</th><th style="text-align:left;padding:8px">操作</th></tr>
+                <tr><th class="text-left p-8">备份文件</th><th class="text-left p-8">大小</th><th class="text-left p-8">时间</th><th class="text-left p-8">操作</th></tr>
             </thead>
             <tbody>
             <?php foreach ($backups as $b): ?>
                 <tr>
-                    <td style="padding:8px"><?= h($b['name']) ?></td>
-                    <td style="padding:8px"><?= $b['size'] >= 1048576 ? round($b['size'] / 1048576, 2) . ' MB' : round($b['size'] / 1024, 1) . ' KB' ?></td>
-                    <td style="padding:8px"><?= date('Y-m-d H:i', $b['mtime']) ?></td>
-                    <td style="padding:8px">
-                        <form method="POST" action="/admin/settings/backup-delete" style="display:inline">
+                    <td class="p-8"><?= h($b['name']) ?></td>
+                    <td class="p-8"><?= $b['size'] >= 1048576 ? round($b['size'] / 1048576, 2) . ' MB' : round($b['size'] / 1024, 1) . ' KB' ?></td>
+                    <td class="p-8"><?= date('Y-m-d H:i', $b['mtime']) ?></td>
+                    <td class="p-8">
+                        <form method="POST" action="/admin/settings/backup-delete" class="inline">
                             <?= $csrf_field ?>
                             <input type="hidden" name="stamp" value="<?= h($b['stamp']) ?>">
                             <button type="submit" class="btn btn-danger btn-sm" data-confirm="确认删除该备份？此操作不可恢复">删除</button>
@@ -181,14 +181,14 @@ admin_header('系统设置');
             </tbody>
         </table>
         <?php else: ?>
-        <p class="text-muted" style="color:var(--text-secondary)">暂无备份。点击「立即备份」生成第一份。</p>
+        <p class="text-muted" class="text-secondary">暂无备份。点击「立即备份」生成第一份。</p>
         <?php endif; ?>
     </div>
     <?php endif; ?>
 </section>
 <?php endforeach; ?>
 
-<div class="mt-3" style="border-top:1px solid var(--border);padding-top:12px">
+<div class="mt-3" class="border-top pt-3">
     <a href="/admin/settings/logs" class="btn btn-sm">查看操作日志 →</a>
 </div>
 

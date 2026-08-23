@@ -20,7 +20,7 @@
                 <a href="/admin/settings" class="<?= ($title ?? '') === '系统设置' ? 'active' : '' ?>">系统设置</a>
                 <a href="/admin/users" class="<?= ($title ?? '') === '用户管理' ? 'active' : '' ?>">用户管理</a>
                 <a href="/admin/apikeys" class="<?= ($title ?? '') === 'API Key 管理' ? 'active' : '' ?>">API Keys</a>
-                <a href="/" target="_blank" style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">返回前台</a>
+                <a href="/" target="_blank" class="mt-3 border-top pt-3">返回前台</a>
                 <a href="/admin/logout">退出登录</a>
             </nav>
         </aside>

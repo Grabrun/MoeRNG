@@ -63,11 +63,11 @@
                         $allProviders = \App\Storage\S3Driver::providerList();
                     ?>
                     <?php foreach ($allProviders as $pid => $pname): ?>
-                    <fieldset class="provider-card" style="border:1px solid #e5e7eb; border-radius:8px; padding:16px; margin:0 0 16px;">
-                        <legend style="padding:0 8px; font-weight:600;"><?= h($pname) ?> 凭据</legend>
+                    <fieldset class="provider-card">
+                        <legend class="provider-legend"><?= h($pname) ?> 凭据</legend>
                         <div class="grid grid-2">
                             <?php foreach ($providerFields as $fk => $fdef): ?>
-                            <div class="form-group" style="<?= ($fdef['type'] ?? 'text') === 'password' ? '' : 'grid-column:1/-1' ?>">
+                            <div class="form-group <?= ($fdef['type'] ?? 'text') === 'password' ? '' : 'span-all' ?>">
                                 <label><?= h($fdef['label']) ?></label>
                                 <input type="<?= ($fdef['type'] ?? 'text') === 'password' ? 'password' : 'text' ?>" name="storage_provider[<?= h($pid) ?>][<?= h($fk) ?>]" class="form-control" placeholder="<?= h($fdef['placeholder'] ?? '') ?>">
                             </div>

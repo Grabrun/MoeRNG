@@ -21,7 +21,7 @@
         默认上传方案：<strong><?= h($defaultName) ?></strong>
         <span class="text-muted">（<?= h($defaultType) ?><?= $defaultInstance !== '' ? ' · ' . h($defaultInstance) : '' ?>）</span>
     </p>
-    <p style="color: var(--text-secondary); font-size: 0.85rem;">
+    <p class="text-secondary text-small">
         新上传的图片默认写入此方案；上传时可临时切换到其他已启用实例。已上传图片按各自记录的实例访问，切换默认方案不会让旧图片失效。
     </p>
 </div>
@@ -36,7 +36,7 @@
                     <th>实例</th>
                     <th>状态</th>
                     <th>默认</th>
-                    <th style="text-align:right">操作</th>
+                    <th class="text-right">操作</th>
                 </tr>
             </thead>
             <tbody>
@@ -51,7 +51,7 @@
                     data-usable="<?= $p->isUsable() ? '1' : '0' ?>">
                     <td><strong><?= h($p->name) ?></strong><?= $p->isUsable() ? '' : ' <span class="badge badge-warning">凭据不全</span>' ?></td>
                     <td><?= h($p->typeLabel()) ?></td>
-                    <td class="text-muted" style="font-size:0.85rem"><?= h($p->instanceLabel()) ?></td>
+                    <td class="text-muted" class="text-small"><?= h($p->instanceLabel()) ?></td>
                     <td>
                         <span class="badge <?= $p->isEnabled() ? 'badge-success' : 'badge-danger' ?>"><?= $p->isEnabled() ? '启用' : '停用' ?></span>
                     </td>
@@ -62,8 +62,8 @@
                         <button type="button" class="btn btn-outline btn-sm" data-profile-action="default">设为默认</button>
                         <?php endif; ?>
                     </td>
-                    <td style="text-align:right">
-                        <div class="flex gap-1" style="justify-content:flex-end">
+                    <td class="text-right">
+                        <div class="flex gap-1" class="flex justify-end">
                             <button type="button" class="btn btn-outline btn-sm" data-profile-action="edit"><?= icon('edit', 14) ?> 编辑</button>
                             <button type="button" class="btn btn-outline btn-sm" data-profile-action="toggle"><?= $p->isEnabled() ? '停用' : '启用' ?></button>
                             <button type="button" class="btn btn-danger btn-sm" data-profile-action="delete"><?= icon('trash', 14) ?></button>
@@ -84,7 +84,7 @@
 
 <!-- Create / Edit Modal -->
 <div class="modal-overlay" id="profile-modal">
-    <div class="modal" style="max-width:620px">
+    <div class="modal" class="max-w-620">
         <h2 id="profile-modal-title">新增存储实例</h2>
         <form id="profile-form">
             <input type="hidden" name="id" id="profile-id" value="">
@@ -131,43 +131,43 @@
             <div id="profile-s3-fields" class="hidden">
                 <div class="grid grid-2">
                     <div class="form-group pv-field" data-field="key">
-                        <label class="pv-label">Access Key</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <label class="pv-label">Access Key</label><span class="pv-req" class="text-danger"> *</span>
                         <input type="text" name="cfg_key" id="profile-cfg-key" class="form-control" placeholder="" autocomplete="off">
                     </div>
                     <div class="form-group pv-field" data-field="secret">
-                        <label class="pv-label">Secret Key</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <label class="pv-label">Secret Key</label><span class="pv-req" class="text-danger"> *</span>
                         <input type="password" name="cfg_secret" id="profile-cfg-secret" class="form-control" placeholder="" autocomplete="new-password">
                     </div>
                     <div class="form-group pv-field" data-field="region">
-                        <label class="pv-label">Region</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <label class="pv-label">Region</label><span class="pv-req" class="text-danger"> *</span>
                         <input type="text" name="cfg_region" id="profile-cfg-region" class="form-control" placeholder="">
                     </div>
                     <div class="form-group pv-field" data-field="bucket">
-                        <label class="pv-label">Bucket</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <label class="pv-label">Bucket</label><span class="pv-req" class="text-danger"> *</span>
                         <input type="text" name="cfg_bucket" id="profile-cfg-bucket" class="form-control" placeholder="">
                     </div>
                     <div class="form-group pv-field" data-field="endpoint">
-                        <label class="pv-label">Endpoint</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <label class="pv-label">Endpoint</label><span class="pv-req" class="text-danger"> *</span>
                         <input type="text" name="cfg_endpoint" id="profile-cfg-endpoint" class="form-control" placeholder="">
                     </div>
                     <div class="form-group pv-field" data-field="cdn">
-                        <label class="pv-label">CDN 加速域名（可选）</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <label class="pv-label">CDN 加速域名（可选）</label><span class="pv-req" class="text-danger"> *</span>
                         <input type="text" name="cfg_cdn" id="profile-cfg-cdn" class="form-control" placeholder="https://cdn.example.com">
                     </div>
                     <div class="form-group pv-field" data-field="source_domain">
-                        <label class="pv-label">自定义源站域名（可选）</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <label class="pv-label">自定义源站域名（可选）</label><span class="pv-req" class="text-danger"> *</span>
                         <input type="text" name="cfg_source_domain" id="profile-cfg-source-domain" class="form-control" placeholder="img.example.com">
                     </div>
                     <div class="form-group pv-field" data-field="signed_ttl">
-                        <label class="pv-label">签名链接有效期（秒）</label><span class="pv-req" style="color:var(--danger)"> *</span>
+                        <label class="pv-label">签名链接有效期（秒）</label><span class="pv-req" class="text-danger"> *</span>
                         <input type="text" name="cfg_signed_ttl" id="profile-cfg-signed-ttl" class="form-control" placeholder="300（默认 5 分钟）">
                     </div>
                 </div>
             </div>
 
-            <div class="form-group" style="display:flex;align-items:center;gap:8px">
-                <input type="checkbox" name="is_default" id="profile-is-default" value="1" style="width:16px;height:16px">
-                <label for="profile-is-default" style="margin-bottom:0;cursor:pointer">设为默认上传方案</label>
+            <div class="form-group" class="flex gap-8">
+                <input type="checkbox" name="is_default" id="profile-is-default" value="1" class="icon-16">
+                <label for="profile-is-default" class="mb-0 pointer">设为默认上传方案</label>
             </div>
         </form>
         <div class="btn-group">

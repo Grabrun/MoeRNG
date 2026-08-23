@@ -117,13 +117,13 @@
                 <div class="random-demo reveal" role="region" aria-label="随机图片生成器">
                     <div class="rd-preview">
                         <div class="rd-placeholder" id="rd-placeholder">点「试试手气」，从 API 随机取一张图</div>
-                        <img id="rd-image" src="" alt="随机图片（点击查看大图）" style="display:none" class="rd-image-preview">
+                        <img id="rd-image" src="" alt="随机图片（点击查看大图）" class="rd-image-preview" class="hidden">
                         <div class="rd-loading hidden" id="rd-loading"><span class="spinner"></span></div>
                     </div>
-                    <div class="rd-meta hidden" id="rd-meta" style="font-size:.82rem;color:var(--text-secondary);margin-top:8px"></div>
+                    <div class="rd-meta hidden" id="rd-meta" class="rd-meta"></div>
                     <div class="rd-footer">
                         <label for="rd-category" class="sr-only">随机图分类筛选</label>
-                        <select class="form-control" id="rd-category" style="width:150px;flex-shrink:0">
+                        <select class="form-control" id="rd-category" class="rd-cat-select">
                             <option value="">全部</option>
                             <?php foreach ($categories as $cat): ?>
                             <option value="<?= h($cat->getSlug()) ?>"><?= h($cat->name) ?></option>
@@ -133,8 +133,8 @@
                         <span class="rd-url" id="rd-url">-</span>
                         <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 16) ?></button>
                         <!-- v1.2.1 迭代: view-large / download / history for the random demo -->
-                        <button type="button" class="btn btn-outline btn-sm" id="rd-zoom" aria-label="查看大图" title="查看大图" style="display:none"><?= icon('eye', 16) ?></button>
-                        <button type="button" class="btn btn-outline btn-sm" id="rd-download" aria-label="下载图片" title="下载图片" style="display:none"><?= icon('download', 16) ?></button>
+                        <button type="button" class="btn btn-outline btn-sm" id="rd-zoom" aria-label="查看大图" title="查看大图" class="hidden"><?= icon('eye', 16) ?></button>
+                        <button type="button" class="btn btn-outline btn-sm" id="rd-download" aria-label="下载图片" title="下载图片" class="hidden"><?= icon('download', 16) ?></button>
                     </div>
                 </div>
             </div>
@@ -197,7 +197,7 @@
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/random</span>
-                    <span class="text-muted" style="margin-left:auto">获取随机图片</span>
+                    <span class="text-muted doc-endpoint-label">获取随机图片</span>
                 </div>
                 <div class="body">
                     <p class="mb-2">返回一张随机图片。可通过参数指定分类和返回格式。</p>
@@ -270,7 +270,7 @@
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/images</span>
-                    <span class="text-muted" style="margin-left:auto">图片列表（分页）</span>
+                    <span class="text-muted doc-endpoint-label">图片列表（分页）</span>
                 </div>
                 <div class="body">
                     <h3 class="mb-1">请求参数</h3>
@@ -289,7 +289,7 @@
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/categories</span>
-                    <span class="text-muted" style="margin-left:auto">分类列表</span>
+                    <span class="text-muted doc-endpoint-label">分类列表</span>
                 </div>
                 <div class="body">
                     <p>返回完整分类树结构（嵌套JSON），包含所有分类及其子分类。</p>
@@ -300,7 +300,7 @@
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/stats</span>
-                    <span class="text-muted" style="margin-left:auto">服务统计</span>
+                    <span class="text-muted doc-endpoint-label">服务统计</span>
                 </div>
                 <div class="body">
                     <p>返回图片总数、分类总数、版本号、当前存储驱动等信息。</p>
@@ -367,7 +367,7 @@
             <h2 class="section-title">在线测试</h2>
             <div class="api-tester" id="api-tester">
                 <div class="flex gap-2 flex-wrap mb-3">
-                    <div class="form-group" style="flex:1;min-width:180px;margin-bottom:0">
+                    <div class="form-group tester-field">
                         <label for="test-category">分类</label>
                         <select class="form-control" id="test-category">
                             <option value="">全部（随机）</option>
@@ -376,29 +376,29 @@
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="form-group" style="flex:1;min-width:180px;margin-bottom:0">
+                    <div class="form-group tester-field">
                         <label for="test-type">返回格式</label>
                         <select class="form-control" id="test-type">
                             <option value="json">JSON</option>
                             <option value="redirect">Redirect (图片直出)</option>
                         </select>
                     </div>
-                    <div style="display:flex;align-items:flex-end">
+                    <div class="tester-actions">
                         <button class="btn btn-primary" id="test-run">Send Request</button>
                     </div>
                 </div>
-                <p class="mb-2"><strong>请求 URL：</strong> <code id="test-url" style="word-break:break-all">-</code>
+                <p class="mb-2"><strong>请求 URL：</strong> <code id="test-url" class="wrap-all">-</code>
                     <button type="button" class="copy-btn copy-btn-inline" data-copy="test-url" aria-label="复制 URL" title="复制 URL"><?= icon('copy', 14) ?></button>
                 </p>
-                <p class="mb-2"><strong>cURL：</strong> <code id="test-curl" style="word-break:break-all">-</code>
+                <p class="mb-2"><strong>cURL：</strong> <code id="test-curl" class="wrap-all">-</code>
                     <button type="button" class="copy-btn copy-btn-inline" data-copy="test-curl" aria-label="复制 cURL" title="复制 cURL"><?= icon('copy', 14) ?></button>
                 </p>
                 <div class="preview-box" id="test-result">
                     <span class="text-muted">点击「Send Request」查看结果</span>
                 </div>
-                <div class="test-meta hidden" id="test-meta" style="display:none;margin-top:10px;font-size:.8rem;color:var(--text-secondary)">
+                <div class="test-meta hidden" id="test-meta" class="hidden test-meta">
                     <span id="test-status" class="badge"></span>
-                    <span id="test-duration" style="margin-left:8px"></span>
+                    <span id="test-duration" class="test-duration"></span>
                 </div>
             </div>
         </section>
@@ -406,27 +406,27 @@
         <!-- About (hardcoded; mirrors the GitHub repo About block) -->
         <section id="about" class="section reveal">
             <h2 class="section-title">关于</h2>
-            <div class="about-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:16px">
-                <div class="about-card" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px">
+            <div class="about-grid" class="about-grid">
+                <div class="about-card" class="about-card">
                     <h3 class="mb-2">项目简介</h3>
-                    <p class="text-muted" style="font-size:0.92rem;line-height:1.7"><?= h($siteName) ?> 是一个基于 PHP 8.4 + MySQL 的随机二次元图片 API 服务，提供 JSON 结构化数据与 302 重定向双模式返回，支持多级分类、API Key 鉴权与速率限制。</p>
+                    <p class="text-muted" class="about-text"><?= h($siteName) ?> 是一个基于 PHP 8.4 + MySQL 的随机二次元图片 API 服务，提供 JSON 结构化数据与 302 重定向双模式返回，支持多级分类、API Key 鉴权与速率限制。</p>
                 </div>
-                <div class="about-card" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px">
+                <div class="about-card" class="about-card">
                     <h3 class="mb-2">技术特性</h3>
-                    <ul class="text-muted" style="font-size:0.92rem;line-height:1.9;padding-left:18px;margin:0">
+                    <ul class="text-muted" class="about-list">
                         <li>轻量自研框架，零重型依赖</li>
                         <li>多级分类树，指定分类随机取图</li>
                         <li>对象存储接入：COS / OSS / AWS S3 / OBS</li>
                         <li>内置管理后台与操作审计</li>
                     </ul>
                 </div>
-                <div class="about-card" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px">
+                <div class="about-card" class="about-card">
                     <h3 class="mb-2">开放与许可</h3>
-                    <p class="text-muted" style="font-size:0.92rem;line-height:1.7;margin-bottom:12px">本项目基于 MIT License 开源，欢迎提交 Issue 与 Pull Request。</p>
+                    <p class="text-muted" class="about-text about-text-mb">本项目基于 MIT License 开源，欢迎提交 Issue 与 Pull Request。</p>
                     <?php if (!empty($githubUrl)): ?>
                     <a href="<?= h($githubUrl) ?>" target="_blank" rel="noopener nofollow" class="btn btn-sm btn-outline"><?= icon('external-link', 16) ?> GitHub 仓库</a>
                     <?php else: ?>
-                    <p class="text-muted" style="font-size:0.85rem">仓库地址可在「系统设置 → 站点信息 → GitHub 仓库地址」中配置。</p>
+                    <p class="text-muted" class="text-small">仓库地址可在「系统设置 → 站点信息 → GitHub 仓库地址」中配置。</p>
                     <?php endif; ?>
                 </div>
             </div>
@@ -438,10 +438,10 @@
             <p><?= h($siteName) ?> <?= h($copyright) ?></p>
             <p class="mt-1">MoeRNG v<?= defined('APP_VERSION') ? APP_VERSION : '1.2.1-beta.2' ?> &mdash; Open-source under MIT License</p>
             <?php if (!empty($icpNumber)): ?>
-            <p class="mt-1"><a href="https://beian.miit.gov.cn/" target="_blank" rel="nofollow noopener" style="color:inherit;text-decoration:none"><?= h($icpNumber) ?></a></p>
+            <p class="mt-1"><a href="https://beian.miit.gov.cn/" target="_blank" rel="nofollow noopener" class="footer-link"><?= h($icpNumber) ?></a></p>
             <?php endif; ?>
             <?php if (!empty($footerHtml)): ?>
-            <p class="mt-1 footer-custom" style="white-space:pre-line"><?= h($footerHtml) ?></p>
+            <p class="mt-1 footer-custom" class="footer-custom"><?= h($footerHtml) ?></p>
             <?php endif; ?>
         </footer>
     </div>

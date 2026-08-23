@@ -26,8 +26,8 @@
         </div>
 
         <div class="card text-center">
-            <div style="margin-bottom:16px;color:var(--success)"><?= icon('check-circle', 64) ?></div>
-            <h2 class="mb-2" style="color:var(--success)">安装成功！</h2>
+            <div class="mb-3 text-success"><?= icon('check-circle', 64) ?></div>
+            <h2 class="mb-2 text-success">安装成功！</h2>
             <p class="text-muted mb-3">MoeRNG 已成功安装并配置完毕。</p>
 
             <div class="alert alert-info mb-3">
