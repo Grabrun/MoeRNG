@@ -36,9 +36,6 @@
     <!-- preload LCP banner so the hero paints immediately -->
     <link rel="preload" as="image" href="/assets/banner.webp" fetchpriority="high">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= APP_VERSION ?>">
-    <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强——font-display=swap 不阻塞渲染；
-         国内网络无法访问 Google Fonts 时自动回退到系统字体栈，不影响可用性） -->
-    <link rel="stylesheet" href="/public/css/fonts.css?v=<?= APP_VERSION ?>">
     
 </head>
 <body>
@@ -193,7 +190,7 @@
                 </nav>
             </aside>
             <div class="docs-content">
-            <div class="doc-endpoint doc-pane" id="endpoint-random">
+            <div class="doc-endpoint doc-pane active" id="endpoint-random">
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/random</span>

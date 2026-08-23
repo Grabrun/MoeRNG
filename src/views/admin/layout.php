@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= $csrf_token ?>">
     <title><?= h($title ?? '仪表盘') ?> - MoeRNG Admin</title>
-    <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强，网络不可达自动回退） -->
-    <link rel="stylesheet" href="/public/css/fonts.css?v=<?= APP_VERSION ?>">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= APP_VERSION ?>"></head>
 <body>
     <div class="toast-container"></div>

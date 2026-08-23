@@ -32,9 +32,9 @@
     --shadow-sm: 0 1px 3px rgba(195,137,232,.10);
     --shadow-floating: 0 12px 32px rgba(195,137,232,.25);
     --transition: 0.2s ease;
-    --font: 'Nunito', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
-    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-    --font-display: 'ZCOOL KuaiLe', 'Nunito', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+    --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', Consolas, monospace;
+    --font-display: var(--font);
 }
 
 /* Light theme overrides */

@@ -6,8 +6,6 @@
     <title>管理员账号 - MoeRNG 安装向导</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
-    <!-- v1.2.1-beta.3 迭代: Design Tokens 圆体字族（渐进增强） -->
-    <link rel="stylesheet" href="/public/css/fonts.css?v=<?= APP_VERSION ?>">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= APP_VERSION ?>"></head>
 <body>
     <div class="install-container">
