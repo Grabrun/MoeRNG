@@ -73,7 +73,7 @@ function renderField(string $key, array $def, array $settings): void
     echo '</div>';
 }
 
-admin_header('系统设置');
+admin_header('系统设置', 'page-settings');
 ?>
 
 <div class="page-header">
@@ -90,6 +90,7 @@ admin_header('系统设置');
     </div>
     <div class="flex-1"></div>
     <input type="search" id="settings-search" class="form-control max-w-260" placeholder="搜索设置项…">
+    <a href="/admin/settings/logs" class="btn btn-sm no-underline">查看操作日志 →</a>
 </div>
 
 <?php foreach ($groups as $gid => $gdef): ?>
@@ -186,9 +187,5 @@ admin_header('系统设置');
     <?php endif; ?>
 </section>
 <?php endforeach; ?>
-
-<div class="mt-3 border-top pt-3">
-    <a href="/admin/settings/logs" class="btn btn-sm">查看操作日志 →</a>
-</div>
 
 <?php admin_footer(); ?>

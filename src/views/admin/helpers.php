@@ -1,7 +1,7 @@
 <?php
 require_once dirname(__DIR__) . '/partials/icons.php';
 
-function admin_header($title) { ?>
+function admin_header($title, $bodyClass = '') { ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -14,7 +14,7 @@ function admin_header($title) { ?>
     <link rel="stylesheet" href="/public/css/style.css?v=<?= APP_VERSION ?>">
     
 </head>
-<body>
+<body<?= $bodyClass !== '' ? ' class="' . h($bodyClass) . '"' : '' ?>>
     <div class="toast-container"></div>
     <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="打开菜单" title="打开菜单"><?= icon('menu', 20) ?></button>
     <div class="sidebar-overlay" id="sidebar-overlay"></div>

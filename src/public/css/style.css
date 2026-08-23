@@ -176,6 +176,17 @@ textarea.form-control { resize: vertical; min-height: 80px; }
     [data-theme="light"] .settings-save-bar { box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.06); }
 }
 
+/* Page fills the viewport so the sticky save toolbar docks flush to the bottom.
+   .settings-group is a flex item that stretches to fill — its own bottom edge
+   becomes the stop point for the sticky bar, so no blank gap opens under it. */
+.page-settings .main-content {
+    display: flex;
+    flex-direction: column;
+}
+.page-settings .main-content > .settings-group {
+    flex: 1 0 auto;
+}
+
 /* Cards */
 .card {
     background: var(--bg-card); border: 1px solid var(--border);
