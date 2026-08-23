@@ -243,9 +243,15 @@ function initApiTester() {
                     saveTestHistory(apiPath, '加载失败 (' + formatDuration(ms) + ')');
                     resolveRequest();
                 };
-                tester.src = apiPath;
+                // v1.2.1-beta.3 修复: 重复点击无请求 —— 服务器 redirect 响应未带
+                // Cache-Control:no-store，浏览器会把 302 + 图片按启发式规则缓存；
+                // 第二次设置相同 src 时直接命中缓存，不发任何请求（devtools 无记录，
+                // 页面只有闪一下的 UI 反馈）。给 URL 追加一次性时间戳 + 随机数 query
+                // 强制绕过缓存——即使快速双击落在同一毫秒，随机数也能保证 src 唯一。
+                var cacheBust = (apiPath.indexOf('?') > -1 ? '&' : '?') + '_=' + Date.now() + Math.random();
+                tester.src = apiPath + cacheBust;
             } else {
-                const resp = await fetch(apiPath);
+                const resp = await fetch(apiPath, { cache: 'no-store' });
                 const ms = performance.now() - t0;
                 let text = await resp.text();
                 let pretty;
@@ -1345,7 +1351,7 @@ function initRandomDemo() {
         if (catSel && catSel.value) params.set('category', catSel.value);
 
         try {
-            const resp = await fetch('/api/v1/random?' + params.toString());
+            const resp = await fetch('/api/v1/random?' + params.toString(), { cache: 'no-store' });
             const data = await resp.json();
             if (!data.success || !data.data || !data.data.url) throw new Error(data.message || '请求失败');
             showImage(data.data.url, data.data.category || '');
