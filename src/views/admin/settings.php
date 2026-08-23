@@ -85,8 +85,7 @@ admin_header('系统设置');
     <div class="settings-tabs flex gap-4 flex-wrap">
         <?php foreach ($groups as $gid => $gdef): ?>
         <a href="?tab=<?= h($gid) ?>#<?= h($gid) ?>"
-           class="settings-tab btn btn-sm <?= $gid === $activeGroup ? 'btn-primary' : '' ?>"
-           class="no-underline"><?= h($gdef['label']) ?></a>
+           class="settings-tab btn btn-sm <?= $gid === $activeGroup ? 'btn-primary' : '' ?> no-underline"><?= h($gdef['label']) ?></a>
         <?php endforeach; ?>
     </div>
     <div class="flex-1"></div>
@@ -94,7 +93,7 @@ admin_header('系统设置');
 </div>
 
 <?php foreach ($groups as $gid => $gdef): ?>
-<section class="settings-group" id="<?= h($gid) ?>" data-group="<?= h($gid) ?>" <?= $gid !== $activeGroup ? 'class="hidden"' : '' ?>>
+<section class="settings-group <?= $gid !== $activeGroup ? 'hidden' : '' ?>" id="<?= h($gid) ?>" data-group="<?= h($gid) ?>">
     <form method="POST" action="/admin/settings/save">
         <?= $csrf_field ?>
         <input type="hidden" name="group" value="<?= h($gid) ?>">

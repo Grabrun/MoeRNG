@@ -148,13 +148,16 @@
 
 // === Migrated from src/views\admin\settings.php (CSP nonce migration) ===
 (function () {
-    // Group tabs
+    // Group tabs — classList-driven, single source of truth with the
+    // server-rendered `hidden` class (v1.2.1: was style.display, which
+    // drifted from the CSS class and never updated the active tab state).
     var tabs = document.querySelectorAll('.settings-tab');
     var groups = document.querySelectorAll('.settings-group');
     tabs.forEach(function (tab) {
         tab.addEventListener('click', function (e) {
             var gid = tab.getAttribute('href').split('#')[1];
-            groups.forEach(function (g) { g.style.display = g.dataset.group === gid ? '' : 'none'; });
+            groups.forEach(function (g) { g.classList.toggle('hidden', g.dataset.group !== gid); });
+            tabs.forEach(function (t) { t.classList.toggle('btn-primary', t === tab); });
         });
     });
     // Live field search (filters within the active group)
@@ -163,7 +166,7 @@
         box.addEventListener('input', function () {
             var q = box.value.trim().toLowerCase();
             groups.forEach(function (g) {
-                if (g.style.display === 'none') return;
+                if (g.classList.contains('hidden')) return;
                 g.querySelectorAll('.setting-item').forEach(function (item) {
                     item.style.display = (q === '' || item.dataset.search.indexOf(q) !== -1) ? '' : 'none';
                 });
