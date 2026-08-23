@@ -116,10 +116,12 @@ class DashboardController extends Controller
             ];
         }
 
-        // 系统信息
+        // 系统信息 —— 时区统一为规范标识 "Asia/Shanghai"，避免 PHP 某些环境
+        // 用 date_default_timezone_get() 返回别名 "PRC"（Asia/Shanghai 的合法
+        // 别名），在仪表盘上显示成 PRC 显得不专业。
         $system = [
             'php'      => PHP_VERSION,
-            'timezone' => date_default_timezone_get(),
+            'timezone' => (date_default_timezone_get() === 'PRC') ? 'Asia/Shanghai' : date_default_timezone_get(),
             'storage'  => $storage,
         ];
 

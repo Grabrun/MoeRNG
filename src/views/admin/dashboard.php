@@ -262,7 +262,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
             <div class="flex flex-between env-row"><span class="text-muted">PHP 版本</span><span><?= h($system['php']) ?></span></div>
             <div class="flex flex-between env-row"><span class="text-muted">内存上限</span><span><?= h($status['mem_limit'] ?? '-') ?></span></div>
             <div class="flex flex-between env-row"><span class="text-muted">当前进程占用</span><span><?= human_bytes((float)($status['php_mem'] ?? 0)) ?></span></div>
-            <div class="flex flex-between env-row"><span class="text-muted">时区</span><span><?= h($system['timezone']) ?></span></div>
+            <div class="flex flex-between env-row"><span class="text-muted">时区</span><span><?= h($system['timezone']) ?>（中国标准时间）</span></div>
         </div>
     </div>
 </div>
