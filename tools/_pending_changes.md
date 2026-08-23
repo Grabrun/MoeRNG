@@ -1,3 +1,9 @@
+- **第二轮深度审计（2026-08-23 14:55）**：
+  - 🚨 P0 安全——**install 重装漏洞**：step2/3/4/complete 均无 installed 检查，任何人可在已安装站点 POST 完整向导覆盖 config/database.php + 重建管理员（完全接管）；已加 5 处锁
+  - 🚨 P0 信息泄露——doctor.php 被打进 release zip 且被 git 公开跟踪；已加打包排除 + git rm --cached + .gitignore
+  - ⚠️ CspNonce 为 session 级（整个登录期恒定）→ 改 per-request 标准 nonce
+  - ⚠️ 仪表盘 N+1 → 单条 GROUP BY 聚合修复
+  - ✅ 审计通过项：路由中间件矩阵完整（admin=auth+csrf，api=apikey+ratelimit）、CSRF 全 POST 覆盖、XSS 扫描 45 候选全为服务端值、Session strict+httponly+samesite、API Key 192-bit 熵、委托层无选择器重叠、JSON-LD 不受 script-src 限制
 - **全站审计 + 加载速度优化（2026-08-22 14:05）**：审计——77 PHP 语法全过 / 110 JS id 引用全存在 / CSS 变量无未定义 / data-* 委托完整覆盖 / 安全复查通过；性能——① CSS/JS 加 ?v=APP_VERSION 版本号（9 视图，部署自动刷缓存）② 字体清理 1.5MB→160KB（104→10 个被引用 woff2，49 删 + 45 git rm，_package.py 排除 _stale）③ nginx gzip 配置加入 nginx.conf.example（传输体积降 ~70%）；教训——批量字符串替换误伤视图（?>> 破坏 17 文件），已 git 恢复重做，18 视图语法全过
 - **移除首页统计文件缓存（2026-08-22 16:05，宝塔 open_basedir 拦截修复）**：上一轮加的 var/cache/home_stats.php 文件缓存在宝塔防跨站（open_basedir 站点根限制）下触发「跨目录读取已被拦截」，首页整页报错；已移除文件缓存回归直接 COUNT（走索引很快），消除文件系统依赖
 - **修复后台页面失效（2026-08-22 13:50，CSP V-02 回归）**：根因①移除 unsafe-inline 后 inline onclick/onchange/onsubmit 全部被浏览器拦截（modal 开关/编辑按钮/验证码刷新/每页切换/confirm 对话框全失效）；根因②helpers.js 全站共享但执行各页面专属脚本无元素守卫 → 非对应页面 null TypeError 中断整个脚本 → 主题切换/nav/后续初始化全挂。修复——helpers.js 加统一 data-* 事件委托层（open/close modal、edit-category/user JSON、toggle-class、refresh-captcha、auto-submit、confirm、storage-driver-toggle）+ 各迁移块加页面存在性守卫；17 处视图 inline handler 全部转 data-* 属性（含 PHP 动态按钮 → JSON 编码）；settings csrf 守卫。验证：0 inline handler 残留 / 69 PHP OK / JS OK
