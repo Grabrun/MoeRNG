@@ -1504,3 +1504,84 @@ body.modal-open { overflow: hidden; }
     box-shadow: var(--shadow-sm); color: var(--primary);
 }
 .action-icon { color: var(--primary); display: inline-flex; }
+
+/* ============================================================
+   v1.2.1 CSP 合规迁移：dashboard 工具类
+   （CSP style-src 禁止 unsafe-inline → 内联 style 属性会被拦截，
+     布局必须走 CSS 类；script-src 保持 nonce 严格不变）
+   ============================================================ */
+.vstack { display: flex; flex-direction: column; gap: 8px; }
+.c-primary { color: var(--primary); }
+.c-accent { color: var(--accent); }
+.c-info { color: var(--info); }
+.c-warning { color: var(--warning); }
+.text-small { font-size: 0.85rem; }
+
+/* 最近上传 3 列缩略图网格 */
+.recent-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.tile {
+    position: relative; display: block; min-width: 0;
+    border-radius: var(--radius-sm); overflow: hidden;
+    aspect-ratio: 1; background: var(--bg-input);
+}
+.tile img {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+}
+
+/* 分类分布条形图 */
+.cat-row { display: flex; align-items: center; gap: 10px; }
+.cat-name { width: 120px; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-bar { flex: 1; height: 8px; border-radius: 999px; background: var(--bg-input); overflow: hidden; }
+.cat-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--primary), var(--accent)); }
+.cat-count { width: 40px; text-align: right; font-size: 0.85rem; color: var(--text-secondary); }
+
+/* 存储用量指标 */
+.usage-value { font-size: 1.4rem; font-weight: 600; color: var(--text); }
+.usage-sub { font-size: 0.85rem; }
+
+/* 7 天上传趋势条形图 */
+.trend-chart { display: flex; align-items: flex-end; gap: 6px; height: 90px; padding-top: 8px; }
+.trend-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.trend-num { font-size: 0.7rem; color: var(--text-secondary); }
+.trend-bar {
+    width: 100%; max-width: 34px; min-height: 4px;
+    border-radius: 6px 6px 0 0; background: linear-gradient(180deg, var(--primary), var(--accent));
+}
+.trend-day { font-size: 0.65rem; color: var(--text-muted); }
+
+/* 最近操作列表 */
+.log-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+.log-action { background: var(--bg-input); color: var(--text-secondary); padding: 2px 8px; border-radius: 6px; white-space: nowrap; flex-shrink: 0; }
+.log-time { margin-left: auto; white-space: nowrap; }
+
+/* 流量统计 + 运行状态（CSP 合规迁移续） */
+.flow-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.88rem; }
+.flow-box { padding: 10px 12px; border-radius: var(--radius); background: var(--bg-input); }
+.flow-note { font-size: 0.78rem; }
+.traffic-summary { text-align: center; margin: 8px 0 16px; padding: 12px 0; border: 1px solid var(--border); border-radius: var(--radius); }
+.traffic-num { font-size: 1.3rem; font-weight: 600; }
+.traffic-num.primary { color: var(--primary); }
+.traffic-num.accent { color: var(--accent); }
+.usage-num { font-size: 1.4rem; font-weight: 600; color: var(--text); }
+.metric-stack { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+.metric-head { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.metric-label { font-size: 0.88rem; }
+.metric-value { font-size: 0.88rem; color: var(--text-secondary); }
+.metric-track { height: 10px; border-radius: 999px; background: var(--bg-input); overflow: hidden; }
+.metric-fill { height: 100%; border-radius: 999px; }
+.trend-chart-96 { display: flex; align-items: flex-end; gap: 6px; height: 96px; padding-top: 8px; }
+.flow-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.flow-bars { display: flex; gap: 2px; align-items: flex-end; height: 60px; }
+.flow-bar { width: 6px; border-radius: 3px 0 0 3px; background: var(--primary); }
+.flow-bar.accent { border-radius: 0 3px 3px 0; background: var(--accent); }
+.flow-day { font-size: 0.65rem; color: var(--text-muted); }
+.legend { display: flex; gap: 16px; margin-top: 8px; font-size: 0.78rem; color: var(--text-secondary); }
+.legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+.legend-dot.primary { background: var(--primary); }
+.legend-dot.accent { background: var(--accent); }
+.foot-note { margin-top: 0; font-size: 0.78rem; margin-bottom: 14px; }
+.flow-summary-head { display: flex; justify-content: space-between; align-items: baseline; }
+
+.env-list { border-top: 1px solid var(--border); padding-top: 14px; font-size: 0.88rem; }
+.env-row { padding: 4px 0; }
+.vstack-0 { gap: 0; }

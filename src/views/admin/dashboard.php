@@ -60,22 +60,22 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
 <!-- 1. 顶部统计卡 -->
 <div class="grid grid-4">
     <div class="stat-card">
-        <div class="stat-icon" style="color:var(--primary)"><?= icon('image', 24) ?></div>
+        <div class="stat-icon" class="c-primary"><?= icon('image', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_images'] ?>"><?= number_format($stats['total_images']) ?></div>
         <div class="stat-label">图片资源</div>
     </div>
     <div class="stat-card">
-        <div class="stat-icon" style="color:var(--accent)"><?= icon('folder-tree', 24) ?></div>
+        <div class="stat-icon" class="c-accent"><?= icon('folder-tree', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_categories'] ?>"><?= number_format($stats['total_categories']) ?></div>
         <div class="stat-label">分类数量</div>
     </div>
     <div class="stat-card">
-        <div class="stat-icon" style="color:var(--info)"><?= icon('users', 24) ?></div>
+        <div class="stat-icon" class="c-info"><?= icon('users', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_users'] ?>"><?= number_format($stats['total_users']) ?></div>
         <div class="stat-label">管理员账号</div>
     </div>
     <div class="stat-card">
-        <div class="stat-icon" style="color:var(--warning)"><?= icon('key', 24) ?></div>
+        <div class="stat-icon" class="c-warning"><?= icon('key', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_api_keys'] ?>"><?= number_format($stats['total_api_keys']) ?></div>
         <div class="stat-label">API Keys（<?= (int)$stats['active_api_keys'] ?> 启用）</div>
     </div>
@@ -84,9 +84,9 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
 <!-- 2. 最近上传 + 分类分布 -->
 <div class="grid grid-2 mt-3 reveal">
     <div class="card">
-        <div class="flex" style="justify-content:space-between;align-items:center">
+        <div class="flex flex-between">
             <h3 class="mb-2">最近上传</h3>
-            <a href="/admin/images" class="text-muted" style="font-size:.85rem">查看全部 →</a>
+            <a href="/admin/images" class="text-muted" class="text-small">查看全部 →</a>
         </div>
         <?php if (empty($recentImages)): ?>
             <p class="text-muted">暂无图片，去 <a href="/admin/images">图片管理</a> 上传第一张吧。</p>
@@ -95,10 +95,10 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
              a 的高度，而 a 默认 align-self:stretch 又依赖行高，行高被大图固有
              高度撑爆 → aspect-ratio:1 失效、图片溢出卡片。绝对定位让 img 脱离
              行高计算，a 的尺寸完全由 aspect-ratio:1 × 轨道宽度决定 -->
-        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+        <div class="recent-grid">
             <?php foreach ($recentImages as $img): ?>
-            <a href="/admin/images" style="position:relative;display:block;min-width:0;border-radius:var(--radius-sm);overflow:hidden;aspect-ratio:1;background:var(--bg-input)" title="<?= h($img->original_name ?? '') ?>">
-                <img src="<?= h($img->url()) ?>" alt="<?= h($img->original_name ?? '') ?>" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+            <a href="/admin/images" class="tile" title="<?= h($img->original_name ?? '') ?>">
+                <img src="<?= h($img->url()) ?>" alt="<?= h($img->original_name ?? '') ?>" loading="lazy" >
             </a>
             <?php endforeach; ?>
         </div>
@@ -110,15 +110,15 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
         <?php if (empty($categoryStats)): ?>
             <p class="text-muted">暂无分类。</p>
         <?php else: ?>
-        <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="vstack">
             <?php $maxCount = max(1, $categoryStats[0]['count']); ?>
             <?php foreach (array_slice($categoryStats, 0, 8) as $cat): ?>
-            <div style="display:flex;align-items:center;gap:10px">
-                <span style="width:120px;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= h($cat['name']) ?></span>
-                <div style="flex:1;height:8px;border-radius:999px;background:var(--bg-input);overflow:hidden">
-                    <div style="width:<?= round($cat['count'] / $maxCount * 100) ?>%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--primary),var(--accent))"></div>
+            <div class="cat-row">
+                <span class="cat-name"><?= h($cat['name']) ?></span>
+                <div class="cat-bar">
+                    <div class="cat-bar-fill" data-w="<?= round($cat['count'] / $maxCount * 100) ?>"></div>
                 </div>
-                <span style="width:40px;text-align:right;font-size:.85rem;color:var(--text-secondary)"><?= (int)$cat['count'] ?></span>
+                <span class="cat-count"><?= (int)$cat['count'] ?></span>
             </div>
             <?php endforeach; ?>
         </div>
@@ -129,32 +129,32 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
 <!-- 3. 存储用量 + 7 天上传趋势 -->
 <div class="grid grid-1 mt-3 reveal">
     <div class="card">
-        <div class="flex" style="justify-content:space-between;align-items:baseline">
+        <div class="flex" class="flex flow-summary-head">
             <h3 class="mb-2">存储用量</h3>
-            <span class="text-muted" style="font-size:.85rem">共 <?= (int)$usage['count'] ?> 张有效图片</span>
+            <span class="text-muted text-small">共 <?= (int)$usage['count'] ?> 张有效图片</span>
         </div>
-        <div class="grid grid-3" style="text-align:center;margin-bottom:16px">
+        <div class="grid grid-3 text-center mb-3">
             <div>
-                <div style="font-size:1.4rem;font-weight:600;color:var(--text)"><?= human_bytes($usage['total_bytes']) ?></div>
+                <div class="usage-num"><?= human_bytes($usage['total_bytes']) ?></div>
                 <div class="stat-label">总占用</div>
             </div>
             <div>
-                <div style="font-size:1.4rem;font-weight:600;color:var(--text)"><?= human_bytes($usage['avg_bytes']) ?></div>
+                <div class="usage-num"><?= human_bytes($usage['avg_bytes']) ?></div>
                 <div class="stat-label">平均大小</div>
             </div>
             <div>
-                <div style="font-size:1.4rem;font-weight:600;color:var(--text)"><?= human_bytes($usage['max_bytes']) ?></div>
+                <div class="usage-num"><?= human_bytes($usage['max_bytes']) ?></div>
                 <div class="stat-label">最大单图</div>
             </div>
         </div>
-        <h4 class="mb-1" style="font-size:.95rem">近 7 天上传趋势</h4>
-        <div style="display:flex;align-items:flex-end;gap:6px;height:90px;padding-top:8px">
+        <h4 class="mb-1" class="text-small">近 7 天上传趋势</h4>
+        <div class="trend-chart">
             <?php $maxTrend = max(1, max(array_column($trend, 'count'))); ?>
             <?php foreach ($trend as $t): ?>
-            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-                <span style="font-size:.7rem;color:var(--text-secondary)"><?= (int)$t['count'] ?></span>
-                <div style="width:100%;max-width:34px;height:<?= max(4, round($t['count'] / $maxTrend * 60)) ?>px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,var(--primary),var(--accent))" title="<?= $t['day'] ?>: <?= (int)$t['count'] ?> 张"></div>
-                <span style="font-size:.65rem;color:var(--text-muted)"><?= $t['day'] ?></span>
+            <div class="trend-col">
+                <span class="trend-num"><?= (int)$t['count'] ?></span>
+                <div class="trend-bar" data-h="<?= max(4, round($t['count'] / $maxTrend * 60)) ?>" title="<?= $t['day'] ?>: <?= (int)$t['count'] ?> 张"></div>
+                <span class="trend-day"><?= $t['day'] ?></span>
             </div>
             <?php endforeach; ?>
         </div>
@@ -168,12 +168,12 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
         <?php if (empty($logs)): ?>
             <p class="text-muted">暂无操作日志。</p>
         <?php else: ?>
-        <div style="display:flex;flex-direction:column;gap:0">
+        <div class="vstack vstack-0">
             <?php foreach ($logs as $log): ?>
-            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:.88rem">
-                <span style="background:var(--bg-input);color:var(--text-secondary);padding:2px 8px;border-radius:6px;white-space:nowrap"><?= h($log['action']) ?></span>
-                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= h($log['detail'] ?: $log['username']) ?></span>
-                <span style="color:var(--text-muted);font-size:.78rem;white-space:nowrap"><?= h(substr($log['time'], 5, 11)) ?></span>
+            <div class="log-row">
+                <span class="log-action"><?= h($log['action']) ?></span>
+                <span class="log-detail"><?= h($log['detail'] ?: $log['username']) ?></span>
+                <span class="log-time"><?= h(substr($log['time'], 5, 11)) ?></span>
             </div>
             <?php endforeach; ?>
         </div>
@@ -185,49 +185,49 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
 <div class="grid grid-2 mt-3 reveal">
     <!-- 流量统计 -->
     <div class="card">
-        <div class="flex" style="justify-content:space-between;align-items:baseline">
+        <div class="flex flow-summary-head">
             <h3 class="mb-2">流量统计</h3>
             <?php $grandTotal = (int)$apiStats['total'] + (int)$visitStats['total']; ?>
-            <span style="font-size:.82rem;color:var(--text-muted)">总流量：<strong style="color:var(--primary)"><?= number_format($grandTotal) ?></strong> 次请求</span>
+            <span class="text-small">总流量：<strong class="c-primary"><?= number_format($grandTotal) ?></strong> 次请求</span>
         </div>
         <!-- 概览：今日 + 累计（API+访问） -->
-        <div class="grid grid-2" style="text-align:center;margin:8px 0 16px;padding:12px 0;border:1px solid var(--border);border-radius:var(--radius)">
+        <div class="grid grid-2" class="traffic-summary">
             <div>
-                <div style="font-size:1.3rem;font-weight:600;color:var(--primary)"><?= number_format((int)$apiStats['today'] + (int)$visitStats['today']) ?></div>
+                <div class="traffic-num primary"><?= number_format((int)$apiStats['today'] + (int)$visitStats['today']) ?></div>
                 <div class="stat-label">今日总请求</div>
             </div>
             <div>
-                <div style="font-size:1.3rem;font-weight:600;color:var(--accent)"><?= number_format($grandTotal) ?></div>
+                <div class="traffic-num accent"><?= number_format($grandTotal) ?></div>
                 <div class="stat-label">累计总请求</div>
             </div>
         </div>
         <!-- API/访问 分项 -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:.88rem">
-            <div style="padding:10px 12px;border-radius:var(--radius);background:var(--bg-input)">
-                <div class="flex" style="justify-content:space-between"><span class="text-muted">API 调用</span><strong><?= number_format((int)$apiStats['today']) ?></strong></div>
-                <div class="text-muted" style="font-size:.78rem">近 7 天 <?= number_format((int)$apiStats['week']) ?> · 累计 <?= number_format((int)$apiStats['total']) ?></div>
+        <div class="flow-grid">
+            <div class="flow-box">
+                <div class="flex" class="flex"><span class="text-muted">API 调用</span><strong><?= number_format((int)$apiStats['today']) ?></strong></div>
+                <div class="text-muted" class="flow-note">近 7 天 <?= number_format((int)$apiStats['week']) ?> · 累计 <?= number_format((int)$apiStats['total']) ?></div>
             </div>
-            <div style="padding:10px 12px;border-radius:var(--radius);background:var(--bg-input)">
-                <div class="flex" style="justify-content:space-between"><span class="text-muted">网站访问</span><strong><?= number_format((int)$visitStats['today']) ?></strong></div>
-                <div class="text-muted" style="font-size:.78rem">近 7 天 <?= number_format((int)$visitStats['week']) ?> · 累计 <?= number_format((int)$visitStats['total']) ?></div>
+            <div class="flow-box">
+                <div class="flex flex-between"><span class="text-muted">网站访问</span><strong><?= number_format((int)$visitStats['today']) ?></strong></div>
+                <div class="text-muted flow-note">近 7 天 <?= number_format((int)$visitStats['week']) ?> · 累计 <?= number_format((int)$visitStats['total']) ?></div>
             </div>
         </div>
-        <h4 class="mb-1 mt-3" style="font-size:.95rem">近 7 天趋势（API / 访问）</h4>
-        <div style="display:flex;align-items:flex-end;gap:6px;height:96px;padding-top:8px">
+        <h4 class="mb-1 mt-3 text-small">近 7 天趋势（API / 访问）</h4>
+        <div class="trend-chart-96">
             <?php $maxFlow = max(1, max(array_column($apiSeries, 'count')), max(array_column($visitSeries, 'count'))); ?>
             <?php for ($i = 0; $i < 7; $i++): ?>
-            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
-                <div style="display:flex;gap:2px;align-items:flex-end;height:60px">
-                    <div style="width:6px;height:<?= max(3, round($apiSeries[$i]['count'] / $maxFlow * 56)) ?>px;border-radius:3px 0 0 3px;background:var(--primary)" title="API <?= $apiSeries[$i]['day'] ?>: <?= $apiSeries[$i]['count'] ?>"></div>
-                    <div style="width:6px;height:<?= max(3, round($visitSeries[$i]['count'] / $maxFlow * 56)) ?>px;border-radius:0 3px 3px 0;background:var(--accent)" title="访问 <?= $visitSeries[$i]['day'] ?>: <?= $visitSeries[$i]['count'] ?>"></div>
+            <div class="flow-col">
+                <div class="flow-bars">
+                    <div class="flow-bar" data-h="<?= max(3, round($apiSeries[$i]['count'] / $maxFlow * 56)) ?>" title="API <?= $apiSeries[$i]['day'] ?>: <?= $apiSeries[$i]['count'] ?>"></div>
+                    <div class="flow-bar accent" data-h="<?= max(3, round($visitSeries[$i]['count'] / $maxFlow * 56)) ?>" title="访问 <?= $visitSeries[$i]['day'] ?>: <?= $visitSeries[$i]['count'] ?>"></div>
                 </div>
-                <span style="font-size:.65rem;color:var(--text-muted)"><?= $apiSeries[$i]['day'] ?></span>
+                <span class="flow-day"><?= $apiSeries[$i]['day'] ?></span>
             </div>
             <?php endfor; ?>
         </div>
-        <div class="flex" style="gap:16px;margin-top:8px;font-size:.78rem;color:var(--text-secondary)">
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--primary);vertical-align:middle;margin-right:4px"></span>API 调用</span>
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--accent);vertical-align:middle;margin-right:4px"></span>网站访问</span>
+        <div class="flex" class="legend">
+            <span><span class="legend-dot primary"></span>API 调用</span>
+            <span><span class="legend-dot accent"></span>网站访问</span>
         </div>
     </div>
 
@@ -235,7 +235,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     <div class="card">
         <h3 class="mb-2">运行状态</h3>
         <!-- 实时指标（CPU / PHP 进程内存 / 磁盘） -->
-        <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:20px">
+        <div class="metric-stack">
             <?php
             $metrics = [
                 ['label' => 'CPU 负载', 'val' => $status['cpu'], 'color' => 'var(--primary)'],
@@ -246,23 +246,23 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
                 $show = $m['val'] !== null;
             ?>
             <div>
-                <div class="flex" style="justify-content:space-between;margin-bottom:4px">
-                    <span style="font-size:.88rem"><?= $m['label'] ?></span>
-                    <span style="font-size:.88rem;color:var(--text-secondary)"><?= $show ? $m['val'] . ' %' : '不可用' ?></span>
+                <div class="flex" class="metric-head">
+                    <span class="metric-label"><?= $m['label'] ?></span>
+                    <span class="metric-value"><?= $show ? $m['val'] . ' %' : '不可用' ?></span>
                 </div>
-                <div style="height:10px;border-radius:999px;background:var(--bg-input);overflow:hidden">
-                    <div style="width:<?= $show ? min(100, $m['val']) : 0 ?>%;height:100%;border-radius:999px;background:<?= $m['color'] ?>"></div>
+                <div class="metric-track">
+                    <div class="metric-fill" data-w="<?= $show ? min(100, $m['val']) : 0 ?>" data-bg="<?= $m['color'] ?>"></div>
                 </div>
             </div>
             <?php endforeach; ?>
         </div>
-        <p class="text-muted" style="margin-top:0;font-size:.78rem;margin-bottom:14px">CPU 为 1 分钟负载均值 / 核数；PHP 内存 = 当前进程 / memory_limit；磁盘 = 项目盘占用率。</p>
+        <p class="text-muted" class="foot-note">CPU 为 1 分钟负载均值 / 核数；PHP 内存 = 当前进程 / memory_limit；磁盘 = 项目盘占用率。</p>
         <!-- 环境信息（原「系统概览」） -->
-        <div style="border-top:1px solid var(--border);padding-top:14px;font-size:.88rem">
-            <div class="flex" style="justify-content:space-between;padding:4px 0"><span class="text-muted">PHP 版本</span><span><?= h($system['php']) ?></span></div>
-            <div class="flex" style="justify-content:space-between;padding:4px 0"><span class="text-muted">内存上限</span><span><?= h($status['mem_limit'] ?? '-') ?></span></div>
-            <div class="flex" style="justify-content:space-between;padding:4px 0"><span class="text-muted">当前进程占用</span><span><?= human_bytes((float)($status['php_mem'] ?? 0)) ?></span></div>
-            <div class="flex" style="justify-content:space-between;padding:4px 0"><span class="text-muted">时区</span><span><?= h($system['timezone']) ?></span></div>
+        <div class="env-list">
+            <div class="flex flex-between env-row"><span class="text-muted">PHP 版本</span><span><?= h($system['php']) ?></span></div>
+            <div class="flex flex-between env-row"><span class="text-muted">内存上限</span><span><?= h($status['mem_limit'] ?? '-') ?></span></div>
+            <div class="flex flex-between env-row"><span class="text-muted">当前进程占用</span><span><?= human_bytes((float)($status['php_mem'] ?? 0)) ?></span></div>
+            <div class="flex flex-between env-row"><span class="text-muted">时区</span><span><?= h($system['timezone']) ?></span></div>
         </div>
     </div>
 </div>

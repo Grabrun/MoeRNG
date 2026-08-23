@@ -1095,6 +1095,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initSidebarDrawer();
     initGlobalKeys();
     initStatCount();
+    applyDynamicStyles();
     initImageFallback();
 });
 
@@ -1408,6 +1409,24 @@ function initStatCount() {
         });
     }, { threshold: 0.4 });
     els.forEach(el => io.observe(el));
+}
+
+// v1.2.1 CSP 合规：动态样式（宽高百分比）经 data-* 属性由 JS 补设。
+// CSP style-src 禁止 unsafe-inline，HTML 内联 style 属性会被拦截；
+// JS 通过 el.style.* 设置不受 style-src 限制（由 script-src nonce 管控）。
+function applyDynamicStyles() {
+    document.querySelectorAll('[data-h]').forEach(function (el) {
+        var h = parseInt(el.getAttribute('data-h'), 10);
+        if (!isNaN(h)) el.style.height = h + 'px';
+    });
+    document.querySelectorAll('[data-w]').forEach(function (el) {
+        var w = parseFloat(el.getAttribute('data-w'));
+        if (!isNaN(w)) el.style.width = w + '%';
+    });
+    document.querySelectorAll('[data-bg]').forEach(function (el) {
+        var bg = el.getAttribute('data-bg');
+        if (bg) el.style.background = bg;
+    });
 }
 
 // Image load-failure placeholder (thumbnail + lightbox).
