@@ -24,8 +24,9 @@ push + tag → GitHub Release（正式版和测试版都会创建，附 zip 资�
 说明：
 - bump 同步 4 处：src/bootstrap.php / src/app/Controllers/ApiController.php /
   src/views/home.php / tools/_package.py（打包文件名模板）
-- push/release 凭据：优先环境变量 GITHUB_TOKEN（fine-grained PAT，单次内嵌 URL，
-  不落盘）；无 token 时 push 走 `git push origin` 且跳过 GitHub Release。
+- push/release 凭据：优先读取项目级 token 文件 .dsh/moerng.token（gitignore 隔离，
+  仅本项目生效，不污染系统），环境变量 GITHUB_TOKEN 作为兜底。push 走内嵌 URL，
+  GitHub Release 用 Bearer token。无 token 时 push 走 `git push origin` 且跳过 Release。
 - 发版后必须推送——项目规范：releases/ zip 与 GitHub 代码同步。
 
 SemVer 约定（用户规则）：
@@ -74,6 +75,22 @@ def package() -> str:
     return zips[-1]
 
 
+def get_token() -> str:
+    """优先读取项目级 token 文件（.dsh/moerng.token，已被 gitignore 隔离），
+    环境变量 GITHUB_TOKEN 作为兜底。token 只对本项目生效，不污染系统环境。"""
+    # 1) 项目级 token 文件（首选）
+    token_file = os.path.join(ROOT, '.dsh', 'moerng.token')
+    try:
+        if os.path.isfile(token_file):
+            t = open(token_file, encoding='utf-8').read().strip()
+            if t:
+                return t
+    except OSError:
+        pass
+    # 2) 环境变量兜底
+    return os.environ.get('GITHUB_TOKEN', '')
+
+
 def git(version: str, push: bool) -> None:
     subprocess.run(['git', 'add', '-A'], cwd=ROOT, check=True)
     r = subprocess.run(
@@ -84,7 +101,7 @@ def git(version: str, push: bool) -> None:
     if not push:
         print('[SKIP] push (--no-push)')
         return
-    token = os.environ.get('GITHUB_TOKEN', '')
+    token = get_token()
     if token:
         url = f'https://Grabrun:{token}@github.com/{REPO}.git'
         r = subprocess.run(['git', 'push', url, 'main'], cwd=ROOT, capture_output=True, text=True)
@@ -128,7 +145,7 @@ def _api(method: str, url: str, token: str, payload=None, raw: bytes | None = No
 
 
 def github_release(version: str, zip_path: str, note: str = '') -> None:
-    token = os.environ.get('GITHUB_TOKEN', '')
+    token = get_token()
     if not token:
         print('[SKIP] GitHub Release（无 GITHUB_TOKEN）')
         return
