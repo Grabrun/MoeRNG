@@ -1,6 +1,6 @@
 <?php include __DIR__ . '/helpers.php'; admin_header('操作日志'); ?>
 
-<div class="page-header flex-between" class="flex flex-between">
+<div class="page-header flex-between flex">
     <div>
         <h1>操作日志</h1>
         <p>管理员操作审计记录（设置变更 / 备份 / 缓存 / 登录）</p>
@@ -13,7 +13,7 @@
         <div class="form-group m-0 flex-1 min-w-220">
             <input type="search" name="q" class="form-control" placeholder="搜索用户名 / 动作 / 详情…" value="<?= h($q ?? '') ?>">
         </div>
-        <div class="form-group" class="m-0">
+        <div class="form-group m-0">
             <select name="action" class="form-control">
                 <option value="">全部动作</option>
                 <?php foreach (($actions ?? []) as $a): ?>
@@ -23,7 +23,7 @@
         </div>
         <button type="submit" class="btn btn-primary btn-sm">筛选</button>
         <!-- v1.2.1 迭代: per-page selector + CSV export -->
-        <select name="per_page" class="form-control" class="w-auto" data-auto-submit aria-label="每页数量">
+        <select name="per_page" class="form-control w-auto" data-auto-submit aria-label="每页数量">
             <?php foreach ([50, 100, 200, 500] as $n): ?>
             <option value="<?= $n ?>" <?= ($per_page ?? 50) == $n ? 'selected' : '' ?>><?= $n ?> 条/页</option>
             <?php endforeach; ?>
@@ -37,7 +37,7 @@
 
 <div class="card">
     <?php if ($logs): ?>
-    <table class="table" class="table-full">
+    <table class="table table-full">
         <thead>
             <tr>
                 <th class="text-left p-10">时间</th>
@@ -78,11 +78,11 @@
 </div>
 
 <?php if ($pages > 1): ?>
-<div class="mt-3" class="flex gap-8">
+<div class="mt-3 flex gap-8">
     <?php if ($page > 1): ?>
     <a class="btn btn-sm" href="?page=<?= $page - 1 ?>&q=<?= urlencode($q ?? '') ?>&action=<?= urlencode($action ?? '') ?>">上一页</a>
     <?php endif; ?>
-    <span class="text-muted" class="text-small">第 <?= $page ?> / <?= $pages ?> 页 · 共 <?= $total ?> 条</span>
+    <span class="text-muted text-small">第 <?= $page ?> / <?= $pages ?> 页 · 共 <?= $total ?> 条</span>
     <?php if ($page < $pages): ?>
     <a class="btn btn-sm" href="?page=<?= $page + 1 ?>&q=<?= urlencode($q ?? '') ?>&action=<?= urlencode($action ?? '') ?>">下一页</a>
     <?php endif; ?>

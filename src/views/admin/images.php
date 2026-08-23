@@ -16,7 +16,7 @@
 <div class="card mb-3">
     <form method="GET" action="/admin/images" class="flex gap-2 flex-wrap">
         <input type="text" name="search" class="form-control" value="<?= h($search) ?>" placeholder="搜索文件名..." class="flex-1 min-w-200">
-        <select name="category_id" class="form-control" class="w-200">
+        <select name="category_id" class="form-control w-200">
             <option value="">全部分类</option>
             <option value="0" <?= $categoryId==='0'?'selected':'' ?>>未分类</option>
             <?php foreach ($categories as $cat): ?>
@@ -84,7 +84,7 @@
 <div id="batch-bar" class="hidden">
     <span>已选 <strong class="count">0</strong> 项</span>
     <!-- v1.2.1 迭代: bulk re-categorize (admin UI audit I2) -->
-    <select id="batch-category" class="form-control" class="w-auto" aria-label="批量修改分类">
+    <select id="batch-category" class="form-control w-auto" aria-label="批量修改分类">
         <option value="">批量改分类…</option>
         <option value="0">未分类</option>
         <?php foreach ($categories as $cat): ?>
@@ -98,7 +98,7 @@
 
 <!-- Upload Modal -->
 <div class="modal-overlay" id="upload-modal">
-    <div class="modal" class="max-w-600">
+    <div class="modal max-w-600">
         <h2>上传图片</h2>
         <form method="POST" action="/admin/images/upload" enctype="multipart/form-data" id="upload-form">
             <?= $csrf_field ?>
@@ -130,8 +130,8 @@
                 <input type="file" name="images[]" multiple accept="image/*" class="hidden">
             </div>
         </form>
-        <div class="progress-bar mt-2" class="hidden">
-            <div class="fill" class="progress-fill" data-w="0"></div>
+        <div class="progress-bar mt-2 hidden">
+            <div class="fill progress-fill" data-w="0"></div>
         </div>
         <div class="btn-group">
             <button type="button" class="btn btn-outline" data-toggle-class="upload-modal" data-class="active">取消</button>
@@ -142,13 +142,13 @@
 
 <!-- Preview Modal -->
 <div class="modal-overlay" id="preview-modal">
-    <div class="modal" class="max-w-800">
+    <div class="modal max-w-800">
         <div class="flex-between mb-2">
             <h2 id="preview-title">预览</h2>
             <button class="btn btn-outline btn-sm" aria-label="关闭预览" data-toggle-class="preview-modal" data-class="active"><?= icon('x', 16) ?></button>
         </div>
         <img id="preview-image" src="" class="img-preview">
-        <a id="preview-link" href="#" target="_blank" rel="noopener" class="text-muted" class="block mt-2 text-xs wrap-all"></a>
+        <a id="preview-link" href="#" target="_blank" rel="noopener" class="text-muted block mt-2 text-xs wrap-all"></a>
     </div>
 </div>
 

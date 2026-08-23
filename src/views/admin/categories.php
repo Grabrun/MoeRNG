@@ -15,7 +15,7 @@
 
 <div class="category-list" id="category-tree">
     <?php if (empty($categories)): ?>
-    <div class="card"><p class="text-center text-muted" class="p-40">暂无分类，点击「新建分类」创建第一个分类</p></div>
+    <div class="card"><p class="text-center text-muted p-40">暂无分类，点击「新建分类」创建第一个分类</p></div>
     <?php else: ?>
     <?php foreach ($categories as $root): ?>
     <?php
@@ -33,13 +33,13 @@
             <div class="cat-root-info">
                 <strong class="cat-name"><?= h($root['name']) ?></strong>
                 <small class="text-muted">(<?= h($root['slug']) ?>)</small>
-                <span class="badge badge-info" class="ml-1">顶级分类</span>
+                <span class="badge badge-info ml-1">顶级分类</span>
                 <?php if ($descCount > 0): ?>
-                <span class="text-muted" class="ml-1">· <?= $descCount ?> 个子分类</span>
+                <span class="text-muted ml-1">· <?= $descCount ?> 个子分类</span>
                 <?php endif; ?>
-                <span class="text-muted" class="ml-1">· 排序 <?= (int)($root['sort_order'] ?? 0) ?></span>
+                <span class="text-muted ml-1">· 排序 <?= (int)($root['sort_order'] ?? 0) ?></span>
                 <?php if (isset($imageCounts[(int)$root['id']]) && $imageCounts[(int)$root['id']] > 0): ?>
-                <span class="badge badge-success" class="ml-1"><?= (int)$imageCounts[(int)$root['id']] ?> 图</span>
+                <span class="badge badge-success ml-1"><?= (int)$imageCounts[(int)$root['id']] ?> 图</span>
                 <?php endif; ?>
             </div>
             <div class="actions">
@@ -69,7 +69,7 @@
                     echo '<small class="text-muted">(' . h($n['slug']) . ')</small>';
                     echo '<span class="text-muted">· 排序 ' . (int)($n['sort_order'] ?? 0) . '</span>';
                     if (isset($imageCounts[(int)$n['id']]) && $imageCounts[(int)$n['id']] > 0) {
-                        echo '<span class="badge badge-success" class="ml-1">' . (int)$imageCounts[(int)$n['id']] . ' 图</span>';
+                        echo '<span class="badge badge-success ml-1">' . (int)$imageCounts[(int)$n['id']] . ' 图</span>';
                     }
                     if (!empty($n['description'])) {
                         echo '<div class="cat-desc text-muted">' . h($n['description']) . '</div>';

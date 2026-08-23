@@ -100,9 +100,9 @@
 
 <!-- Generated key reveal modal -->
 <div class="modal-overlay" id="newkey-modal">
-    <div class="modal" class="max-w-600">
+    <div class="modal max-w-600">
         <h2>API Key 已生成</h2>
-        <p class="text-muted" class="text-small mb-2">
+        <p class="text-muted text-small mb-2">
             请立即复制保存，关闭后将无法再次查看完整 Key。
         </p>
         <div class="form-group">

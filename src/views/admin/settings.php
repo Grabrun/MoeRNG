@@ -39,7 +39,7 @@ function renderField(string $key, array $def, array $settings): void
             echo '<span class="text-muted text-small text-secondary" id="logo-default-hint-' . $name . '">当前使用默认 Logo，上传后可替换</span>';
         }
         echo '</div>';
-        echo '<div class="logo-upload-row" class="flex gap-8 flex-wrap">';
+        echo '<div class="logo-upload-row flex gap-8 flex-wrap">';
         echo '<input type="file" id="logo-file-' . $name . '" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden">';
         // v1.2.1 迭代: single "上传" button — pick file then upload in one flow.
         echo '<button type="button" class="btn btn-sm btn-primary" data-logo-upload="' . $name . '">上传</button>';
@@ -81,8 +81,8 @@ admin_header('系统设置');
     <p>站点、安全、性能、邮件与备份配置（仅管理员可修改，所有变更记录到操作日志）</p>
 </div>
 
-<div class="settings-toolbar" class="flex gap-12 flex-wrap mb-3">
-    <div class="settings-tabs" class="flex gap-4 flex-wrap">
+<div class="settings-toolbar flex gap-12 flex-wrap mb-3">
+    <div class="settings-tabs flex gap-4 flex-wrap">
         <?php foreach ($groups as $gid => $gdef): ?>
         <a href="?tab=<?= h($gid) ?>#<?= h($gid) ?>"
            class="settings-tab btn btn-sm <?= $gid === $activeGroup ? 'btn-primary' : '' ?>"
@@ -90,7 +90,7 @@ admin_header('系统设置');
         <?php endforeach; ?>
     </div>
     <div class="flex-1"></div>
-    <input type="search" id="settings-search" class="form-control" class="max-w-260" placeholder="搜索设置项…">
+    <input type="search" id="settings-search" class="form-control max-w-260" placeholder="搜索设置项…">
 </div>
 
 <?php foreach ($groups as $gid => $gdef): ?>
@@ -100,7 +100,7 @@ admin_header('系统设置');
         <input type="hidden" name="group" value="<?= h($gid) ?>">
 
         <div class="card mb-3">
-            <h3 class="mb-2" class="flex flex-between">
+            <h3 class="mb-2 flex flex-between">
                 <span><?= h($gdef['label']) ?></span>
                 <small class="font-normal text-secondary"><?= h($gdef['desc']) ?></small>
             </h3>
@@ -150,16 +150,16 @@ admin_header('系统设置');
 
     <div class="card mb-3">
         <h3 class="mb-2">备份管理</h3>
-        <div class="d-flex" class="flex gap-12 mb-3">
+        <div class="d-flex flex gap-12 mb-3">
             <form method="POST" action="/admin/settings/backup">
                 <?= $csrf_field ?>
                 <button type="submit" class="btn btn-warning" data-confirm="立即执行一次完整备份（数据库 + 上传文件）？">立即备份</button>
             </form>
-            <small class="text-muted" class="text-secondary">自动备份按周期在上方「备份与恢复」表单中配置，访问时自动触发检查。</small>
+            <small class="text-muted text-secondary">自动备份按周期在上方「备份与恢复」表单中配置，访问时自动触发检查。</small>
         </div>
 
         <?php if ($backups): ?>
-        <table class="table" class="table-full">
+        <table class="table table-full">
             <thead>
                 <tr><th class="text-left p-8">备份文件</th><th class="text-left p-8">大小</th><th class="text-left p-8">时间</th><th class="text-left p-8">操作</th></tr>
             </thead>
@@ -181,14 +181,14 @@ admin_header('系统设置');
             </tbody>
         </table>
         <?php else: ?>
-        <p class="text-muted" class="text-secondary">暂无备份。点击「立即备份」生成第一份。</p>
+        <p class="text-muted text-secondary">暂无备份。点击「立即备份」生成第一份。</p>
         <?php endif; ?>
     </div>
     <?php endif; ?>
 </section>
 <?php endforeach; ?>
 
-<div class="mt-3" class="border-top pt-3">
+<div class="mt-3 border-top pt-3">
     <a href="/admin/settings/logs" class="btn btn-sm">查看操作日志 →</a>
 </div>
 

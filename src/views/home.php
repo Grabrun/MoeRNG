@@ -117,7 +117,7 @@
                 <div class="random-demo reveal" role="region" aria-label="随机图片生成器">
                     <div class="rd-preview">
                         <div class="rd-placeholder" id="rd-placeholder">点「试试手气」，从 API 随机取一张图</div>
-                        <img id="rd-image" src="" alt="随机图片（点击查看大图）" class="rd-image-preview" class="hidden">
+                        <img id="rd-image" src="" alt="随机图片（点击查看大图）" class="rd-image-preview hidden">
                         <div class="rd-loading hidden" id="rd-loading"><span class="spinner"></span></div>
                     </div>
                     <div class="rd-meta hidden" id="rd-meta" class="rd-meta"></div>
@@ -406,27 +406,27 @@
         <!-- About (hardcoded; mirrors the GitHub repo About block) -->
         <section id="about" class="section reveal">
             <h2 class="section-title">关于</h2>
-            <div class="about-grid" class="about-grid">
-                <div class="about-card" class="about-card">
+            <div class="about-grid">
+                <div class="about-card">
                     <h3 class="mb-2">项目简介</h3>
-                    <p class="text-muted" class="about-text"><?= h($siteName) ?> 是一个基于 PHP 8.4 + MySQL 的随机二次元图片 API 服务，提供 JSON 结构化数据与 302 重定向双模式返回，支持多级分类、API Key 鉴权与速率限制。</p>
+                    <p class="text-muted about-text"><?= h($siteName) ?> 是一个基于 PHP 8.4 + MySQL 的随机二次元图片 API 服务，提供 JSON 结构化数据与 302 重定向双模式返回，支持多级分类、API Key 鉴权与速率限制。</p>
                 </div>
-                <div class="about-card" class="about-card">
+                <div class="about-card">
                     <h3 class="mb-2">技术特性</h3>
-                    <ul class="text-muted" class="about-list">
+                    <ul class="text-muted about-list">
                         <li>轻量自研框架，零重型依赖</li>
                         <li>多级分类树，指定分类随机取图</li>
                         <li>对象存储接入：COS / OSS / AWS S3 / OBS</li>
                         <li>内置管理后台与操作审计</li>
                     </ul>
                 </div>
-                <div class="about-card" class="about-card">
+                <div class="about-card">
                     <h3 class="mb-2">开放与许可</h3>
-                    <p class="text-muted" class="about-text about-text-mb">本项目基于 MIT License 开源，欢迎提交 Issue 与 Pull Request。</p>
+                    <p class="text-muted about-text about-text-mb">本项目基于 MIT License 开源，欢迎提交 Issue 与 Pull Request。</p>
                     <?php if (!empty($githubUrl)): ?>
                     <a href="<?= h($githubUrl) ?>" target="_blank" rel="noopener nofollow" class="btn btn-sm btn-outline"><?= icon('external-link', 16) ?> GitHub 仓库</a>
                     <?php else: ?>
-                    <p class="text-muted" class="text-small">仓库地址可在「系统设置 → 站点信息 → GitHub 仓库地址」中配置。</p>
+                    <p class="text-muted text-small">仓库地址可在「系统设置 → 站点信息 → GitHub 仓库地址」中配置。</p>
                     <?php endif; ?>
                 </div>
             </div>
@@ -441,7 +441,7 @@
             <p class="mt-1"><a href="https://beian.miit.gov.cn/" target="_blank" rel="nofollow noopener" class="footer-link"><?= h($icpNumber) ?></a></p>
             <?php endif; ?>
             <?php if (!empty($footerHtml)): ?>
-            <p class="mt-1 footer-custom" class="footer-custom"><?= h($footerHtml) ?></p>
+            <p class="mt-1 footer-custom"><?= h($footerHtml) ?></p>
             <?php endif; ?>
         </footer>
     </div>

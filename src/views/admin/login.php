@@ -37,10 +37,10 @@
                     <input type="password" name="password" class="form-control" required placeholder="Enter password">
                 </div>
                 <?php if ($locked): ?>
-                <div class="alert alert-error" class="mb-3">登录尝试过于频繁，请 <?= (int) ceil(($lock_seconds ?? 0) / 60) ?> 分钟后再试。</div>
+                <div class="alert alert-error mb-3">登录尝试过于频繁，请 <?= (int) ceil(($lock_seconds ?? 0) / 60) ?> 分钟后再试。</div>
                 <?php endif; ?>
                 <?php if ($captcha_enabled): ?>
-                <div class="form-group" class="flex gap-10 align-end">
+                <div class="form-group flex gap-10 align-end">
                     <div class="flex-1">
                         <label>验证码</label>
                         <input type="text" name="captcha" class="form-control" required maxlength="5" placeholder="输入图中字符" autocomplete="off">

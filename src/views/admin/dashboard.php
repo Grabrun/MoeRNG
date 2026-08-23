@@ -60,22 +60,22 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
 <!-- 1. 顶部统计卡 -->
 <div class="grid grid-4">
     <div class="stat-card">
-        <div class="stat-icon" class="c-primary"><?= icon('image', 24) ?></div>
+        <div class="stat-icon c-primary"><?= icon('image', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_images'] ?>"><?= number_format($stats['total_images']) ?></div>
         <div class="stat-label">图片资源</div>
     </div>
     <div class="stat-card">
-        <div class="stat-icon" class="c-accent"><?= icon('folder-tree', 24) ?></div>
+        <div class="stat-icon c-accent"><?= icon('folder-tree', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_categories'] ?>"><?= number_format($stats['total_categories']) ?></div>
         <div class="stat-label">分类数量</div>
     </div>
     <div class="stat-card">
-        <div class="stat-icon" class="c-info"><?= icon('users', 24) ?></div>
+        <div class="stat-icon c-info"><?= icon('users', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_users'] ?>"><?= number_format($stats['total_users']) ?></div>
         <div class="stat-label">管理员账号</div>
     </div>
     <div class="stat-card">
-        <div class="stat-icon" class="c-warning"><?= icon('key', 24) ?></div>
+        <div class="stat-icon c-warning"><?= icon('key', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_api_keys'] ?>"><?= number_format($stats['total_api_keys']) ?></div>
         <div class="stat-label">API Keys（<?= (int)$stats['active_api_keys'] ?> 启用）</div>
     </div>
@@ -86,7 +86,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     <div class="card">
         <div class="flex flex-between">
             <h3 class="mb-2">最近上传</h3>
-            <a href="/admin/images" class="text-muted" class="text-small">查看全部 →</a>
+            <a href="/admin/images" class="text-muted text-small">查看全部 →</a>
         </div>
         <?php if (empty($recentImages)): ?>
             <p class="text-muted">暂无图片，去 <a href="/admin/images">图片管理</a> 上传第一张吧。</p>
@@ -129,7 +129,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
 <!-- 3. 存储用量 + 7 天上传趋势 -->
 <div class="grid grid-1 mt-3 reveal">
     <div class="card">
-        <div class="flex" class="flex flow-summary-head">
+        <div class="flex flow-summary-head">
             <h3 class="mb-2">存储用量</h3>
             <span class="text-muted text-small">共 <?= (int)$usage['count'] ?> 张有效图片</span>
         </div>
@@ -147,7 +147,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
                 <div class="stat-label">最大单图</div>
             </div>
         </div>
-        <h4 class="mb-1" class="text-small">近 7 天上传趋势</h4>
+        <h4 class="mb-1 text-small">近 7 天上传趋势</h4>
         <div class="trend-chart">
             <?php $maxTrend = max(1, max(array_column($trend, 'count'))); ?>
             <?php foreach ($trend as $t): ?>
@@ -191,7 +191,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
             <span class="text-small">总流量：<strong class="c-primary"><?= number_format($grandTotal) ?></strong> 次请求</span>
         </div>
         <!-- 概览：今日 + 累计（API+访问） -->
-        <div class="grid grid-2" class="traffic-summary">
+        <div class="grid grid-2 traffic-summary">
             <div>
                 <div class="traffic-num primary"><?= number_format((int)$apiStats['today'] + (int)$visitStats['today']) ?></div>
                 <div class="stat-label">今日总请求</div>
@@ -204,8 +204,8 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
         <!-- API/访问 分项 -->
         <div class="flow-grid">
             <div class="flow-box">
-                <div class="flex" class="flex"><span class="text-muted">API 调用</span><strong><?= number_format((int)$apiStats['today']) ?></strong></div>
-                <div class="text-muted" class="flow-note">近 7 天 <?= number_format((int)$apiStats['week']) ?> · 累计 <?= number_format((int)$apiStats['total']) ?></div>
+                <div class="flex"><span class="text-muted">API 调用</span><strong><?= number_format((int)$apiStats['today']) ?></strong></div>
+                <div class="text-muted flow-note">近 7 天 <?= number_format((int)$apiStats['week']) ?> · 累计 <?= number_format((int)$apiStats['total']) ?></div>
             </div>
             <div class="flow-box">
                 <div class="flex flex-between"><span class="text-muted">网站访问</span><strong><?= number_format((int)$visitStats['today']) ?></strong></div>
@@ -225,7 +225,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
             </div>
             <?php endfor; ?>
         </div>
-        <div class="flex" class="legend">
+        <div class="flex legend">
             <span><span class="legend-dot primary"></span>API 调用</span>
             <span><span class="legend-dot accent"></span>网站访问</span>
         </div>
@@ -246,7 +246,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
                 $show = $m['val'] !== null;
             ?>
             <div>
-                <div class="flex" class="metric-head">
+                <div class="flex metric-head">
                     <span class="metric-label"><?= $m['label'] ?></span>
                     <span class="metric-value"><?= $show ? $m['val'] . ' %' : '不可用' ?></span>
                 </div>
@@ -256,7 +256,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
             </div>
             <?php endforeach; ?>
         </div>
-        <p class="text-muted" class="foot-note">CPU 为 1 分钟负载均值 / 核数；PHP 内存 = 当前进程 / memory_limit；磁盘 = 项目盘占用率。</p>
+        <p class="text-muted foot-note">CPU 为 1 分钟负载均值 / 核数；PHP 内存 = 当前进程 / memory_limit；磁盘 = 项目盘占用率。</p>
         <!-- 环境信息（原「系统概览」） -->
         <div class="env-list">
             <div class="flex flex-between env-row"><span class="text-muted">PHP 版本</span><span><?= h($system['php']) ?></span></div>
