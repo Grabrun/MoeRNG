@@ -1,3 +1,4 @@
+- **设置保存条视觉优化（2026-08-23 18:57，sticky 遮挡下方）**：.settings-save-bar 原为悬浮药丸卡（bottom:12px 缝隙 + 四角圆角 + 全周投影），滚动时像不透明浮卡盖住下方内容（footer「查看操作日志」被压住、末字段被遮）。按钮需常驻→保留 sticky，但改为贴底整宽工具栏：bottom:0 无缝隙、不透明底色、仅顶部圆角、上投影、满幅 padding；内容自然从其下方滚过而非躲在悬浮片后面
 - **系统设置分页失效修复（2026-08-23 18:45，重复 class 第二/三形态）**：settings.php 分组 tab 从未生效——①PHP 条件输出 `<?= cond ? 'class="hidden"' : '' ?>` 造成双 class 属性（HTML5 保留第一个忽略第二个，首屏全板块同页显示）；②跨行静态 class="no-underline"（上一轮正则只匹配同行）；JS 侧 style.display 与 CSS class 双轨漂移且点击后高亮不跟随。已合并为单 class（_dedupe_class2.py 增强 \s*）+ tab JS 统一 classList.toggle('hidden') + btn-primary 高亮跟随；全站三种形态扫描归零
 - **CSP inline-style 全站迁移（2026-08-23 17:10，仪表盘溢出真根因）**：全站 0 个 style=" 属性 / 18 视图 PHP OK / JS OK / CSS OK；已回退 beta.3 bump 维持 beta.2
 - **合并重复 class 属性（2026-08-23 17:25，CSP 迁移副作用）**：style→class 替换时未合并已有 class，遗留 68 处 class="X" class="Y"（HTML5 保留第一个忽略后续），导致"存储用量"标题挤左、h4 默认字号等异常；脚本合并去重，全站归零
