@@ -22,8 +22,9 @@ push + tag → GitHub Release（正式版和测试版都会创建，附 zip 资�
 - Release notes 缺省为通用模板，可用 --note 覆盖。
 
 说明：
-- bump 同步 4 处：src/bootstrap.php / src/app/Controllers/ApiController.php /
-  src/views/home.php / tools/_package.py（打包文件名模板）
+- bump 单一来源：只同步 src/bootstrap.php 的 APP_VERSION 常量。视图（home 等）
+  一律读取该常量（无硬编码兜底字面量），打包脚本 _package.py 用 _read_app_version()
+  自动读取，故 zip 前缀、资源 ?v= 缓存戳、页面展示的版本号全部跟随 bootstrap.php。
 - push/release 凭据：优先读取项目级 token 文件 .dsh/moerng.token（gitignore 隔离，
   仅本项目生效，不污染系统），环境变量 GITHUB_TOKEN 作为兜底。push 走内嵌 URL，
   GitHub Release 用 Bearer token。无 token 时 push 走 `git push origin` 且跳过 Release。
@@ -45,10 +46,10 @@ REPO = 'Grabrun/MoeRNG'
 API = 'https://api.github.com'
 UPLOADS = 'https://uploads.github.com'
 FILES = [
+    # 唯一版本定义源 = src/bootstrap.php 的 APP_VERSION 常量。
+    # home.php / _package.py 等全部自动读取该常量（home.php 已去掉硬编码兜底
+    # 字面量，_package.py 用 _read_app_version()），所以 bump 只需改这一处。
     ('src/bootstrap.php', re.compile(r"(define\('APP_VERSION', ')[^']+('\))"), lambda v: r"\g<1>" + v + r"\g<2>"),
-    ('src/views/home.php', re.compile(r"(\? APP_VERSION : ')[^']+(')"), lambda v: r"\g<1>" + v + r"\g<2>"),
-    # tools/_package.py 不再需要 bump —— 它已改为自动从 src/bootstrap.php 读取
-    # APP_VERSION（_read_app_version()），zip 前缀永远跟随代码版本。
 ]
 
 
