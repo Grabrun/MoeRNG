@@ -186,14 +186,14 @@
             <aside class="docs-sidebar" aria-label="文档目录">
                 <h4>API 文档</h4>
                 <nav>
-                    <a href="#endpoint-random" class="active">随机图片</a>
-                    <a href="#endpoint-images">图片列表</a>
-                    <a href="#endpoint-categories">分类列表</a>
-                    <a href="#endpoint-stats">服务统计</a>
+                    <a href="#endpoint-random" data-doc-target="#endpoint-random" class="active">随机图片</a>
+                    <a href="#endpoint-images" data-doc-target="#endpoint-images">图片列表</a>
+                    <a href="#endpoint-categories" data-doc-target="#endpoint-categories">分类列表</a>
+                    <a href="#endpoint-stats" data-doc-target="#endpoint-stats">服务统计</a>
                 </nav>
             </aside>
             <div class="docs-content">
-            <div class="doc-endpoint" id="endpoint-random">
+            <div class="doc-endpoint doc-pane" id="endpoint-random">
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/random</span>
@@ -266,7 +266,7 @@
                 </div>
             </div>
 
-            <div class="doc-endpoint" id="endpoint-images">
+            <div class="doc-endpoint doc-pane" id="endpoint-images">
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/images</span>
@@ -285,7 +285,7 @@
                 </div>
             </div>
 
-            <div class="doc-endpoint" id="endpoint-categories">
+            <div class="doc-endpoint doc-pane" id="endpoint-categories">
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/categories</span>
@@ -296,7 +296,7 @@
                 </div>
             </div>
 
-            <div class="doc-endpoint" id="endpoint-stats">
+            <div class="doc-endpoint doc-pane" id="endpoint-stats">
                 <div class="header">
                     <span class="method get">GET</span>
                     <span class="endpoint-path">/api/v1/stats</span>

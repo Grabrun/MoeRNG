@@ -1488,6 +1488,9 @@ body.modal-open { overflow: hidden; }
 .docs-sidebar a.active::before { content: ''; position: absolute; left: -15px; width: 3px; height: 20px; background: var(--primary); border-radius: 2px; }
 .docs-sidebar a { position: relative; }
 .docs-content { min-width: 0; }
+/* API 文档 tab 切换: 默认只显示 active 导航对应的 pane，其余隐藏 */
+.docs-content .doc-pane { display: none; }
+.docs-content .doc-pane.active { display: block; }
 @media (max-width: 900px) {
     .docs-layout { grid-template-columns: 1fr; gap: 12px; }
     .docs-sidebar { position: static; border-left: none; border-bottom: 1px solid var(--border); padding: 0 0 10px; overflow-x: auto; }

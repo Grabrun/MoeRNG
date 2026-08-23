@@ -989,6 +989,27 @@ function initTabs() {
 }
 
 // Storage driver toggle in settings
+// API 文档 tab 切换: 点击左侧导航只显示对应 endpoint，其余隐藏。
+// 绑定到 document 层（CSP 迁移后的铁律：事件委托用 document，不用具体容器 id）。
+function initDocsNav() {
+    var nav = document.querySelector('.docs-sidebar nav');
+    if (!nav) return;
+    var links = nav.querySelectorAll('a[data-doc-target]');
+    var panes = document.querySelectorAll('.docs-content .doc-pane');
+    if (!panes.length) return;
+    links.forEach(function (link) {
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            var target = link.getAttribute('data-doc-target');
+            links.forEach(function (l) { l.classList.remove('active'); });
+            link.classList.add('active');
+            panes.forEach(function (p) {
+                p.classList.toggle('active', '#' + p.id === target);
+            });
+        });
+    });
+}
+
 function initStorageToggle() {
     const driverSelect = document.querySelector('[name="storage_driver"]');
     if (!driverSelect) return;
@@ -1091,6 +1112,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initDeleteButtons();
     initLightbox();
     initReveal();
+    initDocsNav();
     initRandomDemo();
     initSidebarDrawer();
     initGlobalKeys();
