@@ -1,4 +1,5 @@
-- **CSP inline-style 全站迁移（2026-08-23 17:10，仪表盘溢出真根因）**：仪表盘 grid 溢出经两轮 CSS 修复无效——真根因是 **CSP style-src(nonce) 会拒绝所有 style="..." 内联样式属性**，布局从未生效（inline script 之前已委托化，style 属性这条漏了）。全站 ~190 处 inline style → 工具类（.flex/.gap-*/.text-*/尺寸类 + .recent-grid/.tile/.cat-*/.trend-* 等组件类）；动态 px/% → data-h/data-w/data-bg + JS applyDynamicStyles() 补设（el.style.* 不受 style-src 限制，由 script-src nonce 管控）；style-src 保持 nonce-only 不加 unsafe-inline（用户铁律）。验证：全站 0 个 style=" 属性 / 18 视图 PHP OK / JS OK / CSS OK；已回退 beta.3 bump 维持 beta.2
+- **CSP inline-style 全站迁移（2026-08-23 17:10，仪表盘溢出真根因）**：全站 0 个 style=" 属性 / 18 视图 PHP OK / JS OK / CSS OK；已回退 beta.3 bump 维持 beta.2
+- **合并重复 class 属性（2026-08-23 17:25，CSP 迁移副作用）**：style→class 替换时未合并已有 class，遗留 68 处 class="X" class="Y"（HTML5 保留第一个忽略后续），导致"存储用量"标题挤左、h4 默认字号等异常；脚本合并去重，全站归零
 - **bump APP_VERSION → 1.2.1-beta.3（2026-08-23 16:35，缓存遮蔽修复）**：style.css 大量改动（.grid-* minmax 加固/docs sidebar/quick-actions）但 ?v=APP_VERSION 未变，浏览器 7 天旧 CSS 缓存遮蔽了所有已部署的 CSS 修复（仪表盘 grid 溢出反复"没解决"的真因之一）；同步 home.php 兜底字面量 ×3 + _package.py zip 名模板；部署 beta.3 后所有资源 URL 自动刷新
 - **第二轮深度审计（2026-08-23 14:55）**：
   - 🚨 P0 安全——**install 重装漏洞**：step2/3/4/complete 均无 installed 检查，任何人可在已安装站点 POST 完整向导覆盖 config/database.php + 重建管理员（完全接管）；已加 5 处锁
