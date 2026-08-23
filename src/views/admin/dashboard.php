@@ -91,13 +91,14 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
         <?php if (empty($recentImages)): ?>
             <p class="text-muted">暂无图片，去 <a href="/admin/images">图片管理</a> 上传第一张吧。</p>
         <?php else: ?>
-        <!-- v1.2.1 修复: minmax(0,1fr) + min-width:0——grid 轨道默认 min-width:auto，
-             大图固有宽度会把轨道撑到图片原始尺寸（卡片 3889px 溢出）；
-             img 加 max-width 兜底 -->
+        <!-- v1.2.1 修复（第二轮）: img 绝对定位填充——之前 img height:100% 依赖
+             a 的高度，而 a 默认 align-self:stretch 又依赖行高，行高被大图固有
+             高度撑爆 → aspect-ratio:1 失效、图片溢出卡片。绝对定位让 img 脱离
+             行高计算，a 的尺寸完全由 aspect-ratio:1 × 轨道宽度决定 -->
         <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
             <?php foreach ($recentImages as $img): ?>
-            <a href="/admin/images" style="border-radius:var(--radius-sm);overflow:hidden;aspect-ratio:1;background:var(--bg-input);min-width:0;display:block" title="<?= h($img->original_name ?? '') ?>">
-                <img src="<?= h($img->url()) ?>" alt="<?= h($img->original_name ?? '') ?>" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;max-width:100%">
+            <a href="/admin/images" style="position:relative;display:block;min-width:0;border-radius:var(--radius-sm);overflow:hidden;aspect-ratio:1;background:var(--bg-input)" title="<?= h($img->original_name ?? '') ?>">
+                <img src="<?= h($img->url()) ?>" alt="<?= h($img->original_name ?? '') ?>" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
             </a>
             <?php endforeach; ?>
         </div>
