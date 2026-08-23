@@ -256,9 +256,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
 /* Grid */
 .grid { display: grid; gap: 24px; }
-.grid-2 { grid-template-columns: repeat(2, 1fr); }
-.grid-3 { grid-template-columns: repeat(3, 1fr); }
-.grid-4 { grid-template-columns: repeat(4, 1fr); }
+/* v1.2.1 修复: minmax(0,1fr) 替代裸 1fr——轨道隐式最小尺寸 auto 会被
+   大图/长文本的固有宽度撑爆（仪表盘最近上传卡片 3889px 溢出的根因），
+   显式 min=0 让内容可收缩，全站根治此类布局溢出 */
+.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
 /* Stats cards */
 .stat-card {
@@ -469,7 +472,7 @@ pre code { background: none; color: var(--text); padding: 0; }
     .container { padding: 0 16px; }
     h1 { font-size: 1.8rem; }
     h2 { font-size: 1.4rem; }
-    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: minmax(0, 1fr); }
     .nav { flex-direction: column; align-items: flex-start; }
     .modal { padding: 24px; }
     .drop-zone { padding: 32px 16px; }
