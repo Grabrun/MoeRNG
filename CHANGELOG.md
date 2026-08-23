@@ -2,6 +2,23 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1-beta.3] - 2026-08-23
+
+### ✨ 增强
+
+- API 文档侧边栏改为 tab 切换：点击左侧导航切换显示对应 endpoint（随机图片 / 图片列表 / 分类列表 / 服务统计），不再全部纵向堆叠
+- 系统设置分组 tab 生效：设置页按分组分页展示，仅显示当前激活分组
+- 设置保存条改贴底常驻工具栏：视觉上不再悬浮遮挡内容
+
+### 🔧 修复
+
+- 「存储用量」标题与数字遮挡：修复重复 class 属性导致 `.flow-summary-head` / `.text-small` 失效
+- 系统设置 tab 首屏全板块同页显示：修复 PHP 条件输出与跨行两种重复 class 形态；tab 切换统一用 classList 并让高亮跟随点击
+- 设置页滚到底保存条下方空档 + 孤悬「查看操作日志」链接：入口链接移至顶部工具条，页面撑满视口使保存条真正贴底
+- API 文档首次进入空白：首个 pane 补初始 `active` 类，首屏即显示随机图片
+- 在线测试重定向模式重复点击无请求：redirect 分支给 `<img>` src 加一次性缓存爆破参数；json 分支用 `fetch(cache: 'no-store')`，确保每次点击都发起新请求
+- 取消自定义字体（Nunito / JetBrains Mono / ZCOOL KuaiLe），改用系统字体栈（system-ui / ui-monospace），移除 fonts.css 与 10 个 woff2 资源
+
 ## [1.2.1-beta.2] - 2026-08-21
 
 ### ✨ 新功能
