@@ -15,8 +15,8 @@ src/sdk/
 releases/
 *.zip
 
-# ── WorkBuddy project memory (deployment & credential discussion) ─────
-.workbuddy/
+# ── DSH agent memory (deployment & credential discussion) ─────────────
+.dsh/
 
 # ── Scratch / one-off helper scripts ──────────────────────────────────
 tools/_log_*.py
