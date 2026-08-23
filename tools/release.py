@@ -47,7 +47,8 @@ UPLOADS = 'https://uploads.github.com'
 FILES = [
     ('src/bootstrap.php', re.compile(r"(define\('APP_VERSION', ')[^']+('\))"), lambda v: r"\g<1>" + v + r"\g<2>"),
     ('src/views/home.php', re.compile(r"(\? APP_VERSION : ')[^']+(')"), lambda v: r"\g<1>" + v + r"\g<2>"),
-    ('tools/_package.py', re.compile(r"(MoeRNG-v)[0-9A-Za-z.\-]+(-)"), lambda v: r"\g<1>" + v + r"\g<2>"),
+    # tools/_package.py 不再需要 bump —— 它已改为自动从 src/bootstrap.php 读取
+    # APP_VERSION（_read_app_version()），zip 前缀永远跟随代码版本。
 ]
 
 

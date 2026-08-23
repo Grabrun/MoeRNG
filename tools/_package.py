@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os, zipfile, datetime
+import os, zipfile, datetime, re
 
 # 源码根 = 本脚本(tools/)的上级目录下的 src/。zip 包内容 = src/ 下所有文件，
 # 解压后即为站点根（部署结构不变：app/views/public/config/sdk 都在 zip 根）。
@@ -38,7 +38,20 @@ def aws_allowed(rel):
 SKIP = {'config','releases','.dsh','node_modules','uploads','.git','.vscode','.idea','.github','tests','bin','sample','_stale'}
 SKIP_FILE = {'debug_session.php','_package.py','_check_api.py','_check_zip_aws.py','_check_aws_refs.js','_check_zip_aws.js','_fix_memory.py','_check_frontend.py','_note_version.py','_log_today.py','_fix_memory_line.py','_cleanup_root2.py','_log_cleanup.py','_cleanup_root.py'}
 stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-zip_path = os.path.join(DST, 'MoeRNG-v1.2.1-{}.zip'.format(stamp))
+
+# 自动从 src/bootstrap.php 读取 APP_VERSION，避免 zip 前缀与代码版本错位
+# （此前硬编码 '1.2.1'，正式版发布后新功能迭代仍打出旧版前缀）。
+def _read_app_version() -> str:
+    try:
+        with open(os.path.join(ROOT, 'bootstrap.php'), encoding='utf-8') as f:
+            m = re.search(r"define\('APP_VERSION',\s*'([^']+)'", f.read())
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return 'unknown'
+
+zip_path = os.path.join(DST, 'MoeRNG-v{}-{}.zip'.format(_read_app_version(), stamp))
 n = 0
 skipped = 0
 with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as z:
