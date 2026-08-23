@@ -5,7 +5,6 @@ src/public/uploads/              # uploaded images
 src/var/                        # rate-limit counters
 backups/                        # backup archives
 src/debug_session.php           # server-diagnostics tool (dev only)
-src/doctor.php                   # deployment self-check (delete after verify)
 
 # ── Third-party SDKs (shipped inside release ZIPs, not the repo) ──────
 # Object-storage SDKs are bundled at release time via tools/_package.py;

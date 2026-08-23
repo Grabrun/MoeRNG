@@ -36,7 +36,7 @@ def aws_allowed(rel):
     return parts[3] in AWS_INFRA         # 目录白名单
 
 SKIP = {'config','releases','.workbuddy','node_modules','uploads','.git','.vscode','.idea','.github','tests','bin','sample','_stale'}
-SKIP_FILE = {'debug_session.php','doctor.php','_package.py','_check_api.py','_check_zip_aws.py','_check_aws_refs.js','_check_zip_aws.js','_fix_memory.py','_check_frontend.py','_note_version.py','_log_today.py','_fix_memory_line.py','_cleanup_root2.py','_log_cleanup.py','_cleanup_root.py'}
+SKIP_FILE = {'debug_session.php','_package.py','_check_api.py','_check_zip_aws.py','_check_aws_refs.js','_check_zip_aws.js','_fix_memory.py','_check_frontend.py','_note_version.py','_log_today.py','_fix_memory_line.py','_cleanup_root2.py','_log_cleanup.py','_cleanup_root.py'}
 stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
 zip_path = os.path.join(DST, 'MoeRNG-v1.2.1-beta.2-{}.zip'.format(stamp))
 n = 0
