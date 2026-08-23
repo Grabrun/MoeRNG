@@ -107,7 +107,7 @@
         </p>
         <div class="form-group">
             <label>名称：<span id="newkey-name"></span></label>
-            <textarea id="newkey-value" class="form-control" rows="3" readonly class="font-mono text-small"></textarea>
+            <textarea id="newkey-value" class="form-control font-mono text-small" rows="3" readonly></textarea>
         </div>
         <div class="btn-group">
             <button type="button" class="btn btn-outline" data-close-modal="newkey-modal">关闭</button>

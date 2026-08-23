@@ -148,7 +148,9 @@ function initApiTester() {
     function showMeta(status, statusText, ms) {
         if (!metaBox) return;
         const ok = status >= 200 && status < 400;
-        metaBox.style.display = '';
+        // v1.2.1 修复: test-meta carries a 'hidden' class, use classList (inline
+        // display would lose to the !important rule).
+        metaBox.classList.remove('hidden');
         if (statusBadge) {
             statusBadge.textContent = status + ' ' + statusText;
             statusBadge.className = 'badge ' + (ok ? 'badge-success' : 'badge-danger');
@@ -189,7 +191,7 @@ function initApiTester() {
         runBtn.disabled = true;
         runBtn.textContent = 'Loading...';
         resultBox.innerHTML = '<div class="spinner"></div>';
-        if (metaBox) metaBox.style.display = 'none';
+        if (metaBox) metaBox.classList.add('hidden');
 
         const category = categorySelect.value;
         const type = typeSelect.value;
@@ -1268,11 +1270,14 @@ function initRandomDemo() {
         currentName = (category ? category + '-' : '') + 'random.' + (url.split('.').pop() || 'jpg');
         imgBox.src = url;
         imgBox.alt = category ? '随机图片：' + category : '随机图片';
-        imgBox.style.display = 'block';
+        // v1.2.1 修复: imgBox/zoomBtn/dlBtn carry a 'hidden' class (display:none
+        // !important) in the markup, so toggle via classList — an inline
+        // style.display would be overridden by the !important rule.
+        imgBox.classList.remove('hidden');
         if (placeholder) placeholder.style.display = 'none';
         if (urlEl) urlEl.textContent = url;
-        if (zoomBtn) zoomBtn.style.display = '';
-        if (dlBtn) dlBtn.style.display = '';
+        if (zoomBtn) zoomBtn.classList.remove('hidden');
+        if (dlBtn) dlBtn.classList.remove('hidden');
         // v1.2.1-beta.3 修复: "已签名"判断从 p= 改为 query 存在性——
         // COS/OSS 签名 URL 用 q-sign-* 参数（无 p=），本地 /files 用 p=，
         // 统一按「含 query 即临时签名链接」判断。
@@ -1351,7 +1356,7 @@ function initRandomDemo() {
         } catch (e) {
             imgBox.style.opacity = '1';
             imgBox.src = '';
-            imgBox.style.display = 'none';
+            imgBox.classList.add('hidden');
             if (placeholder) placeholder.style.display = '';
             if (urlEl) urlEl.textContent = '加载失败：' + e.message;
             showToast('随机图片加载失败', 'error');

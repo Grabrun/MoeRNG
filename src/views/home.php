@@ -117,10 +117,10 @@
                         <img id="rd-image" src="" alt="随机图片（点击查看大图）" class="rd-image-preview hidden">
                         <div class="rd-loading hidden" id="rd-loading"><span class="spinner"></span></div>
                     </div>
-                    <div class="rd-meta hidden" id="rd-meta" class="rd-meta"></div>
+                    <div class="rd-meta hidden" id="rd-meta"></div>
                     <div class="rd-footer">
                         <label for="rd-category" class="sr-only">随机图分类筛选</label>
-                        <select class="form-control" id="rd-category" class="rd-cat-select">
+                        <select class="form-control rd-cat-select" id="rd-category">
                             <option value="">全部</option>
                             <?php foreach ($categories as $cat): ?>
                             <option value="<?= h($cat->getSlug()) ?>"><?= h($cat->name) ?></option>
@@ -130,8 +130,8 @@
                         <span class="rd-url" id="rd-url">-</span>
                         <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 16) ?></button>
                         <!-- v1.2.1 迭代: view-large / download / history for the random demo -->
-                        <button type="button" class="btn btn-outline btn-sm" id="rd-zoom" aria-label="查看大图" title="查看大图" class="hidden"><?= icon('eye', 16) ?></button>
-                        <button type="button" class="btn btn-outline btn-sm" id="rd-download" aria-label="下载图片" title="下载图片" class="hidden"><?= icon('download', 16) ?></button>
+                        <button type="button" class="btn btn-outline btn-sm hidden" id="rd-zoom" aria-label="查看大图" title="查看大图"><?= icon('eye', 16) ?></button>
+                        <button type="button" class="btn btn-outline btn-sm hidden" id="rd-download" aria-label="下载图片" title="下载图片"><?= icon('download', 16) ?></button>
                     </div>
                 </div>
             </div>
@@ -393,7 +393,7 @@
                 <div class="preview-box" id="test-result">
                     <span class="text-muted">点击「Send Request」查看结果</span>
                 </div>
-                <div class="test-meta hidden" id="test-meta" class="hidden test-meta">
+                <div class="test-meta hidden" id="test-meta">
                     <span id="test-status" class="badge"></span>
                     <span id="test-duration" class="test-duration"></span>
                 </div>

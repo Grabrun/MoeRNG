@@ -162,7 +162,7 @@
         <span class="name" id="lb-name"></span>
         <span class="lb-count" id="lb-count"></span>
         <button type="button" class="btn btn-accent btn-sm" id="lb-copy"><?= icon('copy', 16) ?> 复制链接</button>
-        <span class="lb-url" id="lb-url" class="max-w-320 truncate"></span>
+        <span class="lb-url max-w-320 truncate" id="lb-url"></span>
     </div>
 </div>
 
