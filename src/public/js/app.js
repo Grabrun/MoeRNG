@@ -1203,11 +1203,20 @@ function initLightbox() {
         e.stopPropagation();
         e.preventDefault();
         const item = btn.closest('.image-item');
-        if (item) open(items.indexOf(item));
+        if (item) {
+            // v1.2.1 修复: refreshItems() must run BEFORE reading items, else on
+            // the very first click items is still [] and indexOf returns -1,
+            // so open(-1) no-ops — "first click does nothing".
+            refreshItems();
+            open(items.indexOf(item));
+        }
     });
     grid?.addEventListener('dblclick', function(e) {
         const item = e.target.closest('.image-item');
-        if (item) open(items.indexOf(item));
+        if (item) {
+            refreshItems();
+            open(items.indexOf(item));
+        }
     });
 
     // Controls.
