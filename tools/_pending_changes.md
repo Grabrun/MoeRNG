@@ -1,3 +1,4 @@
+- **bump APP_VERSION → 1.2.1-beta.3（2026-08-23 16:35，缓存遮蔽修复）**：style.css 大量改动（.grid-* minmax 加固/docs sidebar/quick-actions）但 ?v=APP_VERSION 未变，浏览器 7 天旧 CSS 缓存遮蔽了所有已部署的 CSS 修复（仪表盘 grid 溢出反复"没解决"的真因之一）；同步 home.php 兜底字面量 ×3 + _package.py zip 名模板；部署 beta.3 后所有资源 URL 自动刷新
 - **第二轮深度审计（2026-08-23 14:55）**：
   - 🚨 P0 安全——**install 重装漏洞**：step2/3/4/complete 均无 installed 检查，任何人可在已安装站点 POST 完整向导覆盖 config/database.php + 重建管理员（完全接管）；已加 5 处锁
   - ~~P0 信息泄露——doctor.php~~ **用户澄清：有管理员认证（已安装站点 403 匿名），已恢复 git 跟踪与打包**；debug_session.php 维持排除
