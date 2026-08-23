@@ -849,7 +849,10 @@ function initDropZone() {
             // v1.2.0 迭代: label floats above the bar (absolute positioning) —
             // display block keeps fill + floating label; flex used to squeeze
             // the text out at 100% width.
-            progressBar.style.display = 'block';
+            // v1.2.1 修复: use classList to toggle 'hidden' (display:none
+            // !important) instead of style.display — the .hidden rule's
+            // !important beats the inline style, so the bar never appeared.
+            progressBar.classList.remove('hidden');
             progressFill.style.width = '0%';
             progressFill.classList.remove('processing');
             // v1.1.1-beta.2: show a live percentage label next to the bar.
@@ -883,7 +886,7 @@ function initDropZone() {
             // frontend can show a real toast; the HTML-alert fallback below
             // still catches non-XHR-shaped responses (e.g. nginx 413 pages).
             xhr.onload = function() {
-                if (progressBar) progressBar.style.display = 'none';
+                if (progressBar) progressBar.classList.add('hidden');
                 if (progressFill) progressFill.classList.remove('processing');
                 // Primary path: backend JSON verdict ({success, message, errors}).
                 let payload = null;
@@ -915,7 +918,7 @@ function initDropZone() {
                 showToast(msg, 'error', 8000);
             };
             xhr.onerror = function() {
-                if (progressBar) progressBar.style.display = 'none';
+                if (progressBar) progressBar.classList.add('hidden');
                 showToast('网络错误：上传请求未到达服务器', 'error', 8000);
             };
             // Marks this request as AJAX so the backend returns JSON instead of
