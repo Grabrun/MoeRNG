@@ -34,6 +34,12 @@ class InstallController extends Controller
      */
     public function step2(Request $request): void
     {
+        // Security: block reinstall on an already-installed site. Without
+        // this, anyone could POST through the wizard and overwrite
+        // config/database.php + recreate the admin account (full takeover).
+        if (\App\Core\Config::get('app.installed', false)) {
+            $this->redirect('/');
+        }
         $this->render('install/step2', [
             'db' => [
                 'host' => '127.0.0.1',
@@ -50,6 +56,12 @@ class InstallController extends Controller
      */
     public function step3(Request $request): void
     {
+        // Security: block reinstall on an already-installed site. Without
+        // this, anyone could POST through the wizard and overwrite
+        // config/database.php + recreate the admin account (full takeover).
+        if (\App\Core\Config::get('app.installed', false)) {
+            $this->redirect('/');
+        }
         // Save DB config to session
         \App\Core\Session::set('install_db', [
             'host' => $request->input('db_host', '127.0.0.1'),
@@ -78,6 +90,12 @@ class InstallController extends Controller
      */
     public function step4(Request $request): void
     {
+        // Security: block reinstall on an already-installed site. Without
+        // this, anyone could POST through the wizard and overwrite
+        // config/database.php + recreate the admin account (full takeover).
+        if (\App\Core\Config::get('app.installed', false)) {
+            $this->redirect('/');
+        }
         \App\Core\Session::set('install_admin', [
             'email' => $request->input('email', ''),
             'username' => $request->input('username', ''),
@@ -105,6 +123,12 @@ class InstallController extends Controller
      */
     public function complete(Request $request): void
     {
+        // Security: block reinstall on an already-installed site. Without
+        // this, anyone could POST through the wizard and overwrite
+        // config/database.php + recreate the admin account (full takeover).
+        if (\App\Core\Config::get('app.installed', false)) {
+            $this->redirect('/');
+        }
         $dbConfig = \App\Core\Session::get('install_db');
         $adminConfig = \App\Core\Session::get('install_admin');
         $storageDriver = $request->input('storage_driver', 'local');
