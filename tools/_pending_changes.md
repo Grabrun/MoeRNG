@@ -1,6 +1,6 @@
 - **第二轮深度审计（2026-08-23 14:55）**：
   - 🚨 P0 安全——**install 重装漏洞**：step2/3/4/complete 均无 installed 检查，任何人可在已安装站点 POST 完整向导覆盖 config/database.php + 重建管理员（完全接管）；已加 5 处锁
-  - 🚨 P0 信息泄露——doctor.php 被打进 release zip 且被 git 公开跟踪；已加打包排除 + git rm --cached + .gitignore
+  - ~~P0 信息泄露——doctor.php~~ **用户澄清：有管理员认证（已安装站点 403 匿名），已恢复 git 跟踪与打包**；debug_session.php 维持排除
   - ⚠️ CspNonce 为 session 级（整个登录期恒定）→ 改 per-request 标准 nonce
   - ⚠️ 仪表盘 N+1 → 单条 GROUP BY 聚合修复
   - ✅ 审计通过项：路由中间件矩阵完整（admin=auth+csrf，api=apikey+ratelimit）、CSRF 全 POST 覆盖、XSS 扫描 45 候选全为服务端值、Session strict+httponly+samesite、API Key 192-bit 熵、委托层无选择器重叠、JSON-LD 不受 script-src 限制
