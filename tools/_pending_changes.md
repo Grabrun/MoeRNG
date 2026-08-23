@@ -1,3 +1,4 @@
+- **系统设置分页失效修复（2026-08-23 18:45，重复 class 第二/三形态）**：settings.php 分组 tab 从未生效——①PHP 条件输出 `<?= cond ? 'class="hidden"' : '' ?>` 造成双 class 属性（HTML5 保留第一个忽略第二个，首屏全板块同页显示）；②跨行静态 class="no-underline"（上一轮正则只匹配同行）；JS 侧 style.display 与 CSS class 双轨漂移且点击后高亮不跟随。已合并为单 class（_dedupe_class2.py 增强 \s*）+ tab JS 统一 classList.toggle('hidden') + btn-primary 高亮跟随；全站三种形态扫描归零
 - **CSP inline-style 全站迁移（2026-08-23 17:10，仪表盘溢出真根因）**：全站 0 个 style=" 属性 / 18 视图 PHP OK / JS OK / CSS OK；已回退 beta.3 bump 维持 beta.2
 - **合并重复 class 属性（2026-08-23 17:25，CSP 迁移副作用）**：style→class 替换时未合并已有 class，遗留 68 处 class="X" class="Y"（HTML5 保留第一个忽略后续），导致"存储用量"标题挤左、h4 默认字号等异常；脚本合并去重，全站归零
 - **bump APP_VERSION → 1.2.1-beta.3（2026-08-23 16:35，缓存遮蔽修复）**：style.css 大量改动（.grid-* minmax 加固/docs sidebar/quick-actions）但 ?v=APP_VERSION 未变，浏览器 7 天旧 CSS 缓存遮蔽了所有已部署的 CSS 修复（仪表盘 grid 溢出反复"没解决"的真因之一）；同步 home.php 兜底字面量 ×3 + _package.py zip 名模板；部署 beta.3 后所有资源 URL 自动刷新
