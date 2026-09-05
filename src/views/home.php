@@ -41,9 +41,6 @@
 <body>
     <div class="toast-container"></div>
 
-    <!-- v1.2.1 迭代: skip link for keyboard / screen-reader users -->
-    <a href="#main-content" class="skip-link">跳到主要内容</a>
-
     <!-- fixed top navigation bar -->
     <header class="site-nav">
         <a class="site-nav-brand" href="/" aria-label="返回<?= h($siteName) ?>首页" title="返回首页">
