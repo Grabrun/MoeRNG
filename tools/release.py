@@ -213,6 +213,20 @@ def main() -> None:
             if os.path.isfile(path):
                 with open(path, encoding='utf-8') as f:
                     note = f.read().strip()
+                # v1.3.0-beta.2 修复: note 草稿读入内存后立即删除，否则
+                # git() 的 `git add -A` 会把发布说明草稿一起提交进仓库
+                # （已两次发生在 tools/_relnote_*.md，需事后手工清理）。
+                # 仅清理仓库工作树内的草稿（releases/ 已被 gitignore，
+                # 放那里的草稿无需删除）；工作树外的路径不动。
+                try:
+                    rel = os.path.relpath(os.path.abspath(path), ROOT)
+                    inside_tree = not rel.startswith('..')
+                    if inside_tree and not rel.replace('\\', '/').startswith('releases'):
+                        os.remove(path)
+                        print(f'[OK  ] temp note removed: {path}')
+                except (OSError, ValueError):
+                    # ValueError: note 在其它盘符（relpath 跨盘符不支持）→ 保守不删
+                    pass
             else:
                 print(f'[FAIL] --note-file 不存在: {path}')
                 sys.exit(1)
