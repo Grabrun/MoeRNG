@@ -157,8 +157,64 @@ abstract class Model
         return $row ? static::hydrate($row) : null;
     }
 
+    // ── SQL injection hardening (CVE-2026-MR-001 / MR-002) ──────────────
+    // Every dynamic SQL fragment that reaches these query helpers must pass
+    // validation. Today all callers pass hardcoded literals; these guards
+    // make it IMPOSSIBLE for a future caller to turn a user-controlled value
+    // into injected SQL.
+
+    /** Column/identifier names: strict [A-Za-z_][A-Za-z0-9_]* only. */
+    private static function assertIdentifier(string $name): string
+    {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name)) {
+            throw new \InvalidArgumentException("Invalid SQL identifier: {$name}");
+        }
+        return $name;
+    }
+
+    /**
+     * ORDER BY clauses: only "col [ASC|DESC][, col [ASC|DESC]...]" is
+     * accepted. Column names are validated as identifiers; direction tokens
+     * must be exactly ASC or DESC. Anything else (subqueries, comments,
+     * stacked statements, functions) is rejected.
+     */
+    private static function assertOrderBy(string $orderBy): string
+    {
+        $orderBy = trim($orderBy);
+        if ($orderBy === '') {
+            return '';
+        }
+        foreach (explode(',', $orderBy) as $part) {
+            $tokens = preg_split('/\s+/', trim($part)) ?: [];
+            if (count($tokens) < 1 || count($tokens) > 2) {
+                throw new \InvalidArgumentException("Invalid ORDER BY fragment: {$part}");
+            }
+            self::assertIdentifier($tokens[0]);
+            if (isset($tokens[1]) && !preg_match('/^(ASC|DESC)$/i', $tokens[1])) {
+                throw new \InvalidArgumentException("Invalid ORDER BY direction: {$tokens[1]}");
+            }
+        }
+        return $orderBy;
+    }
+
+    /**
+     * WHERE fragments are composed by INTERNAL code only (hardcoded strings
+     * with ? placeholders; user values always go through bound params). As
+     * defense-in-depth, reject comment markers / statement separators /
+     * identifier-quoting that a hardcoded fragment has no business using —
+     * the same characters an injected payload needs.
+     */
+    private static function assertWhereFragment(string $where): string
+    {
+        if (preg_match('/[;`]|--|\/\*|\*\//', $where)) {
+            throw new \InvalidArgumentException('Suspicious WHERE fragment rejected');
+        }
+        return $where;
+    }
+
     public static function all(string $orderBy = ''): array
     {
+        $orderBy = self::assertOrderBy($orderBy);
         $sql = "SELECT * FROM `" . static::$table . "`";
         if ($orderBy) $sql .= " ORDER BY {$orderBy}";
         $stmt = Database::getInstance()->prepare($sql);
@@ -168,6 +224,7 @@ abstract class Model
 
     public static function where(string $column, mixed $value): array
     {
+        $column = self::assertIdentifier($column);
         $sql = "SELECT * FROM `" . static::$table . "` WHERE `{$column}` = ?";
         $stmt = Database::getInstance()->prepare($sql);
         $stmt->execute([$value]);
@@ -176,6 +233,7 @@ abstract class Model
 
     public static function firstWhere(string $column, mixed $value): ?static
     {
+        $column = self::assertIdentifier($column);
         $sql = "SELECT * FROM `" . static::$table . "` WHERE `{$column}` = ? LIMIT 1";
         $stmt = Database::getInstance()->prepare($sql);
         $stmt->execute([$value]);
@@ -185,6 +243,7 @@ abstract class Model
 
     public static function count(string $where = '', array $params = []): int
     {
+        $where = self::assertWhereFragment($where);
         $sql = "SELECT COUNT(*) FROM `" . static::$table . "`";
         if ($where) $sql .= " WHERE {$where}";
         $stmt = Database::getInstance()->prepare($sql);
@@ -194,8 +253,12 @@ abstract class Model
 
     public static function paginate(int $page = 1, int $perPage = 20, string $orderBy = '', string $where = '', array $params = []): array
     {
-        $perPage = max(1, $perPage);
-        $page = max(1, $page);
+        // (int) cast is defense-in-depth: LIMIT/OFFSET are interpolated, so
+        // never trust the caller to have coerced these to integers.
+        $page = max(1, (int) $page);
+        $perPage = max(1, (int) $perPage);
+        $orderBy = self::assertOrderBy($orderBy);
+        $where = self::assertWhereFragment($where);
         $total = static::count($where, $params);
         $offset = ($page - 1) * $perPage;
         $sql = "SELECT * FROM `" . static::$table . "`";

@@ -18,10 +18,14 @@ class ImageController extends Controller
 
     private array $allowedMimeTypes = [
         'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-        'image/bmp', 'image/svg+xml',
+        'image/bmp',
+        // SVG deliberately excluded (CVE-2026-MR-003): an <img>-served SVG can
+        // carry <script>/<iframe> payloads (stored XSS on the admin grid);
+        // CSP cannot fully neutralize scripts inside document-loaded SVGs.
+        // Logo upload already excludes SVG for the same reason.
     ];
 
-    private array $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
+    private array $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
 
     public function index(Request $request): void
     {
