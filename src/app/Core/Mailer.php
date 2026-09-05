@@ -25,6 +25,13 @@ class Mailer
      * data — a tampered value could point fsockopen at internal services
      * (169.254.169.254 metadata, 127.0.0.1 services, RFC1918...). The host is
      * resolved first and the resulting IP must be public.
+     *
+     * v1.3.0-beta.2 例外（自托管内网 SMTP）：局域网邮件服务器（内网 Postfix、
+     * MailHog 等）是真实用例。在 config/app.php 里显式设置
+     * 'allow_private_smtp' => true 即可放行私网/回环地址——开关放在文件系统
+     * 而非 settings 表，因为威胁是"能改数据库的攻击者"，而改 config 文件需要
+     * 服务器文件权限（即运维本人的权限级别）。云厂商 metadata 地址
+     * (169.254.169.254) 无论开关状态一律拒绝——它不是合法邮件服务器。
      */
     private static function assertSafeHost(string $host): string
     {
@@ -34,9 +41,19 @@ class Mailer
         if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
             throw new \RuntimeException('SMTP 主机无法解析为有效地址');
         }
+        // Metadata endpoint: never a legitimate mail server, always refused.
+        if ($ip === '169.254.169.254') {
+            throw new \RuntimeException('SMTP 主机不允许指向云元数据地址');
+        }
         $private = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
         if ($private === false) {
-            throw new \RuntimeException('SMTP 主机不允许指向内网或保留地址');
+            if ((bool) Config::get('app.allow_private_smtp', false)) {
+                return $host; // explicit operator opt-in from config/app.php
+            }
+            throw new \RuntimeException(
+                'SMTP 主机不允许指向内网或保留地址。如确需使用内网邮件服务器，'
+                . '请在 config/app.php 中设置 \'allow_private_smtp\' => true。'
+            );
         }
         return $host;
     }

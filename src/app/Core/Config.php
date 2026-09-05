@@ -32,7 +32,7 @@ class Config
                 @mkdir(self::$configPath, 0755, true);
             }
             if (is_dir(self::$configPath) && is_writable(self::$configPath)) {
-                $default = "<?php\n\nreturn [\n    'installed' => false,\n    'base_url'  => '',\n];\n";
+                $default = "<?php\n\nreturn [\n    'installed' => false,\n    'base_url'  => '',\n\n    // 自托管内网邮件服务器（局域网 Postfix/MailHog）需设为 true，\n    // 放行 SMTP 指向私网/回环地址；云元数据 169.254.169.254 始终拒绝。\n    // 'allow_private_smtp' => false,\n];\n";
                 @file_put_contents($appFile, $default, LOCK_EX);
             }
         }
