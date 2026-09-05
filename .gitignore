@@ -18,10 +18,6 @@ releases/
 # ── DSH agent memory (deployment & credential discussion) ─────────────
 .dsh/
 
-# ── Scratch / one-off helper scripts ──────────────────────────────────
-tools/_log_*.py
-tools/_beta*.py
-tools/_fix_*.py
 
 # ── OS / editor cruft ─────────────────────────────────────────────────
 nul
@@ -31,8 +27,8 @@ Thumbs.db
 tools/__pycache__/
 reference/
 
-# ── Brand design assets (user-provided source art; root-level only, NOT src/assets) ──
-/assets/*
-# ...except the README cover, which must live in the repo.
-!/assets/banner-readme.png
+# ── Local-only tooling (release scripts never ship to the repo) ──────
+/tools/
 
+# ── Brand design assets (local source art only) ──────────────────────
+/assets/
