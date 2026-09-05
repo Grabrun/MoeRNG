@@ -16,10 +16,10 @@
 - 🌳 **多级分类树** — 任意嵌套，按分类（含子分类）取图
 - ⚡ **双模式返回** — JSON 结构化数据 / 302 重定向直出图片
 - 🔐 **API Key + 限流** — 可选鉴权，DB token bucket 速率限制（默认关闭）
-- ☁️ **6 家对象存储** — 腾讯云 COS / 阿里云 OSS / AWS S3 / 华为云 OBS / 又拍云 / 七牛 Kodo（全部官方 SDK，零自研签名）
+- ☁️ **6 家对象存储** — 腾讯云 COS / 阿里云 OSS / AWS S3 / 华为云 OBS / 又拍云 / 七牛 Kodo（全部官方 SDK，零自研签名），多存储实例管理
 - 🎨 **萌系视觉** — 粉紫主题 + 主题切换 + 双语界面
-- 🛡️ **安全基线** — CSP / 安全响应头 / 防会话固定 / 签名密钥独立 / 限流 fail-closed / 操作审计
-- 🖥️ **管理后台** — 图片/分类/用户/Key/存储实例/设置/审计日志/备份
+- 🛡️ **安全基线** — CSP / 安全响应头 / 防会话固定 / 签名密钥独立 / 限流 fail-closed / 操作审计 / 全链路 CSRF 防护 / 登录双维度锁定 / 存储凭据 AES-256-GCM 加密存储
+- 🖥️ **管理后台** — 图片/分类/用户/Key/存储实例/设置/审计日志/备份；登录支持用户名或邮箱 + 记住我（7 天自动登录）
 
 <br>
 
@@ -39,7 +39,7 @@
 }
 ```
 
-加 `?format=redirect` 直接 302 跳到图片 URL。
+加 `?type=redirect` 直接 302 跳到图片 URL。
 
 <br>
 
@@ -67,7 +67,7 @@
 ### 安装
 
 1. 将 `src/` 全部内容上传到站点根目录
-2. 确保 `config/`、`public/uploads/` 目录可写
+2. 确保 `config/`、`public/uploads/` 目录可写（`config/` 用于运行时生成 database / signing_key / credentials 配置）
 3. 配置 Nginx rewrite（参考 `src/nginx.conf.example`）
    - **宝塔用户**：直接使用 `src/docs/BT-DEPLOY.md` 中的「伪静态」配置（含 v1.2.1-beta.2 起的安全加固）
 4. 浏览器访问站点根目录 → 进入安装向导 → 填写数据库 + 管理员 + 存储
@@ -85,8 +85,8 @@ Base URL：`https://your-domain.com`
 |------|------|
 | `GET /api/v1/random` | 真随机取图 |
 | `GET /api/v1/random?category=landscape` | 按分类取图（含子分类） |
-| `GET /api/v1/random?format=redirect` | 302 重定向直出图片 |
-| `GET /api/v1/random?format=json` | JSON 结构化（默认） |
+| `GET /api/v1/random?type=redirect` | 302 重定向直出图片 |
+| `GET /api/v1/random?type=json` | JSON 结构化（默认） |
 | `GET /api/v1/images?page=1&per_page=20` | 图片列表 |
 | `GET /api/v1/categories` | 分类列表 |
 | `GET /api/v1/stats` | 服务统计 |
@@ -114,7 +114,7 @@ src/
 ├── public/            # 静态资源与上传目录
 ├── sdk/               # 对象存储官方 SDK（发布包内置，源码仓库忽略）
 ├── schema.sql         # 初始表结构
-└── config/            # 配置（database.php / signing_key.php 由运行时生成）
+└── config/            # 配置（app.php 内置；database.php / signing_key.php / credentials.php 由运行时生成）
 ```
 
 <br>

@@ -166,8 +166,8 @@
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('cloud', 28) ?></div>
-                <h3>多存储驱动</h3>
-                <p>本地存储与对象存储 (S3/OSS/COS) 可切换，支持 CDN 加速</p>
+                <h3>多存储实例</h3>
+                <p>本地存储与 6 家对象存储（COS / OSS / S3 / OBS / 又拍云 / 七牛）官方 SDK 接入，多实例管理、签名直链与 CDN 加速</p>
             </div>
         </section>
 
@@ -410,8 +410,9 @@
                     <ul class="text-muted about-list">
                         <li>轻量自研框架，零重型依赖</li>
                         <li>多级分类树，指定分类随机取图</li>
-                        <li>对象存储接入：COS / OSS / AWS S3 / OBS</li>
-                        <li>内置管理后台与操作审计</li>
+                        <li>6 家对象存储官方 SDK，多存储实例配置、签名直链与 CDN 加速</li>
+                        <li>内置管理后台：图片 / 分类 / 存储 / 用户 / API Key / 操作审计 / 备份</li>
+                        <li>安全基线：CSP 防护、登录双维度锁定、存储凭据加密存储、全链路 CSRF 防护</li>
                     </ul>
                 </div>
                 <div class="about-card">

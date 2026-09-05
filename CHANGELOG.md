@@ -2,6 +2,74 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-09-05
+
+> 测试线 v1.3.0-beta.1 / v1.3.0-beta.2 收口为正式版。1.3.0 聚合了 1.2.1 正式版以来的全部迭代：登录增强、三轮安全审计修复、凭据加密存储与密钥配置化、内网 SMTP 支持、以及多项 UI 修复。
+
+### ✨ 新功能
+
+- 登录增强：支持用户名或邮箱登录；「记住我」7 天自动登录（HttpOnly + Secure + SameSite Cookie，服务端只存 SHA-256 哈希，登出即注销）
+- 存储凭据加密存储：`storage_profiles` 中的 AccessKey/SecretKey 以 AES-256-GCM 密封，密钥由统一配置体系管理（`config/credentials.php`，运行时生成）
+- 自托管内网 SMTP 支持：`config/app.php` 显式设置 `allow_private_smtp => true` 后，`mail_host` 可指向局域网邮件服务器（云元数据地址始终拒绝）
+
+### ✨ 增强
+
+- API 文档侧边栏改为 tab 切换，支持四个 endpoint 间快速切换
+- 系统设置分组 tab 分页展示；保存条改为贴底常驻工具栏
+- 全站版本号单一来源化：`bootstrap.php` 的 `APP_VERSION` 是唯一定义处，页面展示 / 资源缓存戳 / 发布包文件名全部自动跟随
+- 登录锁定升级为双维度：IP（原有阈值）+ 用户名（4 倍阈值），防换 IP 爆破单账号
+- GitHub Token 改为项目级隔离（发布脚本自动读取，不落系统环境）
+
+### 🔧 安全修复（三轮审计，共 15 项）
+
+- Model 查询接口 SQL 注入加固（CWE-89）：标识符校验 / ORDER BY 白名单语法 / WHERE 片段危险字符拒绝 / LIMIT 强转
+- 备份路径穿越（CWE-22）：绝对路径必须位于项目内，相对路径拒绝 `..` 段；备份目录加 Web 防护与随机文件名
+- 审计日志敏感字段脱敏（CWE-532）：password / secret 类字段记录为 `***`
+- API Key 不再在列表 / 编辑响应中返回完整明文（CWE-312），仅创建时一次性展示
+- SMTP 主机防 SSRF（CWE-918）：解析后拒绝内网 / 保留 IP
+- 全站 `hidden` 类与 `style.display` 配对冲突排查修复；三种形态重复 class 属性清理
+- 管理后台时区显示规范化（PRC → Asia/Shanghai）；上传进度条 / 图片放大首击等多处 UI 修复
+
+### 📄 文档
+
+- 前台介绍与 GitHub README 全面更新（修正 API 参数示例 `format` → `type`，补充安全特性说明）；移除首页「跳到主要内容」skip link
+
+## [1.3.0-beta.2] - 2026-09-05
+
+beta.1 之后的增量：
+
+### ✨ 增强
+
+- 存储凭据加密密钥并入统一配置体系（`Config::get('credentials.key')`，持久化为 `config/credentials.php`，兼容迁移旧独立密钥文件）
+- 自托管内网 SMTP 例外：`config/app.php` 的 `allow_private_smtp` 开关（默认 false，云元数据地址始终拒绝）
+
+### 🔧 安全修复（审计第二批）
+
+- 备份路径穿越加固 + 备份目录 Web 防护与随机文件名
+- 审计日志 password / secret 字段脱敏
+- CsrfMiddleware 显式短路返回；`Response::redirect` 拒绝 header 注入与危险 scheme
+- API Key 列表 / 编辑响应移除完整明文
+
+### 📄 文档
+
+- 前台介绍更新（多存储实例卡片、技术特性列表）；README 修正 API 参数示例并补充安全特性；移除首页「跳到主要内容」skip link
+
+## [1.2.1] - 2026-08-23
+
+> 测试线 v1.2.1-beta.1 ~ v1.2.1-beta.3 收口为正式版。
+
+### ✨ 新功能
+
+- 随机图功能增强：Lightbox 大图预览 + 下载 + 元信息行
+- 设置页按功能重排分组；Logo 上传合并单按钮
+- 本地存储实例支持 CDN 配置；对象存储自定义源站域名（六家）
+- SEO/a11y：JSON-LD / OG 补齐 / robots.txt
+
+### 🔧 安全修复
+
+- P0 级 install 重装漏洞：安装向导步骤全部加 installed 锁，杜绝已安装站点被重建管理员
+- CSP nonce 加固；诊断端点保留管理员认证
+
 ## [1.2.1-beta.3] - 2026-08-23
 
 ### ✨ 增强
