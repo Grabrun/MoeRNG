@@ -112,6 +112,18 @@ class AuthController extends Controller
 
     public function logout(Request $request): void
     {
+        // v1.3.0-beta.2 安全加固 (CVE-2026-MR-005): the route is POST-only and
+        // requires a valid CSRF token — a plain <img src="/admin/logout"> can
+        // no longer force-logout a logged-in admin. Deliberately NOT using
+        // Controller::validateCsrf() here: its 419-JSON answer is meant for
+        // AJAX flows, while logout is a navigation action — a stale/expired
+        // token just bounces the user back to the dashboard with a flash.
+        // Validation MUST run before Session::destroy() wipes the token.
+        if (!Session::verifyCsrf((string) ($_POST['_csrf_token'] ?? ''))) {
+            Session::flash('error', '登出请求无效或已过期，请重试。');
+            $this->redirect('/admin');
+            return;
+        }
         // v1.2.1 登录增强: revoke any remember-me token before destroying the
         // session, so the browser cookie can no longer auto-login.
         $raw = (string) ($_COOKIE[self::REMEMBER_COOKIE] ?? '');

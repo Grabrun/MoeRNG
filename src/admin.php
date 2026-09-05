@@ -17,7 +17,9 @@ $router = $app->router();
 $authController = \App\Controllers\Admin\AuthController::class;
 $router->get('/admin/login', [$authController, 'loginForm']);
 $router->post('/admin/login', [$authController, 'login']);
-$router->get('/admin/logout', [$authController, 'logout']);
+// v1.3.0-beta.2 安全加固 (CVE-2026-MR-005): logout 必须是 POST + CSRF——GET 登出
+// 可被 <img src="/admin/logout"> 强制触发（Logout CSRF / 强制登出 DoS）。
+$router->post('/admin/logout', [$authController, 'logout']);
 // v1.1.0-beta.4: captcha image (needed by the login form before auth).
 $router->get('/admin/captcha', [\App\Core\Captcha::class, 'render']);
 

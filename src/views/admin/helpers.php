@@ -39,7 +39,12 @@ function admin_header($title, $bodyClass = '') { ?>
             </nav>
             <div class="sidebar-footer">
                 <a href="/" target="_blank"><?= icon('link', 20) ?><span>返回前台</span></a>
-                <a href="/admin/logout"><?= icon('logout', 20) ?><span>退出登录</span></a>
+                <!-- v1.3.0-beta.2 (CVE-2026-MR-005): logout is POST + CSRF now —
+                     a GET link would be force-triggerable via <img src>. -->
+                <form method="POST" action="/admin/logout" class="logout-form">
+                    <input type="hidden" name="_csrf_token" value="<?= \App\Core\Session::csrfToken() ?>">
+                    <button type="submit" title="退出登录"><?= icon('logout', 20) ?><span>退出登录</span></button>
+                </form>
             </div>
         </aside>
         <main class="main-content">

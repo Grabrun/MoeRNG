@@ -19,7 +19,11 @@
                 <a href="/admin/users" class="<?= ($title ?? '') === '用户管理' ? 'active' : '' ?>">用户管理</a>
                 <a href="/admin/apikeys" class="<?= ($title ?? '') === 'API Key 管理' ? 'active' : '' ?>">API Keys</a>
                 <a href="/" target="_blank" class="mt-3 border-top pt-3">返回前台</a>
-                <a href="/admin/logout">退出登录</a>
+                <!-- v1.3.0-beta.2 (CVE-2026-MR-005): logout is POST + CSRF now -->
+                <form method="POST" action="/admin/logout" class="logout-form">
+                    <input type="hidden" name="_csrf_token" value="<?= \App\Core\Session::csrfToken() ?>">
+                    <button type="submit">退出登录</button>
+                </form>
             </nav>
         </aside>
         <main class="main-content">

@@ -1190,6 +1190,11 @@ body.modal-open { overflow: hidden; }
         .sidebar-footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
         .sidebar-footer a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: all var(--transition); }
         .sidebar-footer a:hover { background: var(--bg-input); color: var(--text); }
+        /* v1.3.0-beta.2 (CVE-2026-MR-005): logout is a POST form now — render the
+           form transparently and style its button exactly like the sibling links */
+        .sidebar-footer .logout-form { display: contents; }
+        .sidebar-footer .logout-form button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; background: none; border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 0.9rem; font-family: inherit; cursor: pointer; text-align: left; transition: all var(--transition); }
+        .sidebar-footer .logout-form button:hover { background: var(--bg-input); color: var(--text); }
         .main-content { margin-left: 240px; flex: 1; padding: 32px; min-width: 0; }
         .page-header { margin-bottom: 32px; }
         .page-header h1 { font-size: 1.5rem; }
@@ -1231,6 +1236,11 @@ body.modal-open { overflow: hidden; }
         .sidebar-footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
         .sidebar-footer a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: all var(--transition); }
         .sidebar-footer a:hover { background: var(--bg-input); color: var(--text); }
+        /* v1.3.0-beta.2 (CVE-2026-MR-005): logout is a POST form now — render the
+           form transparently and style its button exactly like the sibling links */
+        .sidebar-footer .logout-form { display: contents; }
+        .sidebar-footer .logout-form button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; background: none; border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 0.9rem; font-family: inherit; cursor: pointer; text-align: left; transition: all var(--transition); }
+        .sidebar-footer .logout-form button:hover { background: var(--bg-input); color: var(--text); }
         .main-content { margin-left: 240px; flex: 1; padding: 32px; min-width: 0; }
         .page-header { margin-bottom: 32px; }
         .page-header h1 { font-size: 1.5rem; }
