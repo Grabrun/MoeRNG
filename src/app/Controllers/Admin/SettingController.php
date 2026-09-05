@@ -149,7 +149,15 @@ class SettingController extends Controller
             }
             Setting::set($key, $newValue);
             if ($newValue !== $oldValue) {
-                $diff[$key] = ['old' => $oldValue, 'new' => $newValue];
+                // v1.3.0-beta.2 安全加固 (CVE-2026-MR-007, CWE-532): passwords and
+                // credential secrets must never land in the audit log in clear
+                // text — log that they changed, not what they changed to.
+                $sensitive = ($def['type'] ?? '') === 'password'
+                    || str_ends_with($key, '_password')
+                    || str_contains(strtolower($key), 'secret');
+                $diff[$key] = $sensitive
+                    ? ['old' => '***', 'new' => '***']
+                    : ['old' => $oldValue, 'new' => $newValue];
             }
         }
 

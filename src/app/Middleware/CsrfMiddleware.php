@@ -20,6 +20,10 @@ class CsrfMiddleware
             if (!Session::verifyCsrf($token)) {
                 $response = new Response();
                 $response->json(['error' => 'CSRF token validation failed.'], 419);
+                // v1.3.0-beta.2 安全加固 (CVE-2026-MR-009): json() exits, but never
+                // rely on it — make the guard's short-circuit explicit so CSRF
+                // protection cannot be bypassed even if exit were intercepted.
+                return null;
             }
         }
         return $next($request);

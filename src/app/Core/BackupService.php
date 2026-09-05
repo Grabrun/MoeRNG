@@ -16,7 +16,16 @@ use App\Models\Setting;
  */
 class BackupService
 {
-    /** Absolute backup directory (settings.backup_path, default backups/). */
+    /**
+     * Absolute backup directory (settings.backup_path, default backups/).
+     * v1.3.0-beta.2 安全加固 (CVE-2026-MR-006, CWE-22): the configured path is
+     * operator-controlled data — a compromised setting could previously point
+     * it at ANY directory (web root, /tmp, C:\), letting a SQL dump land
+     * somewhere web-accessible. Now:
+     *   - absolute paths must resolve INSIDE the project directory;
+     *   - relative paths may not contain '..' segments (no traversal);
+     *   - anything else throws.
+     */
     public static function dir(): string
     {
         $path = trim(Setting::get('backup_path', 'backups'));
@@ -25,9 +34,39 @@ class BackupService
         }
         $root = dirname(__DIR__, 2);
         if (self::isAbsolute($path)) {
+            $real = realpath(rtrim($path, '/\\'));
+            // Accept either the dir itself (must exist) or its nearest existing
+            // ancestor, so a not-yet-created subdir under the project still works.
+            if ($real === false) {
+                $parent = rtrim($path, '/\\');
+                while ($parent !== '' && !is_dir($parent)) {
+                    $up = dirname($parent);
+                    if ($up === $parent) { $parent = ''; break; }
+                    $parent = $up;
+                }
+                $real = $parent !== '' ? realpath($parent) : false;
+            }
+            if ($real === false || !self::pathInside($real, $root)) {
+                throw new \InvalidArgumentException('备份目录必须位于项目目录内（出于安全考虑）。');
+            }
             return rtrim($path, '/\\');
         }
-        return $root . '/' . trim(str_replace('\\', '/', $path), '/');
+        $normalized = trim(str_replace('\\', '/', $path), '/');
+        // No traversal: every '..' segment is rejected outright.
+        foreach (explode('/', $normalized) as $seg) {
+            if ($seg === '..') {
+                throw new \InvalidArgumentException('备份目录不允许包含 .. 路径段。');
+            }
+        }
+        return $root . '/' . $normalized;
+    }
+
+    /** True if $path is $root itself or lives underneath it. */
+    private static function pathInside(string $path, string $root): bool
+    {
+        $root = rtrim(str_replace('\\', '/', realpath($root) ?: $root), '/');
+        $path = str_replace('\\', '/', $path);
+        return $path === $root || str_starts_with($path, $root . '/');
     }
 
     private static function isAbsolute(string $p): bool
@@ -75,8 +114,16 @@ class BackupService
         if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
             return [false, "无法创建备份目录: {$dir}", ''];
         }
+        // v1.3.0-beta.2 安全加固 (CVE-2026-MR-018): the project root IS the web
+        // doc-root, so defense at the web-server layer is mandatory. Best-effort
+        // Apache guard (no-op on nginx — operators should add a location rule);
+        // plus an unguessable random suffix on every backup filename so the
+        // files can't be enumerated even if the dir is reachable.
+        @file_put_contents($dir . '/.htaccess', "Require all denied\n");
+        @file_put_contents($dir . '/index.html', '');
         $stamp = date('Ymd-His');
-        $base = rtrim($dir, '/\\') . '/moe-rng-' . $stamp;
+        $rand  = bin2hex(random_bytes(4));
+        $base = rtrim($dir, '/\\') . '/moe-rng-' . $stamp . '-' . $rand;
         $sqlFile = $base . '.sql';
 
         $err = self::dumpSql($sqlFile);

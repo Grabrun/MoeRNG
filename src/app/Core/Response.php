@@ -33,6 +33,20 @@ class Response
 
     public function redirect(string $url, int $status = 302): never
     {
+        // v1.3.0-beta.2 安全加固 (CVE-2026-MR-010, CWE-601): defense-in-depth on
+        // every Location header. Callers today pass internal paths or object-
+        // storage URLs (the random endpoint 302s to COS/OSS), so the rule is:
+        //   - reject header injection (\r\n) unconditionally;
+        //   - absolute URLs must be http/https (no javascript:/data:/...);
+        //   - everything else must be a site-relative path starting with '/'.
+        $url = str_replace(["\r", "\0"], '', $url);
+        if (str_contains($url, "\n") || str_starts_with($url, '//')
+            || preg_match('/^\s*[\w.+-]+:/i', $url) && !preg_match('#^https?://#i', $url)) {
+            throw new \InvalidArgumentException('Blocked unsafe redirect target');
+        }
+        if (!preg_match('#^https?://#i', $url) && !str_starts_with($url, '/')) {
+            throw new \InvalidArgumentException('Redirect target must be absolute http(s) URL or site-relative path');
+        }
         http_response_code($status);
         foreach ($this->headers as $k => $v) {
             header("{$k}: {$v}");

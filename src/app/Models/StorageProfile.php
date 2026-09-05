@@ -25,7 +25,7 @@ class StorageProfile extends Model
         'name', 'driver', 'provider', 'config', 'is_default', 'enabled', 'sort_order',
     ];
 
-    /** Decoded config array (never null). */
+    /** Decoded config array (never null). Secret fields are transparently decrypted. */
     public function config(): array
     {
         $raw = (string) ($this->attributes['config'] ?? '');
@@ -34,10 +34,37 @@ class StorageProfile extends Model
         }
         try {
             $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
-            return is_array($decoded) ? $decoded : [];
+            $config = is_array($decoded) ? $decoded : [];
         } catch (\Throwable) {
             return [];
         }
+        // v1.3.0-beta.2 (CVE-2026-MR-013): credentials are sealed at rest —
+        // hand the caller plaintext values only.
+        return \App\Core\CredentialCipher::openConfig($config);
+    }
+
+    /**
+     * v1.3.0-beta.2 (CVE-2026-MR-013): seal credential fields before the row
+     * hits the database. Pre-existing plaintext configs keep working (decrypt
+     * is prefix-agnostic) and are re-sealed on their next save.
+     */
+    public function save(): bool
+    {
+        $raw = (string) ($this->attributes['config'] ?? '');
+        if ($raw !== '') {
+            try {
+                $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+                if (is_array($decoded)) {
+                    $this->attributes['config'] = json_encode(
+                        \App\Core\CredentialCipher::sealConfig($decoded),
+                        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                    );
+                }
+            } catch (\Throwable) {
+                // leave the raw value untouched — save() must stay best-effort
+            }
+        }
+        return parent::save();
     }
 
     public function isS3(): bool

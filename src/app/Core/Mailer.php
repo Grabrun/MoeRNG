@@ -21,6 +21,27 @@ class Mailer
     }
 
     /**
+     * v1.3.0-beta.2 安全加固 (CVE-2026-MR-014, CWE-918): mail_host is stored
+     * data — a tampered value could point fsockopen at internal services
+     * (169.254.169.254 metadata, 127.0.0.1 services, RFC1918...). The host is
+     * resolved first and the resulting IP must be public.
+     */
+    private static function assertSafeHost(string $host): string
+    {
+        $ip = filter_var($host, FILTER_VALIDATE_IP)
+            ? $host
+            : (gethostbyname($host) !== $host ? gethostbyname($host) : '');
+        if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            throw new \RuntimeException('SMTP 主机无法解析为有效地址');
+        }
+        $private = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
+        if ($private === false) {
+            throw new \RuntimeException('SMTP 主机不允许指向内网或保留地址');
+        }
+        return $host;
+    }
+
+    /**
      * Send one HTML email. Returns '' on success, or a human-readable error.
      */
     public static function send(string $to, string $subject, string $html): string
@@ -28,6 +49,11 @@ class Mailer
         $host = trim(Setting::get('mail_host', ''));
         if ($host === '') {
             return 'SMTP 服务器未配置（mail_host）';
+        }
+        try {
+            self::assertSafeHost($host);
+        } catch (\RuntimeException $e) {
+            return $e->getMessage();
         }
         $port = (int) (Setting::get('mail_port', '465') ?: 465);
         $enc = Setting::get('mail_encryption', 'ssl');

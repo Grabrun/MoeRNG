@@ -143,10 +143,14 @@ class ApiKeyController extends Controller
     /** @return array<string, mixed> */
     private function present(ApiKey $apiKey): array
     {
+        // v1.3.0-beta.2 安全加固 (CVE-2026-MR-011, CWE-312): list/edit responses
+        // must never carry the full plaintext key — only the 16-char preview.
+        // The full value is handed out exactly once, in create(), via the
+        // separate 'plain_key' field (one-time reveal, same flow as major
+        // token providers).
         return [
             'id' => (int) $apiKey->id,
             'name' => (string) $apiKey->name,
-            'key' => (string) $apiKey->key,
             'key_preview' => substr((string) $apiKey->key, 0, 16) . '...',
             'permissions' => json_decode((string) ($apiKey->permissions ?: '[]'), true) ?: [],
             'rate_limit' => (int) $apiKey->rate_limit,

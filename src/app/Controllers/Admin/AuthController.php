@@ -48,8 +48,14 @@ class AuthController extends Controller
         $ip = substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
 
         // 1) Login lockout (settings.login_max_attempts / login_lockout_minutes).
-        if ($this->loginLocked()) {
-            AuditLog::record('login_blocked', ['ip' => $ip, 'reason' => 'lockout']);
+        //    v1.3.0-beta.2 (CVE-2026-MR-016): lock on TWO dimensions — per-IP
+        //    (strict) and per-username (looser, 4x the attempts) so a botnet
+        //    rotating IPs cannot brute-force one account, while an attacker
+        //    deliberately spamming a victim's username needs 4x the traffic to
+        //    cause a lock (limits the lockout-DoS surface).
+        $userBucket = $this->loginUserBucket($login);
+        if ($this->loginLocked() || $this->userLocked($userBucket)) {
+            AuditLog::record('login_blocked', ['ip' => $ip, 'reason' => 'lockout', 'login' => substr($login, 0, 120)]);
             Session::flash('error', '登录尝试过于频繁，请稍后再试。');
             $this->redirect('/admin/login');
             return;
@@ -66,6 +72,9 @@ class AuthController extends Controller
         $user = User::findByLogin($login);
         if (!$user || !$user->verifyPassword($password)) {
             RateLimiter::hit($this->loginBucket($ip), $this->loginMaxAttempts(), $this->loginWindow());
+            if ($login !== '') {
+                RateLimiter::hit($userBucket, $this->loginMaxAttempts() * 4, $this->loginWindow());
+            }
             AuditLog::record('login_failed', ['ip' => $ip, 'reason' => 'credentials', 'login' => substr($login, 0, 120)]);
             Session::flash('error', '用户名/邮箱或密码错误。');
             $this->redirect('/admin/login');
@@ -79,8 +88,9 @@ class AuthController extends Controller
             return;
         }
 
-        // Success: reset the lockout counter for this IP + audit.
+        // Success: reset the lockout counters for this IP + this username + audit.
         RateLimiter::reset($this->loginBucket($ip));
+        RateLimiter::reset($userBucket);
         // v1.2.1 security (session fixation): rotate the session ID on login
         // so an attacker-supplied PHPSESSID can never be used post-auth.
         if (session_status() === PHP_SESSION_ACTIVE) {
@@ -164,6 +174,21 @@ class AuthController extends Controller
     private function loginBucket(string $ip): string
     {
         return 'login:' . ($ip !== '' ? $ip : 'unknown');
+    }
+
+    /** v1.3.0-beta.2 (CVE-2026-MR-016): per-username lockout bucket. */
+    private function loginUserBucket(string $login): string
+    {
+        return 'login-user:' . mb_strtolower(trim($login));
+    }
+
+    /** Whether the username bucket is in lockout (read-only). */
+    private function userLocked(string $bucket): bool
+    {
+        if (trim(substr($bucket, strlen('login-user:'))) === '') {
+            return false; // empty login — nothing to lock on
+        }
+        return !RateLimiter::peek($bucket, $this->loginMaxAttempts() * 4, $this->loginWindow())[0];
     }
 
     private function loginMaxAttempts(): int
