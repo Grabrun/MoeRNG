@@ -9,14 +9,17 @@ namespace App\Core;
  *
  * Threat model: a database leak (SQL dump, misconfigured backup) must NOT
  * hand over usable cloud credentials. Secrets are sealed with AES-256-GCM
- * under a key that lives OUTSIDE the database, in config/credential_key.php.
- * That file is generated on first use and written as plain PHP, so even a
- * direct web request executes it instead of revealing its contents (the same
- * trust model as config/database.php).
+ * under a key that lives OUTSIDE the database, in the standard config/
+ * directory as config/credentials.php (same layout and trust model as
+ * config/app.php / config/database.php — plain PHP, so a direct web request
+ * executes the file instead of revealing its contents). The key is read via
+ * Config::get('credentials.key') like every other base setting.
  *
  * Compatibility: values without the "enc:v1:" prefix are returned as-is, so
  * pre-existing plaintext configs keep working and get re-sealed transparently
- * the next time the profile is saved.
+ * the next time the profile is saved. A site that already generated the
+ * earlier standalone config/credential_key.php is migrated into the unified
+ * config file on first use.
  */
 final class CredentialCipher
 {
@@ -101,7 +104,12 @@ final class CredentialCipher
         return $config;
     }
 
-    /** Load (creating on first use) the 256-bit key from config/credential_key.php. */
+    /**
+     * Load (creating on first use) the 256-bit key through the standard config
+     * system: Config::get('credentials.key'), backed by config/credentials.php.
+     * A site that generated the earlier standalone credential_key.php is
+     * migrated transparently; a read-only config/ degrades to plaintext.
+     */
     private static function loadKey(): ?string
     {
         if (self::$key !== null) {
@@ -110,29 +118,61 @@ final class CredentialCipher
         if (self::$unavailable) {
             return null;
         }
-        $file = dirname(__DIR__, 2) . '/config/credential_key.php';
-        if (is_file($file)) {
-            $hex = @include $file;
-            if (is_string($hex) && preg_match('/^[0-9a-f]{64}$/', $hex)) {
-                self::$key = hex2bin($hex);
+        $configPath = dirname(__DIR__, 2) . '/config';
+
+        // 1) Already in the unified config (normal path after first generation).
+        $existing = Config::get('credentials.key');
+        if (is_string($existing) && preg_match('/^[0-9a-f]{64}$/', $existing)) {
+            self::$key = hex2bin($existing);
+            return self::$key;
+        }
+
+        // 2) Migration: a previous release stored the key standalone. Pull it
+        //    into the unified config so credential_key.php can be retired.
+        $legacyFile = $configPath . '/credential_key.php';
+        if (is_file($legacyFile)) {
+            $legacy = @include $legacyFile;
+            if (is_string($legacy) && preg_match('/^[0-9a-f]{64}$/', $legacy)) {
+                if (self::persistKey($legacy)) {
+                    self::$key = hex2bin($legacy);
+                    @unlink($legacyFile); // best-effort cleanup of the retired file
+                    return self::$key;
+                }
+                // could not persist — keep using the legacy key in-memory
+                self::$key = hex2bin($legacy);
                 return self::$key;
             }
-            self::$unavailable = true;
-            return null;
         }
-        // First use: generate and persist. If the FS is read-only, degrade.
+
+        // 3) First use: generate and persist into the unified config.
         try {
             $hex = bin2hex(random_bytes(32));
-            if (@file_put_contents($file, "<?php return '{$hex}';\n") === false) {
+            if (!self::persistKey($hex)) {
                 self::$unavailable = true;
                 return null;
             }
-            @chmod($file, 0640);
             self::$key = hex2bin($hex);
             return self::$key;
         } catch (\Throwable) {
             self::$unavailable = true;
             return null;
         }
+    }
+
+    /** Write the key into config/credentials.php and mirror it into Config memory. */
+    private static function persistKey(string $hex): bool
+    {
+        $configPath = dirname(__DIR__, 2) . '/config';
+        if (!is_dir($configPath)) {
+            @mkdir($configPath, 0755, true);
+        }
+        $file = $configPath . '/credentials.php';
+        $content = "<?php\n\n// v1.3.0-beta.2 (CVE-2026-MR-013): at-rest encryption key for stored\n// credentials (storage AccessKey/SecretKey). Part of the site's base config —\n// same trust model as database settings. Do NOT commit to git.\n\nreturn [\n    'key' => '{$hex}',\n];\n";
+        if (@file_put_contents($file, $content, LOCK_EX) === false) {
+            return false;
+        }
+        @chmod($file, 0640);
+        Config::set('credentials.key', $hex);
+        return true;
     }
 }
