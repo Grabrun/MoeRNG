@@ -6,10 +6,11 @@
  */
 $activePage = $activePage ?? 'home';
 $navItems = [
-    'home'   => ['/', '首页'],
-    'docs'   => ['/docs', 'API 文档'],
-    'tester' => ['/tester', '在线测试'],
-    'about'  => ['/about', '关于'],
+    'home'    => ['/', '首页'],
+    'gallery' => ['/gallery', '图库'],
+    'docs'    => ['/docs', 'API 文档'],
+    'tester'  => ['/tester', '在线测试'],
+    'about'   => ['/about', '关于'],
 ];
 $fullTitle = $pageTitle ?? ($siteName . ' - ' . $siteSlogan);
 $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。基于 RESTful 架构的随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式。');

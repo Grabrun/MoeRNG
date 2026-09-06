@@ -84,6 +84,38 @@ class HomeController extends Controller
         ]);
     }
 
+    /**
+     * v1.3.1 迭代: 前台图库页 —— 公开分页浏览（20 张/页，仅展示启用图片）。
+     * 服务端渲染分页链接（/gallery?page=N 可收藏/分享），复用 /api/v1/images
+     * 同一套查询（Image::paginate + status='active' 过滤）。
+     */
+    public function gallery(Request $request): void
+    {
+        $page = max(1, (int) $request->input('page', '1'));
+        $perPage = 20;
+
+        $result = ['data' => [], 'total' => 0, 'page' => 1, 'last_page' => 1];
+        try {
+            $result = Image::paginate(
+                $page,
+                $perPage,
+                'sort_order ASC, id DESC',
+                "status = 'active'"
+            );
+        } catch (\Throwable) {
+            // DB unavailable — fall through with the empty default
+        }
+
+        $this->render('gallery', $this->frontData() + [
+            'activePage' => 'gallery',
+            'pageTitle' => '图库 - ' . Config::get('settings.site_name', 'MoeRNG'),
+            'images' => $result['data'],
+            'total' => $result['total'],
+            'page' => $result['page'],
+            'lastPage' => $result['last_page'],
+        ]);
+    }
+
     public function about(Request $request): void
     {
         $this->render('about', $this->frontData() + [

@@ -22,6 +22,8 @@ $router->get('/', [\App\Controllers\HomeController::class, 'index']);
 $router->get('/docs', [\App\Controllers\HomeController::class, 'docs']);
 $router->get('/tester', [\App\Controllers\HomeController::class, 'tester']);
 $router->get('/about', [\App\Controllers\HomeController::class, 'about']);
+// v1.3.1 迭代: 前台图库页（公开分页浏览，20 张/页）。
+$router->get('/gallery', [\App\Controllers\HomeController::class, 'gallery']);
 // v1.2.0 迭代: signed download endpoint for local storage (short-lived links).
 $router->get('/files', [\App\Controllers\FileController::class, 'show']);
 
