@@ -18,6 +18,10 @@ $app = \App\Core\Application::create(__DIR__);
 $router = $app->router();
 
 $router->get('/', [\App\Controllers\HomeController::class, 'index']);
+// v1.3.1 迭代: 前台多页导航 —— 单页内容拆分为独立路由页面。
+$router->get('/docs', [\App\Controllers\HomeController::class, 'docs']);
+$router->get('/tester', [\App\Controllers\HomeController::class, 'tester']);
+$router->get('/about', [\App\Controllers\HomeController::class, 'about']);
 // v1.2.0 迭代: signed download endpoint for local storage (short-lived links).
 $router->get('/files', [\App\Controllers\FileController::class, 'show']);
 
