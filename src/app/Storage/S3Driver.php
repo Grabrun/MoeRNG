@@ -305,7 +305,23 @@ class S3Driver implements StorageInterface
 
     public function presignPut(string $key, string $contentType, int $expires = 600): ?array
     {
-        // v1.3.1: 该驱动不支持 S3 兼容直传 —— 上传回退服务器路径。
+        // v1.3.1 迭代: 委托给支持直传的官方 SDK 驱动（COS/OSS/AWS/OBS）。
+        // SDK 未部署时 cosSdk()/ossSdk()/awsSdk()/obsSdk() 返回 null，
+        // 这里同样返回 null —— directSign 收到 null 后回退服务器上传并提示。
+        // 注意：不调用 upyunSdk()/qiniuSdk()（SDK 缺席时它们抛异常而非返回
+        // null，且这两家本就不支持 presigned PUT）。
+        if (($sdk = $this->cosSdk()) !== null) {
+            return $sdk->presignPut($key, $contentType, $expires);
+        }
+        if (($sdk = $this->ossSdk()) !== null) {
+            return $sdk->presignPut($key, $contentType, $expires);
+        }
+        if (($sdk = $this->awsSdk()) !== null) {
+            return $sdk->presignPut($key, $contentType, $expires);
+        }
+        if (($sdk = $this->obsSdk()) !== null) {
+            return $sdk->presignPut($key, $contentType, $expires);
+        }
         return null;
     }
 

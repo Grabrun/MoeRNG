@@ -106,7 +106,8 @@ curl -sI https://你的域名/public/css/style.css | grep -iE "cache-control|exp
 
 1. 开关打开（系统设置 → 图片与存储）；
 2. 当前选中的存储实例为 **AWS S3 / 腾讯云 COS / 阿里云 OSS / 华为 OBS**（本地存储、又拍云、七牛自动回退服务器上传）；
-3. **云控制台为 Bucket 配置 CORS**（各云控制台 → Bucket → 跨域/CORS 设置）：
+3. **官方 SDK 已部署**（release zip 内的 `sdk/` 目录完整——直传签名由各云官方 SDK 原生生成；SDK 缺失时自动回退服务器上传，上传弹窗会提示原因）；
+4. **云控制台为 Bucket 配置 CORS**（各云控制台 → Bucket → 跨域/CORS 设置）：
 
 | 项 | 值 |
 |----|----|
@@ -115,4 +116,4 @@ curl -sI https://你的域名/public/css/style.css | grep -iE "cache-control|exp
 | 允许 Headers | `Content-Type` |
 | Expose Headers | `ETag`（可选） |
 
-4. 关闭开关或条件不满足时自动回退服务器上传（功能永远可用）；直传 403 时前端会明确提示 CORS 未配置。
+5. 关闭开关或条件不满足时自动回退服务器上传（功能永远可用）；直传 403 时前端会明确提示 CORS 未配置。

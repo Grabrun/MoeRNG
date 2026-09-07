@@ -151,18 +151,34 @@ class CosSdkDriver implements StorageInterface
     }
 
     /**
-     * v1.3.1 迭代: S3 兼容直传签名（SigV4 presigned PUT，见 S3CompatPresigner）。
+     * v1.3.1 迭代: 前端直传签名 —— 官方 SDK 原生 getPresignedUrl('putObject')。
+     * 官方 sample getPresignedUrl.php 实证：method 换 putObject 即 PUT 直传签名，
+     * 'Headers' 里的项进入签名（锁定 Content-Type，浏览器必须带相同头）。
+     * SDK 未部署（sdk/cos/ 缺失）→ 返回 null，上传回退服务器路径。
      */
     public function presignPut(string $key, string $contentType, int $expires = 600): ?array
     {
-                $host = $this->sourceDomain !== ''
-            ? $this->sourceDomain
-            : "{$this->bucket}.cos.{$this->region}.myqcloud.com";
-        $sigRegion = $this->region;
-        return S3CompatPresigner::presignPut(
-            $host, $key, $contentType, $expires,
-            $this->accessKey, $this->secretKey, $sigRegion
-        );
+        if (!self::available()) {
+            return null;
+        }
+        try {
+            $signed = $this->client()->getPresignedUrl(
+                'putObject',
+                [
+                    'Bucket'  => $this->bucket,
+                    'Key'     => ltrim($key, '/'),
+                    'Headers' => ['Content-Type' => $contentType],
+                ],
+                '+' . $expires . ' seconds'
+            );
+            $url = (string) $signed;
+            if ($url === '') {
+                return null;
+            }
+            return ['url' => $url, 'headers' => ['Content-Type' => $contentType]];
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function url(string $remotePath): string

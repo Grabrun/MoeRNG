@@ -321,7 +321,12 @@ class ImageController extends Controller
 
             $presign = $storage->presignPut($key, $mime, 600);
             if ($presign === null) {
-                $this->json(['direct' => false, 'message' => '当前存储驱动不支持直传'], 200);
+                // SDK 缺席（partial deploy / 精简部署）或驱动不支持直传：
+                // 明确告知运维回退原因，前端据此 toast 并走服务器分批上传。
+                $this->json([
+                    'direct'  => false,
+                    'message' => '该存储实例的前端直传不可用（官方 SDK 未部署——sdk/ 目录缺失，或驱动类型不支持直传），已自动回退为服务器上传',
+                ], 200);
                 return;
             }
             $signed[] = [

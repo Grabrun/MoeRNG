@@ -145,19 +145,32 @@ class AwsSdkDriver implements StorageInterface
     }
 
     /**
-     * v1.3.1 迭代: S3 兼容直传签名（SigV4 presigned PUT，见 S3CompatPresigner）。
+     * v1.3.1 迭代: 前端直传签名 —— 官方 SDK 原生 createPresignedRequest(PutObject)。
+     * 官方文档 s3-presigned-url 实证：getCommand('PutObject', [...'ContentType'=>…])
+     * → createPresignedRequest($cmd, "+N seconds") 得到可直接 PUT 的 URL；
+     * Content-Type 纳入签名（浏览器必须带相同头）。SDK 未部署（sdk/aws/ 缺失）
+     * → 返回 null，上传回退服务器路径。
      */
     public function presignPut(string $key, string $contentType, int $expires = 600): ?array
     {
-                $epHost = $this->endpoint !== '' ? preg_replace('#^https?://#', '', $this->endpoint) : '';
-        $host = $this->sourceDomain !== ''
-            ? $this->sourceDomain
-            : ($epHost !== '' ? "{$this->bucket}.{$epHost}" : "{$this->bucket}.s3.{$this->region}.amazonaws.com");
-        $sigRegion = $this->region !== '' ? $this->region : 'us-east-1';
-        return S3CompatPresigner::presignPut(
-            $host, $key, $contentType, $expires,
-            $this->accessKey, $this->secretKey, $sigRegion
-        );
+        if (!self::available()) {
+            return null;
+        }
+        try {
+            $cmd = $this->client()->getCommand('PutObject', [
+                'Bucket'      => $this->bucket,
+                'Key'         => ltrim($key, '/'),
+                'ContentType' => $contentType,
+            ]);
+            $req = $this->client()->createPresignedRequest($cmd, '+' . $expires . ' seconds');
+            $url = (string) $req->getUri();
+            if ($url === '') {
+                return null;
+            }
+            return ['url' => $url, 'headers' => ['Content-Type' => $contentType]];
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function url(string $remotePath): string

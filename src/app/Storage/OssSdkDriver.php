@@ -124,18 +124,34 @@ class OssSdkDriver implements StorageInterface
     }
 
     /**
-     * v1.3.1 迭代: S3 兼容直传签名（SigV4 presigned PUT，见 S3CompatPresigner）。
+     * v1.3.1 迭代: 前端直传签名 —— 官方 SDK 原生 Client::presign(PutObjectRequest)。
+     * reference 集成测试 ClientPresignerTest 实证：presign 后直接 HTTP PUT 即浏览器
+     * 直传；PresignResult 带 url + signedHeaders（content-type 在签名内）。
+     * SDK 未部署（sdk/oss/ 缺失）→ 返回 null，上传回退服务器路径。
      */
     public function presignPut(string $key, string $contentType, int $expires = 600): ?array
     {
-                $host = $this->sourceDomain !== ''
-            ? $this->sourceDomain
-            : "{$this->bucket}.oss-{$this->region}.aliyuncs.com";
-        $sigRegion = $this->region;
-        return S3CompatPresigner::presignPut(
-            $host, $key, $contentType, $expires,
-            $this->accessKey, $this->secretKey, $sigRegion
-        );
+        if (!self::available()) {
+            return null;
+        }
+        try {
+            $request = new \AlibabaCloud\Oss\V2\Models\PutObjectRequest($this->bucket, ltrim($key, '/'));
+            $request->contentType = $contentType;
+            $result = $this->client()->presign($request, [
+                'expires' => new \DateInterval('PT' . $expires . 'S'),
+            ]);
+            $url = (string) ($result->url ?? '');
+            if ($url === '') {
+                return null;
+            }
+            $headers = (array) ($result->signedHeaders ?? []);
+            if (!isset($headers['Content-Type']) && !isset($headers['content-type'])) {
+                $headers['Content-Type'] = $contentType;
+            }
+            return ['url' => $url, 'headers' => $headers];
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function url(string $remotePath): string

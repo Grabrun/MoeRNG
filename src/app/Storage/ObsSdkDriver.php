@@ -151,20 +151,41 @@ class ObsSdkDriver implements StorageInterface
     }
 
     /**
-     * v1.3.1 迭代: S3 兼容直传签名（SigV4 presigned PUT，见 S3CompatPresigner）。
+     * v1.3.1 迭代: 前端直传签名 —— 官方 SDK 原生 createSignedUrl('PUT')。
+     * SDK 开发指南实证：'Headers' 里的 Content-Type 进入签名，返回
+     * SignedUrl + ActualSignedRequestHeaders（头名=>值，直接给浏览器 PUT 用）。
+     * SDK 未部署（sdk/obs/ 缺失）→ 返回 null，上传回退服务器路径。
      */
     public function presignPut(string $key, string $contentType, int $expires = 600): ?array
     {
-                $epHost = preg_replace('#^https?://#', '', $this->endpoint);
-        $host = $this->sourceDomain !== ''
-            ? $this->sourceDomain
-            : "{$this->bucket}.{$epHost}";
-        // SigV4 region 从 OBS endpoint 提取（obs.cn-north-4 → cn-north-4）
-        $sigRegion = preg_match('#obs\.([a-z0-9-]+)\.#i', $this->endpoint, $m) ? $m[1] : 'cn-north-1';
-        return S3CompatPresigner::presignPut(
-            $host, $key, $contentType, $expires,
-            $this->accessKey, $this->secretKey, $sigRegion
-        );
+        if (!self::available()) {
+            return null;
+        }
+        try {
+            $model = $this->client()->createSignedUrl([
+                'Method'  => 'PUT',
+                'Bucket'  => $this->bucket,
+                'Key'     => ltrim($key, '/'),
+                'Expires' => $expires, // seconds
+                'Headers' => ['Content-Type' => $contentType],
+            ]);
+            $url = (string) ($model['SignedUrl'] ?? '');
+            if ($url === '') {
+                return null;
+            }
+            // ActualSignedRequestHeaders 是「名=>值」数组；只透传浏览器需要
+            // 且允许设置的头（Host 由浏览器自动补齐，不能也不需要手动带）。
+            $headers = ['Content-Type' => $contentType];
+            foreach ((array) ($model['ActualSignedRequestHeaders'] ?? []) as $n => $v) {
+                $ln = strtolower((string) $n);
+                if ($ln !== 'host' && $v !== null && $v !== '') {
+                    $headers[(string) $n] = (string) $v;
+                }
+            }
+            return ['url' => $url, 'headers' => $headers];
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function url(string $remotePath): string
