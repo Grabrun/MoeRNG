@@ -151,57 +151,11 @@ class AwsSdkDriver implements StorageInterface
      * Content-Type 纳入签名（浏览器必须带相同头）。SDK 未部署（sdk/aws/ 缺失）
      * → 返回 null，上传回退服务器路径。
      */
-    public function presignPut(string $key, string $contentType, int $expires = 600): ?array
-    {
-        if (!self::available()) {
-            return null;
-        }
-        try {
-            $cmd = $this->client()->getCommand('PutObject', [
-                'Bucket'      => $this->bucket,
-                'Key'         => ltrim($key, '/'),
-                'ContentType' => $contentType,
-            ]);
-            $req = $this->client()->createPresignedRequest($cmd, '+' . $expires . ' seconds');
-            $url = (string) $req->getUri();
-            if ($url === '') {
-                return null;
-            }
-            return ['url' => $url, 'headers' => ['Content-Type' => $contentType]];
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
-    /**
+        /**
      * v1.3.1 迭代: HeadObject 元数据 —— ETag（简单 PUT 即内容 MD5）+ 大小，
      * 供直传登记的服务端权威验证。异常/无法解析返回 null。
      */
-    public function stat(string $remotePath): ?array
-    {
-        try {
-            $result = $this->client()->headObject([
-                'Bucket' => $this->bucket,
-                'Key'    => ltrim($remotePath, '/'),
-            ]);
-            $etag = (string) ($result['ETag'] ?? '');
-            $size = (int) ($result['ContentLength'] ?? 0);
-        } catch (\Throwable) {
-            return null;
-        }
-        if ($etag === '') {
-            return null;
-        }
-            // ETag 规范化：去引号 + 小写；非 32 位 hex（multipart/SSE-KMS 等
-            // 非「内容MD5」语义）一律视为无法验证，返回 null。
-            $etag = strtolower(trim((string) $etag, '"'));
-            if (!preg_match('#^[a-f0-9]{32}$#', $etag)) {
-                return null;
-            }
-        return ['etag' => $etag, 'size' => $size];
-    }
-
-    public function url(string $remotePath): string
+        public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {
             return rtrim($this->cdnUrl, '/') . '/' . ltrim($remotePath, '/');

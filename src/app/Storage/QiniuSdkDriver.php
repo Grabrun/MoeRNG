@@ -98,19 +98,7 @@ class QiniuSdkDriver implements StorageInterface
         }
     }
 
-    public function presignPut(string $key, string $contentType, int $expires = 600): ?array
-    {
-        // v1.3.1: 该驱动不支持 S3 兼容直传 —— 上传回退服务器路径。
-        return null;
-    }
-
-    public function stat(string $remotePath): ?array
-    {
-        // v1.3.1: 该驱动不支持 S3 直传 —— confirm 流程不可达；返回 null。
-        return null;
-    }
-
-    public function url(string $remotePath): string
+            public function url(string $remotePath): string
     {
         $key = ltrim($remotePath, '/');
         if ($this->cdnUrl !== '') {

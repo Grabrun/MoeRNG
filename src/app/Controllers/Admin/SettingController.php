@@ -64,9 +64,8 @@ class SettingController extends Controller
         ],
         'media' => [
             'label' => '图片与存储',
-            'desc' => '图片处理、缩略图与存储优化设置；CDN 加速请到「存储管理」配置',
+            'desc' => '图片处理、缩略图与存储优化设置（后续版本提供）；CDN 加速请到「存储管理」配置',
             'fields' => [
-                'direct_upload_enabled' => ['type' => 'toggle', 'label' => '对象存储前端直传', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后（限 AWS S3 / 腾讯 COS / 阿里 OSS / 华为 OBS），上传图片由浏览器直传云存储，不消耗服务器流量。需在云控制台为 Bucket 配置 CORS（允许站点域名 PUT/HEAD + content-type 头）。本地存储 / 又拍云 / 七牛不受此开关影响，始终走服务器上传。'],
             ],
         ],
         'maintenance' => [

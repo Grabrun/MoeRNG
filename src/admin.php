@@ -39,9 +39,6 @@ $router->group('/admin', function ($router) {
     $router->get('/images', [$images, 'index']);
     $router->get('/images/ids', [$images, 'ids']);
     $router->post('/images/upload', [$images, 'upload']);
-    // v1.3.1 迭代: 对象存储前端直传（签名 + 登记确认）
-    $router->post('/images/direct-sign', [$images, 'directSign']);
-    $router->post('/images/direct-confirm', [$images, 'directConfirm']);
     $router->post('/images/update', [$images, 'update']);
     $router->post('/images/delete', [$images, 'delete']);
     $router->post('/images/batch-delete', [$images, 'batchDelete']);

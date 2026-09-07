@@ -156,77 +156,11 @@ class ObsSdkDriver implements StorageInterface
      * SignedUrl + ActualSignedRequestHeaders（头名=>值，直接给浏览器 PUT 用）。
      * SDK 未部署（sdk/obs/ 缺失）→ 返回 null，上传回退服务器路径。
      */
-    public function presignPut(string $key, string $contentType, int $expires = 600): ?array
-    {
-        if (!self::available()) {
-            return null;
-        }
-        try {
-            $model = $this->client()->createSignedUrl([
-                'Method'  => 'PUT',
-                'Bucket'  => $this->bucket,
-                'Key'     => ltrim($key, '/'),
-                'Expires' => $expires, // seconds
-                'Headers' => ['Content-Type' => $contentType],
-            ]);
-            $url = (string) ($model['SignedUrl'] ?? '');
-            if ($url === '') {
-                return null;
-            }
-            // ActualSignedRequestHeaders 是「名=>值」数组；只透传浏览器需要
-            // 且允许设置的头（Host 由浏览器自动补齐，不能也不需要手动带）。
-            $headers = ['Content-Type' => $contentType];
-            foreach ((array) ($model['ActualSignedRequestHeaders'] ?? []) as $n => $v) {
-                $ln = strtolower((string) $n);
-                if ($ln !== 'host' && $v !== null && $v !== '') {
-                    $headers[(string) $n] = (string) $v;
-                }
-            }
-            return ['url' => $url, 'headers' => $headers];
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
-    /**
+        /**
      * v1.3.1 迭代: HeadObject 元数据 —— ETag（简单 PUT 即内容 MD5）+ 大小，
      * 供直传登记的服务端权威验证。异常/无法解析返回 null。
      */
-    public function stat(string $remotePath): ?array
-    {
-        try {
-            $model = $this->client()->getObjectMetadata([
-                'Bucket' => $this->bucket,
-                'Key'    => ltrim($remotePath, '/'),
-            ]);
-            // OBS 的 Model 对头名大小写不做保证 —— 不区分大小写取值
-            $etag = '';
-            $size = 0;
-            foreach ((array) $model as $k => $v) {
-                $lk = strtolower((string) $k);
-                if ($lk === 'etag' && $etag === '') {
-                    $etag = (string) $v;
-                }
-                if ($lk === 'contentlength' && $size === 0) {
-                    $size = (int) $v;
-                }
-            }
-        } catch (\Throwable) {
-            return null;
-        }
-        if ($etag === '') {
-            return null;
-        }
-            // ETag 规范化：去引号 + 小写；非 32 位 hex（multipart/SSE-KMS 等
-            // 非「内容MD5」语义）一律视为无法验证，返回 null。
-            $etag = strtolower(trim((string) $etag, '"'));
-            if (!preg_match('#^[a-f0-9]{32}$#', $etag)) {
-                return null;
-            }
-        return ['etag' => $etag, 'size' => $size];
-    }
-
-    public function url(string $remotePath): string
+        public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {
             return rtrim($this->cdnUrl, '/') . '/' . ltrim($remotePath, '/');

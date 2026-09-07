@@ -132,13 +132,7 @@ class LocalDriver implements StorageInterface
         return false;
     }
 
-    public function presignPut(string $key, string $contentType, int $expires = 600): ?array
-    {
-        // v1.3.1: 该驱动不支持 S3 兼容直传 —— 上传回退服务器路径。
-        return null;
-    }
-
-    public function url(string $remotePath): string
+        public function url(string $remotePath): string
     {
         $remotePath = ltrim(str_replace('\\', '/', $remotePath), '/');
         if ($remotePath === '') {
@@ -160,20 +154,7 @@ class LocalDriver implements StorageInterface
         return is_file($this->uploadDir . '/' . ltrim($remotePath, '/'));
     }
 
-    public function stat(string $remotePath): ?array
-    {
-        $full = $this->uploadDir . '/' . ltrim($remotePath, '/');
-        if (!is_file($full)) {
-            return null;
-        }
-        $md5 = @md5_file($full);
-        if ($md5 === false) {
-            return null;
-        }
-        return ['etag' => $md5, 'size' => (int) filesize($full)];
-    }
-
-    /** Absolute filesystem directory currently in use (used by doctor.php). */
+        /** Absolute filesystem directory currently in use (used by doctor.php). */
     public function uploadDir(): string
     {
         return $this->uploadDir;
