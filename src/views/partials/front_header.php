@@ -73,7 +73,8 @@ $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。基于 RESTful �
                 <?php if (!empty($githubUrl)): ?>
                 <a href="<?= h($githubUrl) ?>" target="_blank" rel="noopener nofollow">GitHub</a>
                 <?php endif; ?>
-                <a href="/admin">管理面板</a>
+                <!-- 管理后台是独立工作区，新标签打开，不打断前台浏览位置 -->
+                <a href="/admin" target="_blank" rel="noopener">管理面板</a>
             </nav>
         </details>
         <button type="button" class="theme-toggle theme-toggle-float" id="theme-toggle" aria-label="切换深浅主题" title="切换深浅主题">

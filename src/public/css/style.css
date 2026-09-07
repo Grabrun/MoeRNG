@@ -317,6 +317,11 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .gallery-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .gallery-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }
 .gallery-name { font-size: 0.82rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* 图库页分区间标题（v1.3.1 按分类分区改版） */
+.gallery-section { margin-bottom: 36px; }
+.gallery-section:last-child { margin-bottom: 0; }
+.gallery-cat-title { font-size: 1.05rem; font-weight: 500; margin-bottom: 14px; color: var(--text); }
+.gallery-cat-count { font-size: 0.78rem; font-weight: 400; color: var(--text-muted); margin-left: 8px; }
 /* 图库页的分页条只有一个元素，居中呈现（pagination-wrap 默认 space-between
    是给后台「分页 + 每页选择器」双元素用的）。 */
 #gallery .pagination-wrap { justify-content: center; }

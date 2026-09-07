@@ -85,34 +85,32 @@ class HomeController extends Controller
     }
 
     /**
-     * v1.3.1 迭代: 前台图库页 —— 公开分页浏览（20 张/页，仅展示启用图片）。
-     * 服务端渲染分页链接（/gallery?page=N 可收藏/分享），复用 /api/v1/images
-     * 同一套查询（Image::paginate + status='active' 过滤）。
+     * v1.3.1 图库页（v2 改版）: 按分类分区展示，每个分类随机 12 张，
+     * 不再做全量分页列表。未分类图片单独一个区块放在最后；空分类不显示。
      */
     public function gallery(Request $request): void
     {
-        $page = max(1, (int) $request->input('page', '1'));
-        $perPage = 20;
-
-        $result = ['data' => [], 'total' => 0, 'page' => 1, 'last_page' => 1];
+        $sections = [];
         try {
-            $result = Image::paginate(
-                $page,
-                $perPage,
-                'sort_order ASC, id DESC',
-                "status = 'active'"
-            );
+            foreach ($this->safeCategories() as $cat) {
+                $images = Image::randomBatch((int) $cat->id, 12);
+                if ($images) {
+                    $sections[] = ['name' => $cat->name, 'images' => $images];
+                }
+            }
+            // 未分类图片收尾区块
+            $uncategorized = Image::randomBatch(null, 12);
+            if ($uncategorized) {
+                $sections[] = ['name' => '未分类', 'images' => $uncategorized];
+            }
         } catch (\Throwable) {
-            // DB unavailable — fall through with the empty default
+            // DB unavailable — empty gallery instead of an error page
         }
 
         $this->render('gallery', $this->frontData() + [
             'activePage' => 'gallery',
             'pageTitle' => '图库 - ' . Config::get('settings.site_name', 'MoeRNG'),
-            'images' => $result['data'],
-            'total' => $result['total'],
-            'page' => $result['page'],
-            'lastPage' => $result['last_page'],
+            'sections' => $sections,
         ]);
     }
 

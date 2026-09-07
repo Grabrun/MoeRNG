@@ -18,7 +18,7 @@
                 <div class="btn-group">
                     <a href="/docs" class="btn btn-primary btn-lg">API 文档</a>
                     <a href="/tester" class="btn btn-outline btn-lg">在线测试</a>
-                    <a href="/admin" class="btn btn-outline btn-lg">管理面板</a>
+                    <a href="/admin" target="_blank" rel="noopener" class="btn btn-outline btn-lg">管理面板</a>
                 </div>
                 <div class="stats">
                     <div class="stat">

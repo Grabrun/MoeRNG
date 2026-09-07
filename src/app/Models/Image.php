@@ -104,6 +104,27 @@ class Image extends Model
         return $row ? self::hydrate($row) : null;
     }
 
+    /**
+     * v1.3.1 图库页: 取某分类（或未分类）下随机 N 张 active 图片。
+     * 单分类行数量级小，ORDER BY RAND() LIMIT n 的 filesort 开销可忽略
+     * （随机 API 的全表场景才值得用 COUNT+OFFSET 两步法）。
+     * $categoryId === null 表示未分类（category_id IS NULL）。
+     */
+    public static function randomBatch(?int $categoryId, int $limit = 12): array
+    {
+        if ($categoryId === null) {
+            $sql = "SELECT * FROM images WHERE status = 'active' AND category_id IS NULL ORDER BY RAND() LIMIT {$limit}";
+            $stmt = Database::getInstance()->prepare($sql);
+            $stmt->execute();
+        } else {
+            $sql = "SELECT * FROM images WHERE status = 'active' AND category_id = ? ORDER BY RAND() LIMIT {$limit}";
+            $stmt = Database::getInstance()->prepare($sql);
+            $stmt->execute([$categoryId]);
+        }
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        return array_map(fn($row) => self::hydrate($row), $rows);
+    }
+
     public static function getCategoryAndChildIds(int $categoryId, int $depth = 0): array
     {
         if ($depth > 20) return [];
