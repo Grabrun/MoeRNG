@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= $csrf_token ?>">
     <title><?= h($title ?? '仪表盘') ?> - MoeRNG Admin</title>
-    <link rel="stylesheet" href="/public/css/style.css?v=<?= APP_VERSION ?>"></head>
+    <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>"></head>
 <body>
     <div class="toast-container"></div>
     <div class="admin-layout">
@@ -36,7 +36,7 @@
             <?= $content ?? '' ?>
         </main>
     </div>
-    <script src="/public/js/helpers.js?v=<?= APP_VERSION ?>"></script>
-    <script src="/public/js/app.js?v=<?= APP_VERSION ?>"></script>
+    <script src="/public/js/helpers.js?v=<?= ASSET_VER ?>"></script>
+    <script src="/public/js/app.js?v=<?= ASSET_VER ?>"></script>
 </body>
 </html>

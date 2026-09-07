@@ -25,6 +25,22 @@ if (!defined('APP_VERSION')) {
     define('APP_VERSION', '1.3.0');
 }
 
+// v1.3.1 修复: 资源缓存戳 = APP_VERSION + 静态资源 mtime。此前 ?v= 只跟版本号，
+// 迭代期改了 CSS/JS 但版本号未变（如图库页样式在 v1.3.0 发版后加入），已访问
+// 浏览器会一直命中旧缓存——「代码已更新、样式不生效」。mtime 参与后：发版
+// bump 版本号、迭代改文件，两者任一变化都会刷新缓存戳。
+if (!defined('ASSET_VER')) {
+    $assetMtime = 0;
+    foreach (['public/css/style.css', 'public/js/app.js', 'public/js/helpers.js'] as $assetFile) {
+        $m = @filemtime(__DIR__ . '/' . $assetFile);
+        if ($m !== false && $m > $assetMtime) {
+            $assetMtime = $m;
+        }
+    }
+    define('ASSET_VER', APP_VERSION . '.' . $assetMtime);
+    unset($assetFile, $assetMtime, $m);
+}
+
 /* -------------------------------------------------------------------------
  * Autoloader
  * ---------------------------------------------------------------------- */

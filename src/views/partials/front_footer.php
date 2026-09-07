@@ -17,8 +17,8 @@
         </footer>
     </div>
 
-    <script src="/public/js/helpers.js?v=<?= APP_VERSION ?>"></script>
-    <script src="/public/js/app.js?v=<?= APP_VERSION ?>"></script>
+    <script src="/public/js/helpers.js?v=<?= ASSET_VER ?>"></script>
+    <script src="/public/js/app.js?v=<?= ASSET_VER ?>"></script>
 
 </body>
 </html>
