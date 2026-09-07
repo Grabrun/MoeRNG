@@ -776,14 +776,15 @@ function initDropZone() {
         if (p && this.files.length > 0) p.textContent = '已选择 ' + this.files.length + ' 个文件';
     });
 
+    // v1.3.1 迭代: 防重入——串行队列进行中时忽略再次触发
+    var uploading = false;
+
     document.getElementById('upload-submit')?.addEventListener('click', () => handleFiles(input ? input.files : []));
 
     function handleFiles(files) {
         if (!files.length) return;
+        if (uploading) { showToast('上传进行中，请等待当前批次完成', 'error', 4000); return; }
 
-        // v1.2.0 迭代: pre-flight size check — a batch bigger than PHP
-        // post_max_size makes the server drop the whole body and answer 419
-        // (CSRF). Tell the user up front instead of failing mid-upload.
         function parseSize(s) {
             if (!s) return 0;
             var m = String(s).trim().match(/^([\d.]+)\s*([kmg]?)b?$/i);
@@ -802,134 +803,175 @@ function initDropZone() {
             if (b >= 1024) return (b / 1024).toFixed(0) + 'KB';
             return b + 'B';
         }
-        var total = 0;
-        for (var fi = 0; fi < files.length; fi++) total += files[fi].size || 0;
+
+        // ── 1) 贪心装箱：把所选文件按顺序切分为 ≤ 容量的批次 ──────────
+        // 容量 = post_max_size × 90% − 8KB：水位留 multipart 边界、表单字段
+        // 与中文文件名 UTF-8 膨胀的余量。postMax 缺失时 capacity=0 → 单批
+        // 全传（等同旧行为，无法预判就交给服务端）。
         var postMax = parseSize(zone.dataset.postMax || '');
-        if (postMax > 0 && total > postMax) {
-            showToast('所选文件共 ' + fmtSize(total) + '，超过单次上传限制 ' + fmtSize(postMax)
-                + '（' + zone.dataset.postMax + '），请分批上传（建议一次 5-10 张）', 'error', 8000);
+        var capacity = postMax > 0 ? Math.floor(postMax * 0.9) - 8192 : 0;
+        if (capacity < 0) capacity = 0;
+
+        var batches = [], current = [], currentBytes = 0, oversized = [];
+        for (var fi = 0; fi < files.length; fi++) {
+            var f = files[fi];
+            if (capacity > 0 && f.size > capacity) { oversized.push(f); continue; }
+            if (capacity > 0 && current.length && currentBytes + f.size > capacity) {
+                batches.push(current); current = []; currentBytes = 0;
+            }
+            current.push(f); currentBytes += f.size;
+        }
+        if (current.length) batches.push(current);
+
+        if (oversized.length) {
+            var names = oversized.slice(0, 3).map(function(x) { return x.name + '(' + fmtSize(x.size) + ')'; }).join('、');
+            showToast(oversized.length + ' 个文件超过单批容量被跳过：' + names + (oversized.length > 3 ? ' 等' : ''), 'error', 8000);
+        }
+        if (!batches.length) return;
+
+        uploading = true;
+
+        // ── 2) 无进度条降级：保持旧同步提交（理论不可达，进度条在视图中恒在）──
+        if (!(progressBar && progressFill)) {
+            buildForm(batches[0]).submit();
+            uploading = false;
             return;
         }
 
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/admin/images/upload';
-        form.enctype = 'multipart/form-data';
-        form.innerHTML = '<input type="hidden" name="_csrf_token" value="' + getCsrfToken() + '">';
+        // ── 3) 串行上传队列 + 跨批次聚合进度 ──────────────────────────
+        var batchCount = batches.length;
+        var uploadedCount = 0, allErrors = [];
+        progressBar.classList.remove('hidden');
+        progressFill.style.width = '0%';
+        progressFill.classList.remove('processing');
+        var progressText = progressBar.querySelector('.progress-text');
+        if (!progressText) {
+            progressText = document.createElement('span');
+            progressText.className = 'progress-text';
+            progressBar.appendChild(progressText);
+        }
+        progressText.textContent = batchCount > 1 ? '批次 1/' + batchCount + ' · 0%' : '0%';
 
-        const catId = document.querySelector('[name="upload_category_id"]')?.value || '';
-        const catInput = document.createElement('input');
-        catInput.type = 'hidden';
-        catInput.name = 'category_id';
-        catInput.value = catId;
-        form.appendChild(catInput);
-
-        // v1.0.33: dynamic storage instance picked in the upload dialog.
-        const profileId = document.querySelector('[name="storage_profile_id"]')?.value || '';
-        if (profileId) {
-            const pInput = document.createElement('input');
-            pInput.type = 'hidden';
-            pInput.name = 'storage_profile_id';
-            pInput.value = profileId;
-            form.appendChild(pInput);
+        function updateProgress(batchIdx, batchPct, saving) {
+            var totalPct = Math.round((batchIdx + batchPct) / batchCount * 100);
+            progressFill.style.width = Math.min(100, totalPct) + '%';
+            var label = batchCount > 1 ? ('批次 ' + (batchIdx + 1) + '/' + batchCount + ' · ') : '';
+            progressText.textContent = saving ? (label + '正在保存…') : (label + Math.min(100, totalPct) + '%');
         }
 
-        // Clone file input
-        const fileInput = input.cloneNode();
-        fileInput.name = 'images[]';
-        fileInput.style.display = 'none';
-        form.appendChild(fileInput);
-
-        // Transfer files
-        const dt = new DataTransfer();
-        for (let f of files) dt.items.add(f);
-        fileInput.files = dt.files;
-
-        document.body.appendChild(form);
-
-        if (progressBar && progressFill) {
-            // v1.2.0 迭代: label floats above the bar (absolute positioning) —
-            // display block keeps fill + floating label; flex used to squeeze
-            // the text out at 100% width.
-            // v1.2.1 修复: use classList to toggle 'hidden' (display:none
-            // !important) instead of style.display — the .hidden rule's
-            // !important beats the inline style, so the bar never appeared.
-            progressBar.classList.remove('hidden');
-            progressFill.style.width = '0%';
+        function finish(aborted) {
+            uploading = false;
+            progressBar.classList.add('hidden');
             progressFill.classList.remove('processing');
-            // v1.1.1-beta.2: show a live percentage label next to the bar.
-            var progressText = progressBar.querySelector('.progress-text');
-            if (!progressText) {
-                progressText = document.createElement('span');
-                progressText.className = 'progress-text';
-                progressBar.appendChild(progressText);
+            if (uploadedCount > 0) {
+                var msg = '上传完成：成功 ' + uploadedCount + ' 张';
+                if (allErrors.length) msg += '，失败 ' + allErrors.length + ' 项';
+                if (aborted) msg += '（后续批次已中止：登录状态过期，请刷新页面重试）';
+                showToast(msg, aborted ? 'error' : 'success', aborted ? 10000 : 5000);
+                if (allErrors.length && window.console) console.warn('upload errors:', allErrors);
+                setTimeout(() => window.location.reload(), 1200);
+            } else {
+                showToast(aborted ? '登录状态已过期（CSRF），请刷新页面后重试' : (allErrors.length ? allErrors.join(' | ') : '上传失败：没有文件被上传'), 'error', 8000);
             }
-            progressText.textContent = '0%';
+        }
 
+        function nextBatch(idx) {
+            if (idx >= batchCount) { finish(false); return; }
+            var batch = batches[idx];
+            var form = buildForm(batch);
+            document.body.appendChild(form);
+            uploadBatch(form, function(pct, saving) {
+                updateProgress(idx, pct, saving);
+            }, function(result) {
+                document.body.removeChild(form);
+                // 419 = CSRF 校验失败（登录过期/token 失效）：终止队列，避免
+                // 后续批次全部撞 419。
+                if (result.status === 419) { finish(true); return; }
+                if (result.ok) {
+                    uploadedCount += Math.max(0, batch.length - result.errors.length);
+                }
+                allErrors = allErrors.concat(result.errors.map(function(e) {
+                    return batchCount > 1 ? ('批次' + (idx + 1) + '：' + e) : e;
+                }));
+                nextBatch(idx + 1);
+            });
+        }
+        nextBatch(0);
+
+        // ── 单批构造：一次普通 upload POST（后端零改动）──────────────
+        function buildForm(batchFiles) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/admin/images/upload';
+            form.enctype = 'multipart/form-data';
+            form.innerHTML = '<input type="hidden" name="_csrf_token" value="' + getCsrfToken() + '">';
+
+            const catId = document.querySelector('[name="upload_category_id"]')?.value || '';
+            const catInput = document.createElement('input');
+            catInput.type = 'hidden';
+            catInput.name = 'category_id';
+            catInput.value = catId;
+            form.appendChild(catInput);
+
+            // v1.0.33: dynamic storage instance picked in the upload dialog.
+            const profileId = document.querySelector('[name="storage_profile_id"]')?.value || '';
+            if (profileId) {
+                const pInput = document.createElement('input');
+                pInput.type = 'hidden';
+                pInput.name = 'storage_profile_id';
+                pInput.value = profileId;
+                form.appendChild(pInput);
+            }
+
+            const fileInput = input.cloneNode();
+            fileInput.name = 'images[]';
+            fileInput.style.display = 'none';
+            form.appendChild(fileInput);
+
+            const dt = new DataTransfer();
+            for (let bf of batchFiles) dt.items.add(bf);
+            fileInput.files = dt.files;
+
+            return form;
+        }
+
+        // ── 单批上传：Promise 化的 XHR（JSON 判定 + 413/50x 降级解析）──
+        function uploadBatch(form, onProgress, onDone) {
             const xhr = new XMLHttpRequest();
             xhr.upload.onprogress = function(e) {
-                if (e.lengthComputable) {
-                    var pct = Math.round(e.loaded / e.total * 100);
-                    progressFill.style.width = pct + '%';
-                    if (progressText) progressText.textContent = pct + '%';
-                }
+                if (e.lengthComputable) onProgress(e.loaded / e.total, false);
             };
-            // v1.2.0 迭代: the transfer itself finished but the backend is still
-            // saving thumbnails / rows — tell the user instead of a dead 100%.
-            xhr.upload.onload = function() {
-                if (progressText) progressText.textContent = '正在保存…';
-                if (progressFill) progressFill.classList.add('processing');
-            };
-            // v1.0.22 tried `status >= 200 && < 400 -> reload`. That was wrong:
-            // the backend answers EVERY upload with 302 + Session flash, and an
-            // XHR silently follows the 302 — so xhr.status is always 200 and the
-            // flash is consumed by the follow, making errors vanish again.
-            // v1.0.23 makes the backend answer XHR requests with JSON, so the
-            // frontend can show a real toast; the HTML-alert fallback below
-            // still catches non-XHR-shaped responses (e.g. nginx 413 pages).
+            // v1.2.0 迭代: the transfer finished but the backend is still saving.
+            xhr.upload.onload = function() { onProgress(1, true); };
             xhr.onload = function() {
-                if (progressBar) progressBar.classList.add('hidden');
-                if (progressFill) progressFill.classList.remove('processing');
-                // Primary path: backend JSON verdict ({success, message, errors}).
                 let payload = null;
                 try { payload = JSON.parse(xhr.responseText || ''); } catch (_) {}
-                if (payload) {
-                    if (payload.success) {
-                        showToast(payload.message || '上传成功', 'success', 5000);
-                        // Let the success toast be visible before refreshing.
-                        setTimeout(() => window.location.reload(), 900);
-                    } else {
-                        const err = (Array.isArray(payload.errors) && payload.errors.length)
-                            ? payload.errors.join(' | ')
-                            : (payload.message || ('上传失败 (HTTP ' + xhr.status + ')'));
-                        showToast(err, 'error', 8000);
-                    }
+                if (payload && typeof payload.success !== 'undefined') {
+                    onDone({
+                        ok: !!payload.success,
+                        errors: Array.isArray(payload.errors) ? payload.errors : [],
+                        status: xhr.status,
+                    });
                     return;
                 }
-                // Fallback: not JSON (e.g. nginx 413 / 50x HTML page). Try to
-                // extract a rendered alert block, else show the raw status.
+                // Fallback: not JSON (nginx 413 / 50x HTML page) — try to
+                // extract a rendered alert block, else the raw status.
                 let msg = '上传失败 (HTTP ' + xhr.status + ')';
                 try {
                     const tmp = document.createElement('div');
                     tmp.innerHTML = xhr.responseText || '';
                     const alertEl = tmp.querySelector('.alert.alert-error, .alert.alert-danger, .alert.alert-warning');
-                    if (alertEl && alertEl.textContent.trim()) {
-                        msg = alertEl.textContent.trim();
-                    }
-                } catch (_) { /* responseText was empty / not HTML — keep default */ }
-                showToast(msg, 'error', 8000);
+                    if (alertEl && alertEl.textContent.trim()) msg = alertEl.textContent.trim();
+                } catch (_) {}
+                onDone({ ok: false, errors: [msg], status: xhr.status });
             };
             xhr.onerror = function() {
-                if (progressBar) progressBar.classList.add('hidden');
-                showToast('网络错误：上传请求未到达服务器', 'error', 8000);
+                onDone({ ok: false, errors: ['网络错误：上传请求未到达服务器'], status: 0 });
             };
-            // Marks this request as AJAX so the backend returns JSON instead of
-            // the 302+flash redirect (which an XHR follow would swallow).
+            // AJAX marker so the backend answers JSON instead of 302+flash.
             xhr.open('POST', form.action);
             xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
             xhr.send(new FormData(form));
-        } else {
-            form.submit();
         }
     }
 }
