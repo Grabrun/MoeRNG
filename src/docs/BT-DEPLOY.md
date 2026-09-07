@@ -2,14 +2,31 @@
 
 > 适用于宝塔面板（BT Panel）+ Nginx 的部署形态。本文档与 `nginx.conf.example` 内容对应，但以宝塔「伪静态」编辑器的可直接粘贴格式给出。
 
-## 1. 宝塔「伪静态」配置（v1.2.1-beta.2 起）
+## 1. 宝塔「伪静态」配置（v1.3.1 起，含静态资源长缓存）
 
 **宝塔面板 → 网站（你的域名）→ 设置 → 伪静态**，整段替换为：
 
 ```nginx
 location ~ ^/(config|app|views|releases|backups|var)/ { deny all; return 404; }
 location ~* \.(sql|zip|md|log|ini|lock|yml|yaml)$ { deny all; return 404; }
-location ^~ /public/uploads/ { location ~ \.php$ { deny all; } }
+location ^~ /public/uploads/ {
+    expires 30d;
+    add_header Cache-Control "public, immutable";
+    add_header X-Content-Type-Options "nosniff";
+    location ~ \.php$ { deny all; }
+}
+# v1.3.1: /public/ 资源全部带 ?v=ASSET_VER 戳（版本号+文件 mtime），365d + immutable 安全
+location ^~ /public/ {
+    expires 365d;
+    add_header Cache-Control "public, immutable";
+    try_files $uri =404;
+}
+# /assets/ 中 og-image 等少数文件无版本戳，30d 折衷
+location ^~ /assets/ {
+    expires 30d;
+    add_header Cache-Control "public";
+    try_files $uri =404;
+}
 location /api    { try_files $uri /api.php$is_args$args; }
 location /admin  { try_files $uri /admin.php$is_args$args; }
 location /install{ try_files $uri /install.php$is_args$args; }
@@ -18,23 +35,26 @@ location /       { try_files $uri /index.php$is_args$args; }
 
 保存后宝塔自动 reload，无需重启。
 
+> **⚠️ add_header 继承坑**：nginx 的规则是「location 内一旦出现自己的 `add_header`，就不再继承 server 级的 `add_header`」。如果你在宝塔的**全局配置文件**里手工加过 `add_header`（如 HSTS），上面这些 location 会让它失效——需把那几行也复制进对应 location。MoeRNG 自身的安全响应头（CSP 等）由 PHP 输出，不受此影响。
+
 ### 各行作用
 
 | 行 | 防护对象 |
 |----|---------|
 | 第 1 行 deny 路径 | `config/`（数据库配置）、`app/`（源码）、`views/`（模板）、`releases/`（发布包）、**`backups/`（备份目录，含 DB + 上传 zip，v1.2.1-beta.2 新增）**、**`var/`（限流计数/锁文件，v1.2.1-beta.2 新增）** |
 | 第 2 行 deny 后缀 | `.sql`（备份/迁移 SQL）、**`.zip`（备份压缩包，v1.2.1-beta.2 新增）**、`.md`/`.log`/`.ini`/`.lock`/`.yml`/`.yaml` |
-| 第 3 行 | 上传目录绝不执行 PHP（防上传 webshell） |
-| 第 4-7 行 | 前端控制器 rewrite（/api → api.php 等） |
+| 第 3 行 | 上传目录：绝不执行 PHP（防上传 webshell）+ 30d 缓存 + nosniff（v1.3.1 补齐） |
+| `/public/` `/assets/` | 静态资源长缓存：`/public/` 365d + immutable（资源带 `?v=ASSET_VER` 版本戳，v1.3.1 新增）；`/assets/` 30d |
+| 入口 rewrite 行 | 前端控制器 rewrite（/api → api.php 等） |
 
 ### ⚠️ 升级提醒
 
-每次升级对照 `CHANGELOG.md` 检查伪静态是否有新增 deny 路径/后缀。v1.2.1-beta.2 相比 beta.1 新增：
+每次升级对照 `CHANGELOG.md` 检查伪静态是否有新增 deny 路径/后缀/缓存规则。v1.3.1 相比 v1.2.1-beta.2 新增：
 
-- 第 1 行路径：`backups|var`
-- 第 2 行后缀：`zip`
+- 上传目录补齐 `expires 30d` + `Cache-Control` + `nosniff`
+- 新增 `/public/`（365d + immutable）与 `/assets/`（30d）静态缓存 location
 
-若停留在旧版伪静态，**备份目录 backups/ 与备份 zip 可被公网直接下载**（含数据库全部数据 + 上传文件），属严重安全风险。
+若停留在旧版伪静态：静态资源无缓存头（每次重复下载 CSS/JS，首屏变慢）——**v1.3.1 起 CSS/JS 带 ASSET_VER 版本戳，配合长缓存才有完整收益**。
 
 ## 2. 部署后校验
 
@@ -52,8 +72,16 @@ https://你的域名/test.sql.zip
 
 ```
 https://你的域名/            → 首页
+https://你的域名/gallery     → 图库（v1.3.1）
 https://你的域名/admin       → 后台
 https://你的域名/api/v1/random → API
+```
+
+**静态缓存头校验**（v1.3.1）：
+
+```bash
+curl -sI https://你的域名/public/css/style.css | grep -iE "cache-control|expires"
+# 期望: Cache-Control: public, immutable 与 Expires 一年后
 ```
 
 ## 3. 部署纪律（每次覆盖部署后）
