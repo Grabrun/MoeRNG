@@ -8,7 +8,8 @@
             <p class="text-muted mb-3">浏览站内全部图片 · 共 <?= number_format($total) ?> 张 · 第 <?= (int)$page ?>/<?= (int)$lastPage ?> 页</p>
 
             <?php if (empty($images)): ?>
-            <div class="empty-state" style="text-align:center; padding:48px 0;">
+            <div class="empty-state">
+                <div class="empty-icon"><?= icon('image', 32) ?></div>
                 <h3>暂无图片</h3>
                 <p class="text-muted">图库还是空的，先到管理后台上传几张吧。</p>
             </div>

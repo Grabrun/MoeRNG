@@ -304,9 +304,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .pagination .pg-ellipsis { border: none; background: none; color: var(--text-muted); }
 
 /* v1.3.1 迭代: 前台图库页（/gallery 公开分页浏览）。
-   Grid 防溢出模式（同后台缩略图）：minmax(0,1fr) + aspect-ratio + 绝对定位 img。 */
-.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(0, 1fr)); gap: 16px; }
-@media (min-width: 640px) { .gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+   v1.3.1 排版修复：列数全部固定（手机 2 / 平板 3 / 桌面 4）——原基础规则
+   repeat(auto-fill, minmax(0,1fr)) 最小宽为 0，小屏下 auto-fill 会生成
+   大量零宽轨道把图片挤成细条。Grid 防溢出模式（同后台缩略图）：
+   minmax(0,1fr) + aspect-ratio + 绝对定位 img。 */
+.gallery-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (min-width: 640px) { .gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; } }
 @media (min-width: 1024px) { .gallery-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .gallery-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: border-color var(--transition), transform var(--transition); }
 .gallery-card:hover { border-color: var(--primary); transform: translateY(-2px); }
@@ -314,6 +317,9 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .gallery-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .gallery-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }
 .gallery-name { font-size: 0.82rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* 图库页的分页条只有一个元素，居中呈现（pagination-wrap 默认 space-between
+   是给后台「分页 + 每页选择器」双元素用的）。 */
+#gallery .pagination-wrap { justify-content: center; }
 
 /* v1.2.0 迭代: pagination + per-page selector on one row */
 .pagination-wrap {
