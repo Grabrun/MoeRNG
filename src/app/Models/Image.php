@@ -65,17 +65,37 @@ class Image extends Model
 
     public static function random(?int $categoryId = null): ?self
     {
+        // v1.3.1 性能优化: 用「COUNT + 随机 OFFSET」替代 ORDER BY RAND()——
+        // 后者对过滤后的全量行做 filesort，图片量上万后延迟明显；两步法让
+        // MySQL 走 idx_status/idx_rand 索引直接跳到目标行。随机分布与原实现
+        // 等价（均匀抽样）。注意：随机上限必须是「符合条件的图片数」，而非
+        // 分类 ID 数（外部审计报告初版在此处误用 count($ids)，已修正）。
         if ($categoryId !== null) {
-            // Get category and all sub-categories
             $ids = self::getCategoryAndChildIds($categoryId);
             if (empty($ids)) return null;
 
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
-            $sql = "SELECT * FROM images WHERE status = 'active' AND category_id IN ({$placeholders}) ORDER BY RAND() LIMIT 1";
+            $stmt = Database::getInstance()->prepare(
+                "SELECT COUNT(*) FROM images WHERE status = 'active' AND category_id IN ({$placeholders})"
+            );
+            $stmt->execute($ids);
+            $total = (int) $stmt->fetchColumn();
+            if ($total === 0) return null;
+
+            $offset = random_int(0, $total - 1);
+            $sql = "SELECT * FROM images WHERE status = 'active' AND category_id IN ({$placeholders}) LIMIT 1 OFFSET {$offset}";
             $stmt = Database::getInstance()->prepare($sql);
             $stmt->execute($ids);
         } else {
-            $sql = "SELECT * FROM images WHERE status = 'active' ORDER BY RAND() LIMIT 1";
+            $stmt = Database::getInstance()->prepare(
+                "SELECT COUNT(*) FROM images WHERE status = 'active'"
+            );
+            $stmt->execute();
+            $total = (int) $stmt->fetchColumn();
+            if ($total === 0) return null;
+
+            $offset = random_int(0, $total - 1);
+            $sql = "SELECT * FROM images WHERE status = 'active' LIMIT 1 OFFSET {$offset}";
             $stmt = Database::getInstance()->prepare($sql);
             $stmt->execute();
         }

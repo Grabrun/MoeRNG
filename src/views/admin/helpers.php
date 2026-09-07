@@ -9,8 +9,8 @@ function admin_header($title, $bodyClass = '') { ?>
     <meta name="csrf-token" content="<?= \App\Core\Session::csrfToken() ?>">
     <title><?= h($title) ?> - MoeRNG Admin</title>
     <!-- v1.2.0 迭代: brand favicon on admin pages too -->
-    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=20260812">
-    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260812">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=<?= ASSET_VER ?>">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=<?= ASSET_VER ?>">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>">
     
 </head>

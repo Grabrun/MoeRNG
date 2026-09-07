@@ -77,15 +77,19 @@ server {
     }
 
     # Static assets
+    # v1.3.1 性能优化: /public/ 下资源全部带 ?v=ASSET_VER 戳（版本号+文件
+    # mtime，内容变化即失效），可放心 365d + immutable 长缓存。
     location ^~ /public/ {
-        expires 7d;
-        add_header Cache-Control "public";
+        expires 365d;
+        add_header Cache-Control "public, immutable";
         try_files $uri =404;
     }
     # v1.2.1-beta.2 迭代: /assets/ 静态目录（logo / favicon / 字体 / og-image 等）。
     # 之前未路由导致 /assets/fonts/fonts.css 等资源 404；宝塔伪静态用户必须同步。
+    # v1.3.1: favicon 已纳入 ASSET_VER 戳；og-image 等少数文件无戳，
+    # 保留 30d 折衷（更保守可用 7d）。
     location ^~ /assets/ {
-        expires 7d;
+        expires 30d;
         add_header Cache-Control "public";
         try_files $uri =404;
     }
