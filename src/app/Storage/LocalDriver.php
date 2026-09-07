@@ -160,6 +160,19 @@ class LocalDriver implements StorageInterface
         return is_file($this->uploadDir . '/' . ltrim($remotePath, '/'));
     }
 
+    public function stat(string $remotePath): ?array
+    {
+        $full = $this->uploadDir . '/' . ltrim($remotePath, '/');
+        if (!is_file($full)) {
+            return null;
+        }
+        $md5 = @md5_file($full);
+        if ($md5 === false) {
+            return null;
+        }
+        return ['etag' => $md5, 'size' => (int) filesize($full)];
+    }
+
     /** Absolute filesystem directory currently in use (used by doctor.php). */
     public function uploadDir(): string
     {

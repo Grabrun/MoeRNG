@@ -104,6 +104,12 @@ class QiniuSdkDriver implements StorageInterface
         return null;
     }
 
+    public function stat(string $remotePath): ?array
+    {
+        // v1.3.1: 该驱动不支持 S3 直传 —— confirm 流程不可达；返回 null。
+        return null;
+    }
+
     public function url(string $remotePath): string
     {
         $key = ltrim($remotePath, '/');

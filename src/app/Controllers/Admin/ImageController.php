@@ -149,7 +149,9 @@ class ImageController extends Controller
         $profileId = (int) $profile->id;
         $uploaded = 0;
         $errors = [];
-        // v1.3.1 迭代: 内容级重复检测 —— SHA-256 哈希比对（批内 + 数据库）。
+        // v1.3.1 迭代: 内容级重复检测 —— MD5 内容哈希比对（批内 + 数据库）。
+        // 统一用 MD5 是为了与直传路径的云 ETag 对齐（S3 系简单 PUT 的 ETag
+        // 即内容 MD5，由云生成不可伪造）—— 两条路径的去重体系互通。
         // 重复图片跳过不存储，汇总提示，不影响其余文件继续上传。
         $duplicates = [];
         $batchHashes = [];
@@ -185,7 +187,7 @@ class ImageController extends Controller
 
             // v1.3.1: 内容哈希去重 —— 与本批已上传文件、库内已有图片比对。
             // 重复 → 跳过（不上传存储、不建记录），计入 duplicates 继续下一张。
-            $fileHash = @hash_file('sha256', $tmpName);
+            $fileHash = @hash_file('md5', $tmpName);
             if ($fileHash !== false && $fileHash !== '') {
                 if (isset($batchHashes[$fileHash])) {
                     $duplicates[] = "{$originalName}：与本批次中「{$batchHashes[$fileHash]}」重复，已跳过";
@@ -352,9 +354,11 @@ class ImageController extends Controller
                 continue;
             }
 
-            // v1.3.1: 直传去重 —— 客户端（crypto.subtle）预计算的 SHA-256。
+            // v1.3.1: 直传去重预检 —— 客户端（crypto.subtle）预计算的 MD5。
             // 重复项不签发 presigned PUT：浏览器根本不上传字节，直接省掉流量。
-            // hash 可为空（非安全上下文等拿不到 crypto.subtle 时），此时跳过去重。
+            // 注意：此 hash 由客户端声明、可被篡改的前端伪造 —— 它只影响这
+            // 里的预检提示；权威验证在 directConfirm 用云 ETag（服务端 HeadObject
+            // 取得、不可伪造）。hash 可为空（非安全上下文等），此时跳过预检。
             $itemHash = strtolower(trim((string) ($it['hash'] ?? '')));
             if ($itemHash !== '' && !preg_match('#^[a-f0-9]{64}$#', $itemHash)) {
                 $itemHash = '';
@@ -426,11 +430,8 @@ class ImageController extends Controller
         $originalName = mb_substr(trim((string) $request->input('original_name', '')), 0, 255);
         $mime = (string) $request->input('mime', '');
         $size = (int) $request->input('size', '0');
-        // v1.3.1: 客户端预计算的 SHA-256（sign 时已查过库，此处复核防绕过直调）
-        $fileHash = strtolower(trim((string) $request->input('hash', '')));
-        if ($fileHash !== '' && !preg_match('#^[a-f0-9]{64}$#', $fileHash)) {
-            $fileHash = '';
-        }
+        // v1.3.1: 前端也会带上其预计算的 hash，但此处【刻意不读】—— 权威
+        // 哈希来自下方云 ETag（HeadObject），客户端声明一概不信任。
         $categoryId = $request->input('category_id', '');
         $categoryId = $categoryId !== '' ? (int) $categoryId : null;
 
@@ -449,22 +450,32 @@ class ImageController extends Controller
             $this->json(['error' => '未配置任何启用的存储实例'], 400);
         }
         $storage = $profile->driver();
-        if (!$storage->exists($key)) {
-            $this->json(['error' => '直传对象不存在（可能直传失败，或 Bucket 未配置 CORS）'], 400);
-        }
 
-        // v1.3.1: confirm 复核去重 —— sign 后又有人传了同一内容（或绕过 sign
-        // 直调 confirm）时，对象已到云上但不再建库记录；返回 duplicate 标记，
-        // 前端计入"重复跳过"而非错误。孤儿对象留待后续清理任务，无功能影响。
-        if ($fileHash !== '') {
-            $existing = Image::firstWhere('file_hash', $fileHash);
-            if ($existing !== null) {
-                $this->json([
-                    'success' => false,
-                    'duplicate' => true,
-                    'error' => "与已有图片「{$existing->original_name}」重复，未登记",
-                ]);
-            }
+        // v1.3.1: 服务端权威验证 —— HeadObject 一次拿「存在性 + ETag + 大小」。
+        // S3 系简单 PUT 的 ETag 即内容 MD5，由云生成、客户端不可伪造：
+        // 前端声明的 hash 只在 sign 阶段做预检（可被篡改的前端伪造），
+        // 真正的去重与入库以这里的云 ETag 为准。
+        $meta = $storage->stat($key);
+        if ($meta === null) {
+            // 无法读取对象元数据（网络抖动/SDK 异常）—— 保守拒绝，要求重试。
+            // 不降级信任客户端 hash：那正是本验证要堵住的伪造路径。
+            $this->json(['error' => '无法读取已上传对象的元数据，请重试'], 502);
+        }
+        if ((int) $meta['size'] !== $size) {
+            $this->json(['error' => '对象大小与声明不一致（' . (int) $meta['size'] . ' ≠ ' . $size . '），拒绝登记'], 400);
+        }
+        $verifiedHash = (string) $meta['etag']; // 云认证的内容 MD5
+
+        // confirm 复核去重 —— 以云验证过的 MD5 查库。sign 后又有人传了同一
+        // 内容（或恶意声明新哈希实传旧图）在此被拦截：云上对象成为孤儿，
+        // 不建库记录；key 随机不复用，无功能影响。
+        $existing = Image::firstWhere('file_hash', $verifiedHash);
+        if ($existing !== null) {
+            $this->json([
+                'success' => false,
+                'duplicate' => true,
+                'error' => "与已有图片「{$existing->original_name}」重复，未登记",
+            ]);
         }
 
         $filename = basename($key);
@@ -476,7 +487,7 @@ class ImageController extends Controller
             'url' => $url,
             'mime_type' => $mime,
             'file_size' => $size,
-            'file_hash' => $fileHash !== '' ? $fileHash : null,
+            'file_hash' => $verifiedHash,
             'width' => 0,
             'height' => 0,
             'category_id' => $categoryId,

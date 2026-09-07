@@ -249,7 +249,8 @@ class Application
         $defs = [
             'storage'          => "VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`",
             'storage_provider' => "VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`",
-            // v1.3.1 迭代: 上传去重 —— SHA-256 内容哈希（旧数据为 NULL，不回填）
+            // v1.3.1 迭代: 上传去重 —— MD5 内容哈希（与直传云 ETag 对齐；
+            // 旧数据为 NULL，不回填）
             'file_hash'        => "CHAR(64) NULL DEFAULT NULL AFTER `file_size`",
         ];
 

@@ -188,6 +188,44 @@ class ObsSdkDriver implements StorageInterface
         }
     }
 
+    /**
+     * v1.3.1 迭代: HeadObject 元数据 —— ETag（简单 PUT 即内容 MD5）+ 大小，
+     * 供直传登记的服务端权威验证。异常/无法解析返回 null。
+     */
+    public function stat(string $remotePath): ?array
+    {
+        try {
+            $model = $this->client()->getObjectMetadata([
+                'Bucket' => $this->bucket,
+                'Key'    => ltrim($remotePath, '/'),
+            ]);
+            // OBS 的 Model 对头名大小写不做保证 —— 不区分大小写取值
+            $etag = '';
+            $size = 0;
+            foreach ((array) $model as $k => $v) {
+                $lk = strtolower((string) $k);
+                if ($lk === 'etag' && $etag === '') {
+                    $etag = (string) $v;
+                }
+                if ($lk === 'contentlength' && $size === 0) {
+                    $size = (int) $v;
+                }
+            }
+        } catch (\Throwable) {
+            return null;
+        }
+        if ($etag === '') {
+            return null;
+        }
+            // ETag 规范化：去引号 + 小写；非 32 位 hex（multipart/SSE-KMS 等
+            // 非「内容MD5」语义）一律视为无法验证，返回 null。
+            $etag = strtolower(trim((string) $etag, '"'));
+            if (!preg_match('#^[a-f0-9]{32}$#', $etag)) {
+                return null;
+            }
+        return ['etag' => $etag, 'size' => $size];
+    }
+
     public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {

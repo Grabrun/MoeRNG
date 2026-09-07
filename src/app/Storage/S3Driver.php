@@ -303,6 +303,24 @@ class S3Driver implements StorageInterface
         throw new \RuntimeException("未知存储服务商: {$this->provider}");
     }
 
+    public function stat(string $remotePath): ?array
+    {
+        // v1.3.1: 委托给 S3 系 SDK 驱动（HeadObject → ETag=内容MD5）。
+        if (($sdk = $this->cosSdk()) !== null) {
+            return $sdk->stat($remotePath);
+        }
+        if (($sdk = $this->ossSdk()) !== null) {
+            return $sdk->stat($remotePath);
+        }
+        if (($sdk = $this->awsSdk()) !== null) {
+            return $sdk->stat($remotePath);
+        }
+        if (($sdk = $this->obsSdk()) !== null) {
+            return $sdk->stat($remotePath);
+        }
+        return null;
+    }
+
     public function presignPut(string $key, string $contentType, int $expires = 600): ?array
     {
         // v1.3.1 迭代: 委托给支持直传的官方 SDK 驱动（COS/OSS/AWS/OBS）。
