@@ -73,6 +73,8 @@ class ImageController extends Controller
             'categoryId' => $categoryId,
             'storageProfiles' => $storageProfiles,
             'defaultProfile' => $defaultProfile,
+            // v1.3.1: 对象存储直传开关（前端据此决定 sign→PUT→confirm 或服务器分批）
+            'directUploadEnabled' => Config::get('settings.direct_upload_enabled', '0') === '1',
         ]);
     }
 
@@ -247,6 +249,158 @@ class ImageController extends Controller
         }
 
         $this->redirect('/admin/images');
+    }
+
+    // ── v1.3.1 迭代: 对象存储前端直传（浏览器 → 云，绕过服务器流量）────
+    // mime → 扩展名映射（存储文件名的扩展名与真实 MIME 恒一致）
+    private const MIME_EXT = [
+        'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif',
+        'image/webp' => 'webp', 'image/bmp' => 'bmp',
+    ];
+    /** 直传单文件上限（presigned PUT 无 post_max_size 约束，设合理硬顶）。 */
+    private const DIRECT_MAX_BYTES = 209715200; // 200MB
+
+    /** 解析上传目标存储实例（与 upload() 同逻辑：指定实例 → 默认实例）。 */
+    private function resolveUploadProfile(Request $request): ?StorageProfile
+    {
+        $profileId = (int) $request->input('storage_profile_id', '0');
+        $profile = $profileId > 0 ? StorageProfile::find($profileId) : null;
+        if ($profile === null || !$profile->isEnabled() || !$profile->isUsable()) {
+            $profile = StorageProfile::defaultProfile();
+        }
+        return $profile;
+    }
+
+    /**
+     * 直传第一步：为每个待传文件签发 presigned PUT。
+     * 开关关闭 / 本地或七牛又拍云等不支持直传的驱动 → 返回 direct=false，
+     * 前端回退服务器上传路径。响应体中的 error 项为逐文件校验失败原因。
+     */
+    public function directSign(Request $request): void
+    {
+        $this->validateCsrf();
+
+        if (Config::get('settings.direct_upload_enabled', '0') !== '1') {
+            $this->json(['direct' => false, 'message' => '直传未启用'], 200);
+        }
+        $profile = $this->resolveUploadProfile($request);
+        if ($profile === null) {
+            $this->json(['direct' => false, 'message' => '未配置任何启用的存储实例'], 200);
+        }
+        if ((string) $profile->driver === 'local') {
+            $this->json(['direct' => false, 'message' => '本地存储无需直传'], 200);
+        }
+
+        $items = json_decode((string) $request->input('items', '[]'), true);
+        if (!is_array($items) || $items === []) {
+            $this->json(['error' => '没有待签名的文件'], 400);
+        }
+
+        $storage = $profile->driver();
+        $signed = [];
+        foreach ($items as $it) {
+            $original = mb_substr((string) ($it['name'] ?? 'image'), 0, 255);
+            $mime = (string) ($it['mime'] ?? '');
+            $size = (int) ($it['size'] ?? 0);
+            if (!in_array($mime, $this->allowedMimeTypes, true)) {
+                $signed[] = ['name' => $original, 'error' => "不支持的文件类型 {$mime}"];
+                continue;
+            }
+            if ($size <= 0 || $size > self::DIRECT_MAX_BYTES) {
+                $signed[] = ['name' => $original, 'error' => '文件大小超出直传上限（200MB）'];
+                continue;
+            }
+            $ext = self::MIME_EXT[$mime] ?? strtolower(pathinfo($original, PATHINFO_EXTENSION));
+            if (!in_array($ext, $this->allowedExtensions, true)) {
+                $signed[] = ['name' => $original, 'error' => "扩展名 .{$ext} 不在允许列表"];
+                continue;
+            }
+            $uuid = bin2hex(random_bytes(8));
+            $filename = "{$uuid}.{$ext}";
+            $key = date('Y/m') . '/' . $filename;
+
+            $presign = $storage->presignPut($key, $mime, 600);
+            if ($presign === null) {
+                $this->json(['direct' => false, 'message' => '当前存储驱动不支持直传'], 200);
+                return;
+            }
+            $signed[] = [
+                'name' => $original,
+                'key' => $key,
+                'filename' => $filename,
+                'url' => $presign['url'],
+                'headers' => $presign['headers'],
+                'mime' => $mime,
+                'size' => $size,
+            ];
+        }
+
+        $this->json([
+            'direct' => true,
+            'storage' => (string) $profile->driver,
+            'provider' => (string) $profile->provider,
+            'profile_id' => (int) $profile->id,
+            'items' => $signed,
+        ]);
+    }
+
+    /**
+     * 直传第二步：登记确认。exists()（HeadObject 语义）验证对象真实存在，
+     * 防止「登记一个不存在的对象」；key 格式白名单防路径穿越。宽高字段
+     * 置 0（浏览器侧不读像素，展示层自适应）。
+     */
+    public function directConfirm(Request $request): void
+    {
+        $this->validateCsrf();
+
+        $key = (string) $request->input('key', '');
+        $originalName = mb_substr(trim((string) $request->input('original_name', '')), 0, 255);
+        $mime = (string) $request->input('mime', '');
+        $size = (int) $request->input('size', '0');
+        $categoryId = $request->input('category_id', '');
+        $categoryId = $categoryId !== '' ? (int) $categoryId : null;
+
+        if (!preg_match('#^\d{4}/\d{2}/[a-f0-9]{16}\.(jpg|jpeg|png|gif|webp|bmp)$#', $key)) {
+            $this->json(['error' => '非法的对象 key'], 400);
+        }
+        if ($originalName === '') {
+            $this->json(['error' => '缺少原始文件名'], 400);
+        }
+        if (!in_array($mime, $this->allowedMimeTypes, true) || $size <= 0 || $size > self::DIRECT_MAX_BYTES) {
+            $this->json(['error' => '文件元数据不合法'], 400);
+        }
+
+        $profile = $this->resolveUploadProfile($request);
+        if ($profile === null) {
+            $this->json(['error' => '未配置任何启用的存储实例'], 400);
+        }
+        $storage = $profile->driver();
+        if (!$storage->exists($key)) {
+            $this->json(['error' => '直传对象不存在（可能直传失败，或 Bucket 未配置 CORS）'], 400);
+        }
+
+        $filename = basename($key);
+        $url = $storage->url($key);
+        $image = new Image([
+            'filename' => $filename,
+            'original_name' => $originalName,
+            'path' => $key,
+            'url' => $url,
+            'mime_type' => $mime,
+            'file_size' => $size,
+            'width' => 0,
+            'height' => 0,
+            'category_id' => $categoryId,
+            'sort_order' => 0,
+            'status' => 'active',
+            'storage' => (string) $profile->driver,
+            'storage_provider' => (string) $profile->provider,
+            'storage_profile_id' => (int) $profile->id,
+        ]);
+        if (!$image->save()) {
+            $this->json(['error' => '数据库写入失败：图片记录未保存'], 500);
+        }
+        $this->json(['success' => true, 'id' => (int) $image->id, 'url' => $url]);
     }
 
     public function update(Request $request): void

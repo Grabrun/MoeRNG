@@ -150,6 +150,21 @@ class CosSdkDriver implements StorageInterface
         }
     }
 
+    /**
+     * v1.3.1 迭代: S3 兼容直传签名（SigV4 presigned PUT，见 S3CompatPresigner）。
+     */
+    public function presignPut(string $key, string $contentType, int $expires = 600): ?array
+    {
+                $host = $this->sourceDomain !== ''
+            ? $this->sourceDomain
+            : "{$this->bucket}.cos.{$this->region}.myqcloud.com";
+        $sigRegion = $this->region;
+        return S3CompatPresigner::presignPut(
+            $host, $key, $contentType, $expires,
+            $this->accessKey, $this->secretKey, $sigRegion
+        );
+    }
+
     public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {

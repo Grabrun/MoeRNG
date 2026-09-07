@@ -150,6 +150,23 @@ class ObsSdkDriver implements StorageInterface
         }
     }
 
+    /**
+     * v1.3.1 迭代: S3 兼容直传签名（SigV4 presigned PUT，见 S3CompatPresigner）。
+     */
+    public function presignPut(string $key, string $contentType, int $expires = 600): ?array
+    {
+                $epHost = preg_replace('#^https?://#', '', $this->endpoint);
+        $host = $this->sourceDomain !== ''
+            ? $this->sourceDomain
+            : "{$this->bucket}.{$epHost}";
+        // SigV4 region 从 OBS endpoint 提取（obs.cn-north-4 → cn-north-4）
+        $sigRegion = preg_match('#obs\.([a-z0-9-]+)\.#i', $this->endpoint, $m) ? $m[1] : 'cn-north-1';
+        return S3CompatPresigner::presignPut(
+            $host, $key, $contentType, $expires,
+            $this->accessKey, $this->secretKey, $sigRegion
+        );
+    }
+
     public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {

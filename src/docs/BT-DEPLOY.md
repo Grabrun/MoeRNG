@@ -97,3 +97,22 @@ curl -sI https://你的域名/public/css/style.css | grep -iE "cache-control|exp
 - **后台 404**：伪静态未保存 / `location /admin` 行缺失
 - **图片 404 / 签名失效**：确认已重启 PHP-FPM；签名密钥存 `config/signing_key.php`
 - **对象存储图片加载失败**：检查 CSP——v1.2.1-beta.2 起 CSP 自动白名单存储 CDN/源站域名，若仍失败请确认存储管理里的 CDN/源站域名已配置
+
+## 6. 对象存储前端直传（v1.3.1，可选）
+
+「系统设置 → 图片与存储 → 对象存储前端直传」开启后，上传图片由浏览器**直传云存储**（不消耗服务器流量；单文件上限 200MB，不受 post_max_size 限制）。
+
+**生效条件**（缺一不可）：
+
+1. 开关打开（系统设置 → 图片与存储）；
+2. 当前选中的存储实例为 **AWS S3 / 腾讯云 COS / 阿里云 OSS / 华为 OBS**（本地存储、又拍云、七牛自动回退服务器上传）；
+3. **云控制台为 Bucket 配置 CORS**（各云控制台 → Bucket → 跨域/CORS 设置）：
+
+| 项 | 值 |
+|----|----|
+| 来源 Origin | `https://你的域名` |
+| 方法 Methods | `PUT`、`HEAD` |
+| 允许 Headers | `Content-Type` |
+| Expose Headers | `ETag`（可选） |
+
+4. 关闭开关或条件不满足时自动回退服务器上传（功能永远可用）；直传 403 时前端会明确提示 CORS 未配置。

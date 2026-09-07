@@ -36,6 +36,13 @@ interface StorageInterface
     public function exists(string $remotePath): bool;
 
     /**
+     * v1.3.1 迭代: 前端直传签名（S3 兼容 SigV4 presigned PUT）。
+     * 返回 null 表示该驱动不支持直传（local / 又拍云 / 七牛），上传回退
+     * 服务器路径。返回 ['url' => ..., 'headers' => ['Content-Type' => ...]]。
+     */
+    public function presignPut(string $key, string $contentType, int $expires = 600): ?array;
+
+    /**
      * Get driver configuration for display
      * @return array
      */

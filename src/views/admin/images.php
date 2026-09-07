@@ -97,7 +97,7 @@
 </div>
 
 <!-- Upload Modal -->
-<div class="modal-overlay" id="upload-modal">
+<div class="modal-overlay" id="upload-modal" data-direct-upload="<?= $directUploadEnabled ? '1' : '0' ?>">
     <div class="modal max-w-600">
         <h2>上传图片</h2>
         <form method="POST" action="/admin/images/upload" enctype="multipart/form-data" id="upload-form">

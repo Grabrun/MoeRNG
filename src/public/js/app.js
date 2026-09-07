@@ -785,6 +785,14 @@ function initDropZone() {
         if (!files.length) return;
         if (uploading) { showToast('上传进行中，请等待当前批次完成', 'error', 4000); return; }
 
+        // v1.3.1 迭代: 对象存储直传开关开启时，走 sign → PUT → confirm 直传
+        // （图片不经过服务器）；签名端点返回 direct=false（未启用/本地存储/
+        // 驱动不支持）则回退下方服务器分批上传。
+        if (document.getElementById('upload-modal')?.dataset.directUpload === '1') {
+            handleDirectUpload(files);
+            return;
+        }
+
         function parseSize(s) {
             if (!s) return 0;
             var m = String(s).trim().match(/^([\d.]+)\s*([kmg]?)b?$/i);
@@ -973,6 +981,145 @@ function initDropZone() {
             xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
             xhr.send(new FormData(form));
         }
+    }
+
+    // ── v1.3.1 迭代: 对象存储直传（浏览器 → 云，图片不经过服务器）─────
+    // 流程：direct-sign 批量签名 → 逐张 XHR PUT（串行，字节级聚合进度）→
+    // direct-confirm 登记入库。任何 sign/PUT 层失败都会把 directUpload 关闭
+    // 标志翻为回退，由调用方决定是否走服务器分批路径。
+    async function handleDirectUpload(files) {
+        uploading = true;
+        const catId = document.querySelector('[name="upload_category_id"]')?.value || '';
+        const profileId = document.querySelector('[name="storage_profile_id"]')?.value || '';
+
+        progressBar.classList.remove('hidden');
+        progressFill.style.width = '0%';
+        progressFill.classList.remove('processing');
+        let progressText = progressBar.querySelector('.progress-text');
+        if (!progressText) {
+            progressText = document.createElement('span');
+            progressText.className = 'progress-text';
+            progressBar.appendChild(progressText);
+        }
+        const setPct = function(pct, note) {
+            progressFill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+            progressText.textContent = note ? ('直传 · ' + note) : ('直传 · ' + Math.min(100, Math.round(pct * 100)) + '%');
+        };
+        setPct(0, '请求签名…');
+
+        // 1) 批量签名
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        fd.append('category_id', catId);
+        if (profileId) fd.append('storage_profile_id', profileId);
+        const items = [];
+        for (let i = 0; i < files.length; i++) {
+            items.push({ name: files[i].name, size: files[i].size, mime: files[i].type || 'application/octet-stream' });
+        }
+        fd.append('items', JSON.stringify(items));
+
+        let sign = null;
+        try {
+            const r = await fetch('/admin/images/direct-sign', {
+                method: 'POST', body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            sign = await r.json();
+        } catch (_) {
+            sign = { direct: false, message: '签名请求失败' };
+        }
+
+        // 回退：开关关闭 / 本地存储 / 驱动不支持 → 服务器分批上传
+        if (!sign || sign.direct !== true) {
+            uploading = false;
+            progressBar.classList.add('hidden');
+            showToast('直传不可用（' + ((sign && sign.message) || '未知原因') + '），改为服务器上传', 'error', 6000);
+            handleFiles(files);
+            return;
+        }
+
+        // 2) 逐张 PUT + 3) confirm（串行；进度按字节占比聚合）
+        const totalBytes = files.reduce(function(a, f) { return a + (f.size || 0); }, 0);
+        let doneBytes = 0;
+        const fileByNameSize = {};
+        for (let i = 0; i < files.length; i++) {
+            fileByNameSize[files[i].name + '|' + files[i].size] = files[i];
+        }
+        let uploaded = 0;
+        const errors = [];
+        const signedItems = Array.isArray(sign.items) ? sign.items : [];
+
+        for (let i = 0; i < signedItems.length; i++) {
+            const it = signedItems[i];
+            if (it.error) { errors.push((it.name || '文件') + ': ' + it.error); continue; }
+            const file = fileByNameSize[it.name + '|' + it.size]
+                || files.find(function(f) { return f.name === it.name && f.size === it.size; });
+            if (!file) { errors.push((it.name || '文件') + ': 未找到本地文件'); continue; }
+
+            const base = doneBytes / (totalBytes || 1);
+            const span = (it.size || 0) / (totalBytes || 1);
+            const res = await xhrPut(it.url, file, (it.headers && it.headers['Content-Type']) || it.mime, function(pct) {
+                setPct(base + span * pct, '');
+            });
+            if (!res.ok) {
+                doneBytes += (it.size || 0);
+                errors.push((it.name || '文件') + ': 直传失败 (HTTP ' + res.status + ')' +
+                    (res.status === 403 ? '——通常是 Bucket 未配置 CORS，或签名已过期' : ''));
+                continue;
+            }
+            setPct(base + span, '登记入库…');
+            const cf = new FormData();
+            cf.append('_csrf_token', getCsrfToken());
+            cf.append('key', it.key);
+            cf.append('original_name', it.name);
+            cf.append('mime', it.mime);
+            cf.append('size', it.size);
+            cf.append('category_id', catId);
+            if (profileId) cf.append('storage_profile_id', profileId);
+            try {
+                const cr = await fetch('/admin/images/direct-confirm', {
+                    method: 'POST', body: cf,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                const cj = await cr.json();
+                if (cj && cj.success) { uploaded++; }
+                else { errors.push((it.name || '文件') + ': 登记失败 — ' + ((cj && cj.error) || '未知错误')); }
+            } catch (_) {
+                errors.push((it.name || '文件') + ': 登记请求失败');
+            }
+            doneBytes += (it.size || 0);
+        }
+
+        uploading = false;
+        progressBar.classList.add('hidden');
+        progressFill.classList.remove('processing');
+        if (uploaded > 0) {
+            let msg = '直传完成：成功 ' + uploaded + ' 张';
+            if (errors.length) msg += '，失败 ' + errors.length + ' 项';
+            showToast(msg, errors.length ? 'error' : 'success', errors.length ? 10000 : 5000);
+            if (errors.length && window.console) console.warn('direct upload errors:', errors);
+            setTimeout(function() { window.location.reload(); }, 1200);
+        } else {
+            let msg = errors.length ? errors.join(' | ') : '直传失败：没有文件被上传';
+            if (errors.some(function(e) { return e.indexOf('CORS') !== -1 || e.indexOf('403') !== -1; })) {
+                msg = '直传失败：请在云控制台为 Bucket 配置 CORS（允许站点域名 PUT/HEAD + content-type 头）后重试';
+            }
+            showToast(msg, 'error', 10000);
+        }
+    }
+
+    function xhrPut(url, file, contentType, onPct) {
+        return new Promise(function(resolve) {
+            const xhr = new XMLHttpRequest();
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) onPct(e.loaded / e.total);
+            };
+            xhr.onload = function() { resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status }); };
+            xhr.onerror = function() { resolve({ ok: false, status: 0 }); };
+            xhr.open('PUT', url);
+            if (contentType) xhr.setRequestHeader('Content-Type', contentType);
+            xhr.send(file);
+        });
     }
 }
 

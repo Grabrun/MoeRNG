@@ -144,6 +144,22 @@ class AwsSdkDriver implements StorageInterface
         }
     }
 
+    /**
+     * v1.3.1 迭代: S3 兼容直传签名（SigV4 presigned PUT，见 S3CompatPresigner）。
+     */
+    public function presignPut(string $key, string $contentType, int $expires = 600): ?array
+    {
+                $epHost = $this->endpoint !== '' ? preg_replace('#^https?://#', '', $this->endpoint) : '';
+        $host = $this->sourceDomain !== ''
+            ? $this->sourceDomain
+            : ($epHost !== '' ? "{$this->bucket}.{$epHost}" : "{$this->bucket}.s3.{$this->region}.amazonaws.com");
+        $sigRegion = $this->region !== '' ? $this->region : 'us-east-1';
+        return S3CompatPresigner::presignPut(
+            $host, $key, $contentType, $expires,
+            $this->accessKey, $this->secretKey, $sigRegion
+        );
+    }
+
     public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {
