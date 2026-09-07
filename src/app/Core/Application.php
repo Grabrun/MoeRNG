@@ -237,7 +237,7 @@ class Application
         // call — caught and swallowed by runStorageMigration, so the columns
         // never got added and every upload silently failed. PDO is the truth.
         $needed = [];
-        foreach (['storage', 'storage_provider'] as $col) {
+        foreach (['storage', 'storage_provider', 'file_hash'] as $col) {
             if (!$this->columnExists($db, 'images', $col)) {
                 $needed[] = $col;
             }
@@ -249,6 +249,8 @@ class Application
         $defs = [
             'storage'          => "VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`",
             'storage_provider' => "VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`",
+            // v1.3.1 迭代: 上传去重 —— SHA-256 内容哈希（旧数据为 NULL，不回填）
+            'file_hash'        => "CHAR(64) NULL DEFAULT NULL AFTER `file_size`",
         ];
 
         $errors = [];
@@ -262,6 +264,16 @@ class Application
                     continue;
                 }
                 $errors[] = "ADD COLUMN `{$col}` failed: {$msg}";
+            }
+        }
+
+        // v1.3.1: 去重查询索引（幂等，1061 duplicate key name 视为已存在）。
+        try {
+            $db->exec("ALTER TABLE `images` ADD INDEX `idx_file_hash` (`file_hash`)");
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
+                $errors[] = "ADD INDEX idx_file_hash failed: {$msg}";
             }
         }
 

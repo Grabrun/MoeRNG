@@ -849,6 +849,8 @@ function initDropZone() {
         // ── 3) 串行上传队列 + 跨批次聚合进度 ──────────────────────────
         var batchCount = batches.length;
         var uploadedCount = 0, allErrors = [];
+        // v1.3.1: 重复跳过聚合（与失败分开呈现，不打断其它文件上传）
+        var allDuplicates = [];
         progressBar.classList.remove('hidden');
         progressFill.style.width = '0%';
         progressFill.classList.remove('processing');
@@ -871,12 +873,14 @@ function initDropZone() {
             uploading = false;
             progressBar.classList.add('hidden');
             progressFill.classList.remove('processing');
-            if (uploadedCount > 0) {
-                var msg = '上传完成：成功 ' + uploadedCount + ' 张';
+            if (uploadedCount > 0 || allDuplicates.length > 0) {
+                var msg = uploadedCount > 0 ? ('上传完成：成功 ' + uploadedCount + ' 张') : '所选图片均为重复，未新增';
+                if (allDuplicates.length) msg += uploadedCount > 0 ? ('，重复跳过 ' + allDuplicates.length + ' 张') : ('（共 ' + allDuplicates.length + ' 张）');
                 if (allErrors.length) msg += '，失败 ' + allErrors.length + ' 项';
                 if (aborted) msg += '（后续批次已中止：登录状态过期，请刷新页面重试）';
-                showToast(msg, aborted ? 'error' : 'success', aborted ? 10000 : 5000);
+                showToast(msg, aborted || allErrors.length ? 'error' : 'success', aborted || allErrors.length ? 10000 : 5000);
                 if (allErrors.length && window.console) console.warn('upload errors:', allErrors);
+                if (allDuplicates.length && window.console) console.info('upload duplicates:', allDuplicates);
                 setTimeout(() => window.location.reload(), 1200);
             } else {
                 showToast(aborted ? '登录状态已过期（CSRF），请刷新页面后重试' : (allErrors.length ? allErrors.join(' | ') : '上传失败：没有文件被上传'), 'error', 8000);
@@ -896,9 +900,13 @@ function initDropZone() {
                 // 后续批次全部撞 419。
                 if (result.status === 419) { finish(true); return; }
                 if (result.ok) {
-                    uploadedCount += Math.max(0, batch.length - result.errors.length);
+                    // v1.3.1: 重复文件不计入成功数（后端已跳过存储）
+                    uploadedCount += Math.max(0, batch.length - result.errors.length - result.duplicates.length);
                 }
                 allErrors = allErrors.concat(result.errors.map(function(e) {
+                    return batchCount > 1 ? ('批次' + (idx + 1) + '：' + e) : e;
+                }));
+                allDuplicates = allDuplicates.concat(result.duplicates.map(function(e) {
                     return batchCount > 1 ? ('批次' + (idx + 1) + '：' + e) : e;
                 }));
                 nextBatch(idx + 1);
@@ -958,6 +966,8 @@ function initDropZone() {
                     onDone({
                         ok: !!payload.success,
                         errors: Array.isArray(payload.errors) ? payload.errors : [],
+                        // v1.3.1: 重复跳过明细（后端 SHA-256 去重结果）
+                        duplicates: Array.isArray(payload.duplicates) ? payload.duplicates : [],
                         status: xhr.status,
                     });
                     return;
@@ -971,10 +981,10 @@ function initDropZone() {
                     const alertEl = tmp.querySelector('.alert.alert-error, .alert.alert-danger, .alert.alert-warning');
                     if (alertEl && alertEl.textContent.trim()) msg = alertEl.textContent.trim();
                 } catch (_) {}
-                onDone({ ok: false, errors: [msg], status: xhr.status });
+                onDone({ ok: false, errors: [msg], duplicates: [], status: xhr.status });
             };
             xhr.onerror = function() {
-                onDone({ ok: false, errors: ['网络错误：上传请求未到达服务器'], status: 0 });
+                onDone({ ok: false, errors: ['网络错误：上传请求未到达服务器'], duplicates: [], status: 0 });
             };
             // AJAX marker so the backend answers JSON instead of 302+flash.
             xhr.open('POST', form.action);
@@ -1005,7 +1015,15 @@ function initDropZone() {
             progressFill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
             progressText.textContent = note ? ('直传 · ' + note) : ('直传 · ' + Math.min(100, Math.round(pct * 100)) + '%');
         };
-        setPct(0, '请求签名…');
+        setPct(0, '计算哈希…');
+
+        // v1.3.1: 内容级去重 —— 每个文件预计算 SHA-256（crypto.subtle，仅安全
+        // 上下文可用；拿不到时置空串、该文件跳过去重照常直传）。重复项服务端
+        // 不签发 PUT，浏览器根本不上传字节 —— 省流量。
+        const hashes = [];
+        for (let i = 0; i < files.length; i++) {
+            hashes.push(await sha256Hex(files[i]));
+        }
 
         // 1) 批量签名
         const fd = new FormData();
@@ -1014,7 +1032,7 @@ function initDropZone() {
         if (profileId) fd.append('storage_profile_id', profileId);
         const items = [];
         for (let i = 0; i < files.length; i++) {
-            items.push({ name: files[i].name, size: files[i].size, mime: files[i].type || 'application/octet-stream' });
+            items.push({ name: files[i].name, size: files[i].size, mime: files[i].type || 'application/octet-stream', hash: hashes[i] });
         }
         fd.append('items', JSON.stringify(items));
 
@@ -1047,11 +1065,20 @@ function initDropZone() {
         }
         let uploaded = 0;
         const errors = [];
+        // v1.3.1: 重复跳过清单（与错误分开呈现，不打断其它文件）
+        let dupCount = 0;
+        const dupMsgs = [];
         const signedItems = Array.isArray(sign.items) ? sign.items : [];
 
         for (let i = 0; i < signedItems.length; i++) {
             const it = signedItems[i];
             if (it.error) { errors.push((it.name || '文件') + ': ' + it.error); continue; }
+            if (it.duplicate) {
+                dupCount++;
+                dupMsgs.push((it.name || '文件') + '：' + (it.message || '重复，已跳过'));
+                doneBytes += (it.size || 0);
+                continue;
+            }
             const file = fileByNameSize[it.name + '|' + it.size]
                 || files.find(function(f) { return f.name === it.name && f.size === it.size; });
             if (!file) { errors.push((it.name || '文件') + ': 未找到本地文件'); continue; }
@@ -1074,6 +1101,7 @@ function initDropZone() {
             cf.append('original_name', it.name);
             cf.append('mime', it.mime);
             cf.append('size', it.size);
+            if (it.hash) cf.append('hash', it.hash);
             cf.append('category_id', catId);
             if (profileId) cf.append('storage_profile_id', profileId);
             try {
@@ -1083,6 +1111,7 @@ function initDropZone() {
                 });
                 const cj = await cr.json();
                 if (cj && cj.success) { uploaded++; }
+                else if (cj && cj.duplicate) { dupCount++; dupMsgs.push((it.name || '文件') + '：' + (cj.error || '重复，未登记')); }
                 else { errors.push((it.name || '文件') + ': 登记失败 — ' + ((cj && cj.error) || '未知错误')); }
             } catch (_) {
                 errors.push((it.name || '文件') + ': 登记请求失败');
@@ -1093,11 +1122,16 @@ function initDropZone() {
         uploading = false;
         progressBar.classList.add('hidden');
         progressFill.classList.remove('processing');
-        if (uploaded > 0) {
-            let msg = '直传完成：成功 ' + uploaded + ' 张';
+        // v1.3.1: 汇总区分「成功 / 重复跳过 / 失败」——重复不是失败，不打断
+        if (uploaded > 0 || dupCount > 0) {
+            let msg = uploaded > 0 ? ('直传完成：成功 ' + uploaded + ' 张') : '所选图片均为重复，未新增';
+            if (dupCount > 0) msg += uploaded > 0 ? ('，重复跳过 ' + dupCount + ' 张') : ('（共 ' + dupCount + ' 张）');
             if (errors.length) msg += '，失败 ' + errors.length + ' 项';
-            showToast(msg, errors.length ? 'error' : 'success', errors.length ? 10000 : 5000);
-            if (errors.length && window.console) console.warn('direct upload errors:', errors);
+            showToast(msg, errors.length ? 'error' : 'success', errors.length || dupCount ? 10000 : 5000);
+            if (window.console) {
+                if (errors.length) console.warn('direct upload errors:', errors);
+                if (dupMsgs.length) console.info('direct upload duplicates:', dupMsgs);
+            }
             setTimeout(function() { window.location.reload(); }, 1200);
         } else {
             let msg = errors.length ? errors.join(' | ') : '直传失败：没有文件被上传';
@@ -1105,6 +1139,19 @@ function initDropZone() {
                 msg = '直传失败：请在云控制台为 Bucket 配置 CORS（允许站点域名 PUT/HEAD + content-type 头）后重试';
             }
             showToast(msg, 'error', 10000);
+        }
+    }
+
+    // v1.3.1: 文件 SHA-256（hex）。crypto.subtle 仅在安全上下文可用；
+    // 不可用或读文件失败时返回空串（服务端据此跳过去重，不影响上传）。
+    async function sha256Hex(file) {
+        try {
+            if (!window.crypto || !crypto.subtle || typeof crypto.subtle.digest !== 'function') return '';
+            const buf = await file.arrayBuffer();
+            const digest = await crypto.subtle.digest('SHA-256', buf);
+            return Array.from(new Uint8Array(digest)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+        } catch (_) {
+            return '';
         }
     }
 

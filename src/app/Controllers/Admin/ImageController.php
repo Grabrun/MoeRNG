@@ -149,6 +149,10 @@ class ImageController extends Controller
         $profileId = (int) $profile->id;
         $uploaded = 0;
         $errors = [];
+        // v1.3.1 迭代: 内容级重复检测 —— SHA-256 哈希比对（批内 + 数据库）。
+        // 重复图片跳过不存储，汇总提示，不影响其余文件继续上传。
+        $duplicates = [];
+        $batchHashes = [];
 
         $fileCount = count($files['tmp_name']);
         for ($i = 0; $i < $fileCount; $i++) {
@@ -179,6 +183,24 @@ class ImageController extends Controller
                 continue;
             }
 
+            // v1.3.1: 内容哈希去重 —— 与本批已上传文件、库内已有图片比对。
+            // 重复 → 跳过（不上传存储、不建记录），计入 duplicates 继续下一张。
+            $fileHash = @hash_file('sha256', $tmpName);
+            if ($fileHash !== false && $fileHash !== '') {
+                if (isset($batchHashes[$fileHash])) {
+                    $duplicates[] = "{$originalName}：与本批次中「{$batchHashes[$fileHash]}」重复，已跳过";
+                    continue;
+                }
+                $existing = Image::firstWhere('file_hash', $fileHash);
+                if ($existing !== null) {
+                    $duplicates[] = "{$originalName}：与已有图片「{$existing->original_name}」重复，已跳过";
+                    continue;
+                }
+                $batchHashes[$fileHash] = $originalName;
+            } else {
+                $fileHash = null;
+            }
+
             // Generate unique filename
             $uuid = bin2hex(random_bytes(8));
             $filename = "{$uuid}.{$ext}";
@@ -199,6 +221,7 @@ class ImageController extends Controller
                     'url' => $url,
                     'mime_type' => $detectedMime,
                     'file_size' => $fileSize,
+                    'file_hash' => $fileHash,
                     'width' => $width,
                     'height' => $height,
                     'category_id' => $categoryId,
@@ -226,12 +249,19 @@ class ImageController extends Controller
         // of the 302+flash dance. A blind XHR follow of a 302 consumes the
         // flash, so the operator would see nothing; returning JSON lets the
         // frontend show a toast with the real error (or success).
+        $dupCount = count($duplicates);
         if ($this->isAjax()) {
-            if ($uploaded > 0) {
+            // v1.3.1: 全部为重复也算"有结果"（success=true）——不是服务器错误。
+            if ($uploaded > 0 || $dupCount > 0) {
+                $msg = $uploaded > 0 ? "上传完成：成功 {$uploaded} 张" : '所选图片均为重复，未新增';
+                if ($dupCount > 0) {
+                    $msg .= $uploaded > 0 ? "，重复跳过 {$dupCount} 张" : "（共 {$dupCount} 张）";
+                }
                 $this->json([
                     'success' => true,
-                    'message' => "Successfully uploaded {$uploaded} image(s).",
+                    'message' => $msg,
                     'errors' => $errors,
+                    'duplicates' => $duplicates,
                 ]);
             }
             $this->json([
@@ -241,8 +271,12 @@ class ImageController extends Controller
             ], 500);
         }
 
-        if ($uploaded > 0) {
-            Session::flash('success', "Successfully uploaded {$uploaded} image(s).");
+        if ($uploaded > 0 || $dupCount > 0) {
+            $msg = $uploaded > 0 ? "Successfully uploaded {$uploaded} image(s)." : '所选图片均为重复，未新增。';
+            if ($dupCount > 0) {
+                $msg .= $uploaded > 0 ? " 重复跳过 {$dupCount} 张。" : "（共 {$dupCount} 张）";
+            }
+            Session::flash('success', $msg);
         }
         if (!empty($errors)) {
             Session::flash('error', implode('<br>', $errors));
@@ -298,6 +332,8 @@ class ImageController extends Controller
 
         $storage = $profile->driver();
         $signed = [];
+        // v1.3.1: 批内哈希集合 —— 同批重复文件只保留第一张
+        $batchHashes = [];
         foreach ($items as $it) {
             $original = mb_substr((string) ($it['name'] ?? 'image'), 0, 255);
             $mime = (string) ($it['mime'] ?? '');
@@ -315,6 +351,33 @@ class ImageController extends Controller
                 $signed[] = ['name' => $original, 'error' => "扩展名 .{$ext} 不在允许列表"];
                 continue;
             }
+
+            // v1.3.1: 直传去重 —— 客户端（crypto.subtle）预计算的 SHA-256。
+            // 重复项不签发 presigned PUT：浏览器根本不上传字节，直接省掉流量。
+            // hash 可为空（非安全上下文等拿不到 crypto.subtle 时），此时跳过去重。
+            $itemHash = strtolower(trim((string) ($it['hash'] ?? '')));
+            if ($itemHash !== '' && !preg_match('#^[a-f0-9]{64}$#', $itemHash)) {
+                $itemHash = '';
+            }
+            if ($itemHash !== '') {
+                if (isset($batchHashes[$itemHash])) {
+                    $signed[] = [
+                        'name' => $original, 'duplicate' => true,
+                        'message' => "与本批次中「{$batchHashes[$itemHash]['name']}」重复，已跳过",
+                    ];
+                    continue;
+                }
+                $existing = Image::firstWhere('file_hash', $itemHash);
+                if ($existing !== null) {
+                    $signed[] = [
+                        'name' => $original, 'duplicate' => true,
+                        'message' => "与已有图片「{$existing->original_name}」重复，已跳过",
+                    ];
+                    continue;
+                }
+                $batchHashes[$itemHash] = ['name' => $original];
+            }
+
             $uuid = bin2hex(random_bytes(8));
             $filename = "{$uuid}.{$ext}";
             $key = date('Y/m') . '/' . $filename;
@@ -337,6 +400,7 @@ class ImageController extends Controller
                 'headers' => $presign['headers'],
                 'mime' => $mime,
                 'size' => $size,
+                'hash' => $itemHash !== '' ? $itemHash : null,
             ];
         }
 
@@ -362,6 +426,11 @@ class ImageController extends Controller
         $originalName = mb_substr(trim((string) $request->input('original_name', '')), 0, 255);
         $mime = (string) $request->input('mime', '');
         $size = (int) $request->input('size', '0');
+        // v1.3.1: 客户端预计算的 SHA-256（sign 时已查过库，此处复核防绕过直调）
+        $fileHash = strtolower(trim((string) $request->input('hash', '')));
+        if ($fileHash !== '' && !preg_match('#^[a-f0-9]{64}$#', $fileHash)) {
+            $fileHash = '';
+        }
         $categoryId = $request->input('category_id', '');
         $categoryId = $categoryId !== '' ? (int) $categoryId : null;
 
@@ -384,6 +453,20 @@ class ImageController extends Controller
             $this->json(['error' => '直传对象不存在（可能直传失败，或 Bucket 未配置 CORS）'], 400);
         }
 
+        // v1.3.1: confirm 复核去重 —— sign 后又有人传了同一内容（或绕过 sign
+        // 直调 confirm）时，对象已到云上但不再建库记录；返回 duplicate 标记，
+        // 前端计入"重复跳过"而非错误。孤儿对象留待后续清理任务，无功能影响。
+        if ($fileHash !== '') {
+            $existing = Image::firstWhere('file_hash', $fileHash);
+            if ($existing !== null) {
+                $this->json([
+                    'success' => false,
+                    'duplicate' => true,
+                    'error' => "与已有图片「{$existing->original_name}」重复，未登记",
+                ]);
+            }
+        }
+
         $filename = basename($key);
         $url = $storage->url($key);
         $image = new Image([
@@ -393,6 +476,7 @@ class ImageController extends Controller
             'url' => $url,
             'mime_type' => $mime,
             'file_size' => $size,
+            'file_hash' => $fileHash !== '' ? $fileHash : null,
             'width' => 0,
             'height' => 0,
             'category_id' => $categoryId,
