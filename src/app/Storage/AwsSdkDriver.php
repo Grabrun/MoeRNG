@@ -144,18 +144,7 @@ class AwsSdkDriver implements StorageInterface
         }
     }
 
-    /**
-     * v1.3.1 迭代: 前端直传签名 —— 官方 SDK 原生 createPresignedRequest(PutObject)。
-     * 官方文档 s3-presigned-url 实证：getCommand('PutObject', [...'ContentType'=>…])
-     * → createPresignedRequest($cmd, "+N seconds") 得到可直接 PUT 的 URL；
-     * Content-Type 纳入签名（浏览器必须带相同头）。SDK 未部署（sdk/aws/ 缺失）
-     * → 返回 null，上传回退服务器路径。
-     */
-        /**
-     * v1.3.1 迭代: HeadObject 元数据 —— ETag（简单 PUT 即内容 MD5）+ 大小，
-     * 供直传登记的服务端权威验证。异常/无法解析返回 null。
-     */
-        public function url(string $remotePath): string
+    public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {
             return rtrim($this->cdnUrl, '/') . '/' . ltrim($remotePath, '/');

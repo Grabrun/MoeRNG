@@ -123,17 +123,7 @@ class OssSdkDriver implements StorageInterface
         }
     }
 
-    /**
-     * v1.3.1 迭代: 前端直传签名 —— 官方 SDK 原生 Client::presign(PutObjectRequest)。
-     * reference 集成测试 ClientPresignerTest 实证：presign 后直接 HTTP PUT 即浏览器
-     * 直传；PresignResult 带 url + signedHeaders（content-type 在签名内）。
-     * SDK 未部署（sdk/oss/ 缺失）→ 返回 null，上传回退服务器路径。
-     */
-        /**
-     * v1.3.1 迭代: HeadObject 元数据 —— ETag（简单 PUT 即内容 MD5）+ 大小，
-     * 供直传登记的服务端权威验证。异常/无法解析返回 null。
-     */
-        public function url(string $remotePath): string
+    public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {
             return rtrim($this->cdnUrl, '/') . '/' . ltrim($remotePath, '/');

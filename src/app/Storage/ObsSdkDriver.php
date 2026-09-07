@@ -150,17 +150,7 @@ class ObsSdkDriver implements StorageInterface
         }
     }
 
-    /**
-     * v1.3.1 迭代: 前端直传签名 —— 官方 SDK 原生 createSignedUrl('PUT')。
-     * SDK 开发指南实证：'Headers' 里的 Content-Type 进入签名，返回
-     * SignedUrl + ActualSignedRequestHeaders（头名=>值，直接给浏览器 PUT 用）。
-     * SDK 未部署（sdk/obs/ 缺失）→ 返回 null，上传回退服务器路径。
-     */
-        /**
-     * v1.3.1 迭代: HeadObject 元数据 —— ETag（简单 PUT 即内容 MD5）+ 大小，
-     * 供直传登记的服务端权威验证。异常/无法解析返回 null。
-     */
-        public function url(string $remotePath): string
+    public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {
             return rtrim($this->cdnUrl, '/') . '/' . ltrim($remotePath, '/');

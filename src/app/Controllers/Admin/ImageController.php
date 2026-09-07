@@ -148,8 +148,7 @@ class ImageController extends Controller
         $uploaded = 0;
         $errors = [];
         // v1.3.1 迭代: 内容级重复检测 —— MD5 内容哈希比对（批内 + 数据库）。
-        // 统一用 MD5 是为了与直传路径的云 ETag 对齐（S3 系简单 PUT 的 ETag
-        // 即内容 MD5，由云生成不可伪造）—— 两条路径的去重体系互通。
+        // 字节在服务器手上，哈希由服务端计算，天然权威、不可被前端伪造。
         // 重复图片跳过不存储，汇总提示，不影响其余文件继续上传。
         $duplicates = [];
         $batchHashes = [];
