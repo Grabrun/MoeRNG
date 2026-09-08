@@ -15,6 +15,11 @@ define('MOERNG_DEBUG_AUTOLOAD', true);
 
 $cli = PHP_SAPI === 'cli';
 
+// v1.3.2 迭代: 遗留问题清理开关。默认仅【检测并报告】; 加 --fix 才执行清理。
+// 用法: php doctor.php            -> 健康检查 + 遗留问题报告（dry-run）
+//       php doctor.php --fix      -> 健康检查 + 执行可安全清理的项
+$doctorFix = in_array('--fix', $argv ?? [], true);
+
 /* -------------------------------------------------------------------------
  * Access control.
  *
@@ -662,6 +667,95 @@ if ($cli) {
     }
 }
 
+/* ------------------------------------------------------------------
+ * v1.3.2 迭代: 遗留问题清理（数据库残留 / 无用文件）。
+ * ----------------------------------------------------------------
+ * 默认仅【检测+报告】；加 --fix 才执行清理。
+ * 所有清理幂等、可重复执行；只处理【确认无用】的项，绝不误删。
+ */
+    section('Legacy cleanup');
+
+// —— 收集 DB 中已无引用的设置行（代码里再无读取的 key）——
+$orphanSettingKeys = [
+    'direct_upload_enabled', // Web 直传已移除，逻辑中已无任何读取
+];
+
+$pdoClean = null;
+try {
+    if (is_file($cfgDb)) {
+        $db = require $cfgDb;
+        if (is_array($db)) {
+            $pdoClean = new PDO(
+                sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
+                    $db['host'] ?? '127.0.0.1', $db['port'] ?? 3306, $db['database'] ?? ''),
+                $db['username'] ?? '', $db['password'] ?? '', [PDO::ATTR_TIMEOUT => 5]
+            );
+        }
+    }
+} catch (Throwable $e) {
+    $pdoClean = null;
+}
+
+if ($pdoClean !== null) {
+    // 1) 无引用设置行
+    foreach ($orphanSettingKeys as $orphanKey) {
+        $found = (int) $pdoClean->query(
+            $pdoClean->quote($orphanKey) === '' ? "SELECT COUNT(*) FROM settings WHERE `key`='{$orphanKey}'" : "SELECT COUNT(*) FROM settings WHERE `key`=" . $pdoClean->quote($orphanKey)
+        )->fetchColumn();
+        if ($found > 0) {
+            if ($doctorFix) {
+                $del = $pdoClean->exec("DELETE FROM settings WHERE `key`=" . $pdoClean->quote($orphanKey));
+                check("设置行已清理: {$orphanKey}", true, "已删除 {$del} 行");
+            } else {
+                check("设置行待清理: {$orphanKey}", true,
+                    "发现 {$found} 行无引用设置，执行 'php doctor.php --fix' 可删除");
+            }
+        }
+    }
+} else {
+    check('数据库遗留清理', false, '无法连接数据库，跳过设置行清理', true);
+}
+
+// —— 2) 无用文件（可安全删除，不碰 git 追踪的 src/ 源码）——
+$junkFiles = [];
+// Windows 重定向残留（已 gitignore，本地会残留）
+if (is_file(__DIR__ . '/../nul')) {
+    $junkFiles[] = __DIR__ . '/../nul';
+}
+if (is_file(__DIR__ . '/nul')) {
+    $junkFiles[] = __DIR__ . '/nul';
+}
+
+foreach ($junkFiles as $junk) {
+    if (is_file($junk)) {
+        if ($doctorFix) {
+            $ok = @unlink($junk);
+            check("残留文件已清理: " . basename($junk), $ok, $ok ? '已删除' : '删除失败（可能被占用）');
+        } else {
+            check("残留文件待清理: " . basename($junk), true,
+                '执行 php doctor.php --fix 可删除（Windows 重定向残留，已 gitignore）');
+        }
+    }
+}
+
+// —— 3) 空备份/临时目录（仅当确为空的目录，且为项目内非 git 追踪区）——
+$emptyDirs = [];
+foreach (['backups', 'var', 'storage/logs'] as $rel) {
+    $dir = __DIR__ . '/../' . $rel;
+    if (is_dir($dir) && count(scandir($dir)) === 2) { // '.', '..' 空目录
+        $emptyDirs[] = $dir;
+    }
+}
+foreach ($emptyDirs as $dir) {
+    if ($doctorFix) {
+        $ok = @rmdir($dir);
+        check("空目录已清理: " . basename($dir), $ok, $ok ? '已删除（空）' : '留空（非空/权限）');
+    } else {
+        check("空目录待清理: " . basename($dir), true, '执行 php doctor.php --fix 可删除（空目录）');
+    }
+}
+
+// --fix 模式：清理后继续打印健康检查总结（清理结果已通过 check() 记入 PASS/FAIL）。
 /* ------------------------------------------------------------------ */
 line();
 line(str_repeat('=', 70));
