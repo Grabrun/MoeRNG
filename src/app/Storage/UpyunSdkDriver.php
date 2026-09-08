@@ -86,7 +86,18 @@ class UpyunSdkDriver implements StorageInterface
         }
     }
 
-            public function url(string $remotePath): string
+    public function hashFile(string $remotePath): ?string
+    {
+        // v1.3.2: 计算远程对象 SHA-256 —— 分层校验二次验证。
+        // 复用 S3Driver::hashUrl() 经 url() 流式读取（低频路径）。失败返回 null。
+        try {
+            return S3Driver::hashUrl($this->url($remotePath));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function url(string $remotePath): string
     {
         $key = ltrim($remotePath, '/');
         if ($this->cdnUrl !== '') {

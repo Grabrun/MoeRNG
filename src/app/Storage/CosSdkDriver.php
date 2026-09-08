@@ -150,6 +150,20 @@ class CosSdkDriver implements StorageInterface
         }
     }
 
+    /**
+     * v1.3.2 迭代: 计算远程对象 SHA-256 —— 分层校验的二次验证。
+     * 复用 S3Driver::hashUrl() 经签名 URL 流式读取（仅"疑似重复 + 库内无强哈希"
+     * 低频路径触发）。读取失败返回 null，调用方保守放行。
+     */
+    public function hashFile(string $remotePath): ?string
+    {
+        try {
+            return S3Driver::hashUrl($this->url($remotePath));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {

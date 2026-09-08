@@ -185,6 +185,43 @@ if (!is_file($autoloaderFile)) {
     check('Class App\\Storage\\CosSdkDriver', class_exists(\App\Storage\CosSdkDriver::class));
     check('Class App\\Storage\\OssSdkDriver', class_exists(\App\Storage\OssSdkDriver::class));
     check('Class App\\Storage\\AwsSdkDriver', class_exists(\App\Storage\AwsSdkDriver::class));
+
+    // v1.3.2 迭代: Storage 接口完整性 —— 所有实现类都必须实现接口声明的每一个
+    // 方法（含 hashFile）。缺方法会让 PHP 报"contains N abstract methods"
+    // fatal 并使上传整条链路瘫痪——此检查把这类回归提前到 doctor 阶段捕获。
+    // 遍历 App\Storage\ 下实现 StorageInterface 的所有类，反射验证非抽象。
+    $storageChkBad = [];
+    foreach (glob(__DIR__ . '/app/Storage/*.php') as $storageFile) {
+        $baseCls = 'App\\Storage\\' . basename($storageFile, '.php');
+        if (!class_exists($baseCls) && !interface_exists($baseCls)) {
+            continue;
+        }
+        if (!is_subclass_of($baseCls, \App\Storage\StorageInterface::class)) {
+            continue;
+        }
+        try {
+            $rc = new \ReflectionClass($baseCls);
+            // 反射该类所有接口方法的实际可调用性 —— newInstance 若含抽象方法
+            // 会抛错；用反射检查是否仍未实现接口方法。
+            $missing = [];
+            foreach ($rc->getInterfaces() as $iface) {
+                foreach ($iface->getMethods() as $im) {
+                    if ($rc->hasMethod($im->getName()) && !$rc->getMethod($im->getName())->isAbstract()) {
+                        continue;
+                    }
+                    $missing[] = $im->getName();
+                }
+            }
+            if ($missing !== []) {
+                $storageChkBad[] = $baseCls . ' -> ' . implode(', ', $missing);
+            }
+        } catch (\Throwable $e) {
+            $storageChkBad[] = $baseCls . ' (reflection error: ' . $e->getMessage() . ')';
+        }
+    }
+    check('Storage interface completeness', $storageChkBad === [],
+        $storageChkBad === [] ? 'all 8 drivers implement every StorageInterface method'
+            : 'MISSING: ' . implode('; ', $storageChkBad));
 }
 
 /* ------------------------------------------------------------------ */
