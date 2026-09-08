@@ -761,18 +761,18 @@ if ($pdoClean !== null) {
     check('数据库遗留清理', false, '无法连接数据库，跳过设置行清理', true);
 }
 
-// —— 2) 无用文件（可安全删除，不碰 git 追踪的 src/ 源码）——
+// —— 2) 无用文件（可安全删除，不碰站点根下的源码目录）——
+// 注意: doctor.php 部署后位于站点根，__DIR__ 即站点根，生成物都在 __DIR__/ 下，
+// 不要再用 ./( ../ ) 越出 open_basedir（宝塔限制 root:/tmp）。用 @ 抑制警告并
+// 以 is_readable 防护（open_basedir 之外或不可读的路径一律不视为可清理）。
 $junkFiles = [];
 // Windows 重定向残留（已 gitignore，本地会残留）
-if (is_file(__DIR__ . '/../nul')) {
-    $junkFiles[] = __DIR__ . '/../nul';
-}
-if (is_file(__DIR__ . '/nul')) {
+if (@is_file(__DIR__ . '/nul') && @is_readable(__DIR__ . '/nul')) {
     $junkFiles[] = __DIR__ . '/nul';
 }
 
 foreach ($junkFiles as $junk) {
-    if (is_file($junk)) {
+    if (@is_file($junk)) {
         if ($doctorFix) {
             $ok = @unlink($junk);
             check("残留文件已清理: " . basename($junk), $ok, $ok ? '已删除' : '删除失败（可能被占用）');
@@ -783,12 +783,15 @@ foreach ($junkFiles as $junk) {
     }
 }
 
-// —— 3) 空备份/临时目录（仅当确为空的目录，且为项目内非 git 追踪区）——
+// —— 3) 空运行时目录（仅当确为空的目录，且位于站点根内）——
 $emptyDirs = [];
 foreach (['backups', 'var', 'storage/logs'] as $rel) {
-    $dir = __DIR__ . '/../' . $rel;
-    if (is_dir($dir) && count(scandir($dir)) === 2) { // '.', '..' 空目录
-        $emptyDirs[] = $dir;
+    $dir = __DIR__ . '/' . $rel;
+    if (@is_dir($dir)) {
+        $entries = @scandir($dir);
+        if (is_array($entries) && count($entries) === 2) { // '.', '..' 空目录
+            $emptyDirs[] = $dir;
+        }
     }
 }
 foreach ($emptyDirs as $dir) {
