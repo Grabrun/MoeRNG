@@ -374,6 +374,56 @@ class S3Driver implements StorageInterface
         }
     }
 
+    /**
+     * v1.3.2 迭代: 把 url() 指向的对象流式下载到本地临时文件，返回临时文件路径。
+     * 供回填脚本「先拉取到临时文件夹，再用 hash_file 算 MD5 + SHA-256」——
+     * 保证对象存储回填时两个哈希都由同一份字节算出、不会混淆。失败返回 null。
+     * @param string      $url            直读 URL（url() 签名 URL）
+     * @param string|null $tmpDir         临时目录，默认 sys_get_temp_dir()
+     */
+    public static function downloadUrl(string $url, ?string $tmpDir = null): ?string
+    {
+        $tmpDir = $tmpDir ?? sys_get_temp_dir();
+        $tmp = rtrim($tmpDir, '/\\') . '/moerng-dl-' . bin2hex(random_bytes(6));
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 120,
+                'follow_location' => 1,
+            ],
+            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+        ]);
+        $in = @fopen($url, 'rb', false, $ctx);
+        if ($in === false) {
+            return null;
+        }
+        $out = @fopen($tmp, 'wb');
+        if ($out === false) {
+            fclose($in);
+            return null;
+        }
+        try {
+            while (!feof($in)) {
+                $chunk = fread($in, 65536);
+                if ($chunk === false) {
+                    break;
+                }
+                fwrite($out, $chunk);
+            }
+            fclose($in);
+            fclose($out);
+            if (filesize($tmp) === 0) {
+                @unlink($tmp);
+                return null;
+            }
+            return $tmp;
+        } catch (\Throwable) {
+            fclose($in);
+            fclose($out);
+            @unlink($tmp);
+            return null;
+        }
+    }
+
     public function testConnection(): bool
     {
         if (($sdk = $this->cosSdk()) !== null) {

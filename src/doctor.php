@@ -388,6 +388,20 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             }
             if ($schemaMissing === []) {
                 check('Schema migration completeness', true, 'all columns + indexes expected by the app are present');
+                // v1.3.2: schema 列已就位后，统计缺哈希的历史图片。
+                // 这些图片需运行回填脚本（对象存储会拉临时文件算 MD5+SHA-256）。
+                try {
+                    $noMd5 = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE file_hash IS NULL OR file_hash=''")->fetchColumn();
+                    $noSha = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE file_sha256 IS NULL OR file_sha256=''")->fetchColumn();
+                    if ($noMd5 > 0 || $noSha > 0) {
+                        check('Image hash backfill', false,
+                            "{$noMd5} 张缺 file_hash, {$noSha} 张缺 file_sha256 — 请运行: php src/tools/backfill_file_sha256.php（对象存储将拉临时文件计算）");
+                    } else {
+                        check('Image hash backfill', true, 'all images carry both MD5 + SHA-256');
+                    }
+                } catch (Throwable $e) {
+                    check('Image hash backfill', true, '统计失败（忽略）: ' . $e->getMessage(), true);
+                }
             } else {
                 $names = array_map(fn($m) => "{$m[0]}.{$m[1]}", $schemaMissing);
                 check('Schema migration completeness', false, 'MISSING: ' . implode(', ', $names));

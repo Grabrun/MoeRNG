@@ -2,21 +2,21 @@
 declare(strict_types=1);
 
 /**
- * v1.3.2 迭代: 存量图片 SHA-256 回填脚本（一次性、幂等、可重复执行）。
+ * v1.3.2 迭代: 存量图片 哈希回填脚本（一次性、幂等、可重复执行）。
  *
- * 背景: 分层校验（MD5 快速初筛 + SHA-256 二次确认）后，新上传写入 file_hash（MD5）
- * + file_sha256（SHA-256）。本项目历史图片可能只有 file_hash、或两者皆无
- * （此前 file_hash 因 Image::$fillable 缺失从未真正落库）。
+ * 用途: 为历史图片补齐 file_hash（MD5）+ file_sha256（SHA-256）。分层校验上线后
+ * 新上传会同时写这两个字段; 存量旧图可能只有其一或皆无（此前 fillable 缺失导致
+ * file_hash 从未落库）。补全后 "MD5 命中 → SHA-256 精确比对" 即可零流量直比。
  *
- * 作用: 遍历 images 表，对所有 file_sha256 为空的行，从对应存储实例读取文件，
- * 计算 SHA-256 回填到 file_sha256；若 file_hash 为空则尽量一并补 MD5。
- * 回填后，后续上传的「MD5 命中 → SHA-256 精确比对」即可零流量直比库值。
+ * 关键正确性要求:
+ *  - 对象存储: 【拉取到临时文件夹】，用 hash_file 针对同一份字节算 MD5 + SHA-256，
+ *    结束后删除临时文件。不流失算 —— 确保两个哈希来自同一对象、互不混淆。
+ *  - 本地存储: 直接 hash_file 读取（无需拷贝）。
+ *  - 幂等: 已含 file_sha256 的行跳过; 只补缺失的字段（MD5 缺失补 MD5，SHA-256
+ *    缺失补 SHA-256），不覆盖已有值。
  *
  * 用法:
  *   php src/tools/backfill_file_sha256.php [--limit=N] [--stop-on-error]
- *
- * 注意: 对象存储经签名 URL 流式读取（hashFile），涉及一次对象下载；
- *       仅对未回填的存量行执行一次，之后新图上传时服务端已有临时文件。
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -31,6 +31,7 @@ require_once $root . '/app/Autoloader.php';
 use App\Models\Image;
 use App\Models\StorageProfile;
 use App\Storage\LocalDriver;
+use App\Storage\S3Driver;
 
 $limit = null;
 $stopOnError = false;
@@ -43,7 +44,7 @@ foreach ($argv as $i => $a) {
     }
 }
 
-echo "=== 存量图片 SHA-256 回填 ===\n";
+echo "=== 存量图片 哈希回填（对象存储拉临时文件算 MD5+SHA-256）===\n";
 
 $rows = Image::all('id ASC');
 $total = count($rows);
@@ -58,10 +59,14 @@ $updated = 0;
 $skippedNoStorage = 0;
 $failed = 0;
 $already = 0;
+$tmpDir = sys_get_temp_dir();
 
 foreach ($rows as $image) {
-    // 幂等：已回填过则跳过
-    if (($image->file_sha256 ?? '') !== '') {
+    $hasSha = (string) ($image->file_sha256 ?? '') !== '';
+    $hasMd5 = (string) ($image->file_hash ?? '') !== '';
+
+    // 幂等：两者都有则跳过
+    if ($hasSha && $hasMd5) {
         $already++;
         continue;
     }
@@ -76,7 +81,6 @@ foreach ($rows as $image) {
     $driverName = (string) $image->storage;
 
     try {
-        // 用该图所属存储实例；多数历史图用默认实例。若图有明确 profile 可进一步精确。
         $profile = StorageProfile::defaultProfile();
         if ($profile === null) {
             $skippedNoStorage++;
@@ -85,32 +89,52 @@ foreach ($rows as $image) {
         }
         $driver = $profile->driver();
 
-        // 计算 SHA-256（对象存储签名 URL 流式；本地 hash_file）
-        $sha = $driver->hashFile($path);
-        if ($sha === null) {
+        // —— 取字节到本地，统一用 hash_file 算双哈希 ——
+        $localFile = null;
+        if ($driver instanceof LocalDriver) {
+            // 本地存储：直接指向文件（不拷贝，读后即弃）
+            $localFile = $driver->uploadDir() . '/' . ltrim($path, '/');
+            if (!is_file($localFile) || !is_readable($localFile)) {
+                $failed++;
+                echo "  [{$id}] 本地文件不可读（{$localFile}）\n";
+                if ($stopOnError) exit(1);
+                continue;
+            }
+        } else {
+            // 对象存储：拉取到临时文件夹
+            $url = $driver->url($path);
+            $localFile = S3Driver::downloadUrl($url, $tmpDir);
+            if ($localFile === null) {
+                $failed++;
+                echo "  [{$id}] 对象拉取失败（path={$path}）\n";
+                if ($stopOnError) exit(1);
+                continue;
+            }
+        }
+
+        // —— 算双哈希 ——
+        $md5 = @hash_file('md5', $localFile);
+        $sha = @hash_file('sha256', $localFile);
+
+        // 对象存储：用完即删临时文件
+        if (!($driver instanceof LocalDriver)) {
+            @unlink($localFile);
+        }
+
+        if ($md5 === false || $sha === false || $md5 === '' || $sha === '') {
             $failed++;
-            echo "  [{$id}] hashFile 失败（对象缺失/网络异常，path={$path}）\n";
+            echo "  [{$id}] 哈希计算失败\n";
             if ($stopOnError) exit(1);
             continue;
         }
 
-        // MD5：本地可重算；对象存储用 hashFile 仅得 SHA-256，若 file_hash 为空则留 null，
-        // 交由下次上传或二次验证时从存储补算。不强求一致性。
-        $md5 = (string) ($image->file_hash ?? '');
-        if ($md5 === '' && $driver instanceof LocalDriver) {
-            $localMd5 = @hash_file('md5', (string) ($driver->uploadDir() ?? '') . '/' . ltrim($path, '/'));
-            if ($localMd5 !== false && $localMd5 !== '') {
-                $md5 = $localMd5;
-            }
-        }
+        // —— 回填（只填缺失字段，不覆盖已有）——
+        if (!$hasMd5) { $image->file_hash = $md5; }
+        if (!$hasSha) { $image->file_sha256 = $sha; }
 
-        $image->file_sha256 = $sha;
-        if ($md5 !== '') {
-            $image->file_hash = $md5;
-        }
         if ($image->save()) {
             $updated++;
-            echo "  [{$id}] 已回填 SHA-256 (" . substr($sha, 0, 16) . "…), MD5=" . ($md5 !== '' ? substr($md5, 0, 8) . '…' : '(空)') . "\n";
+            echo "  [{$id}] 回填 MD5=" . substr($md5, 0, 8) . "… SHA-256=" . substr($sha, 0, 12) . "…\n";
         } else {
             $failed++;
             echo "  [{$id}] 保存失败\n";
