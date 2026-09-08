@@ -237,7 +237,7 @@ class Application
         // call — caught and swallowed by runStorageMigration, so the columns
         // never got added and every upload silently failed. PDO is the truth.
         $needed = [];
-        foreach (['storage', 'storage_provider', 'file_hash'] as $col) {
+        foreach (['storage', 'storage_provider', 'file_hash', 'file_sha256'] as $col) {
             if (!$this->columnExists($db, 'images', $col)) {
                 $needed[] = $col;
             }
@@ -252,6 +252,9 @@ class Application
             // v1.3.1 迭代: 上传去重 —— MD5 内容哈希（服务端计算，权威）；
             // 旧数据为 NULL，不回填
             'file_hash'        => "CHAR(64) NULL DEFAULT NULL AFTER `file_size`",
+            // v1.3.2 迭代: 分层校验 —— MD5 快速初筛 + SHA-256 二次验证。
+            // 旧数据为 NULL，由 tools/backfill_file_sha256.php 一次性回填。
+            'file_sha256'      => "CHAR(64) NULL DEFAULT NULL AFTER `file_hash`",
         ];
 
         $errors = [];
@@ -275,6 +278,16 @@ class Application
             $msg = $e->getMessage();
             if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
                 $errors[] = "ADD INDEX idx_file_hash failed: {$msg}";
+            }
+        }
+
+        // v1.3.2: SHA-256 二次验证查询索引（幂等）。
+        try {
+            $db->exec("ALTER TABLE `images` ADD INDEX `idx_file_sha256` (`file_sha256`)");
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
+                $errors[] = "ADD INDEX idx_file_sha256 failed: {$msg}";
             }
         }
 

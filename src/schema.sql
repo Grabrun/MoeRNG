@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS `images` (
     `mime_type` VARCHAR(64) NOT NULL,
     `file_size` BIGINT NOT NULL DEFAULT 0,
     `file_hash` CHAR(64) NULL DEFAULT NULL,
+    `file_sha256` CHAR(64) NULL DEFAULT NULL,
     `width` INT NOT NULL DEFAULT 0,
     `height` INT NOT NULL DEFAULT 0,
     `category_id` INT DEFAULT NULL,
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS `images` (
     INDEX `idx_rand` (`status`, `category_id`),
     INDEX `idx_storage_profile` (`storage_profile_id`),
     INDEX `idx_file_hash` (`file_hash`),
+    INDEX `idx_file_sha256` (`file_sha256`),
     FOREIGN KEY (`category_id`) REFERENCES `categories`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

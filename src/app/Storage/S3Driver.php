@@ -303,7 +303,7 @@ class S3Driver implements StorageInterface
         throw new \RuntimeException("未知存储服务商: {$this->provider}");
     }
 
-            public function url(string $remotePath): string
+    public function url(string $remotePath): string
     {
         if (($sdk = $this->cosSdk()) !== null) {
             return $sdk->url($remotePath);
@@ -324,6 +324,54 @@ class S3Driver implements StorageInterface
             return $sdk->url($remotePath);
         }
         throw new \RuntimeException("未知存储服务商: {$this->provider}");
+    }
+
+    /**
+     * v1.3.2 迭代: 计算远程对象 SHA-256 —— 分层校验的二次验证。
+     * 经 url() 拿签名 URL 后流式读取（仅 MD5 初筛命中、且库内无强哈希时才会
+     * 走到这里，属低频路径；服务器本身已是中转架构，与现有上传流量一致）。
+     * 读取失败返回 null，调用方保守放行（避免误杀）。
+     */
+    public function hashFile(string $remotePath): ?string
+    {
+        try {
+            return self::hashUrl($this->url($remotePath));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /** Stream a URL and compute its SHA-256 in hex (null on any failure). */
+    public static function hashUrl(string $url): ?string
+    {
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 30,
+                'follow_location' => 1,
+            ],
+            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+        ]);
+        $fp = @fopen($url, 'rb', false, $ctx);
+        if ($fp === false) {
+            return null;
+        }
+        $ctxHash = hash_init('sha256');
+        try {
+            while (!feof($fp)) {
+                $chunk = fread($fp, 8192);
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+                hash_update($ctxHash, $chunk);
+            }
+            return hash_final($ctxHash);
+        } catch (\Throwable) {
+            return null;
+        } finally {
+            if (is_resource($fp)) {
+                fclose($fp);
+            }
+        }
     }
 
     public function testConnection(): bool

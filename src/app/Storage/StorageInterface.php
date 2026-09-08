@@ -35,6 +35,13 @@ interface StorageInterface
      */
     public function exists(string $remotePath): bool;
 
+    /**
+     * v1.3.2 迭代: 计算远程对象的 SHA-256（内容哈希，十六进制）。
+     * 用于分层校验的二次验证 —— MD5 初筛命中疑似重复时，用强哈希确定性判重。
+     * 返回 null 表示无法读取（对象缺失/网络异常），调用方应保守放行（不误杀）。
+     */
+    public function hashFile(string $remotePath): ?string;
+
 
 
     /**

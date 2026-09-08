@@ -182,22 +182,50 @@ class ImageController extends Controller
                 continue;
             }
 
-            // v1.3.1: 内容哈希去重 —— 与本批已上传文件、库内已有图片比对。
-            // 重复 → 跳过（不上传存储、不建记录），计入 duplicates 继续下一张。
-            $fileHash = @hash_file('md5', $tmpName);
-            if ($fileHash !== false && $fileHash !== '') {
+            // v1.3.2 迭代: 分层校验去重 —— MD5 快速初筛 + SHA-256 二次确认。
+            // MD5 命中疑似重复后再用强哈希确定性判重，消除 MD5 碰撞伪重复。
+            // 字节在服务器手上，哈希全部服务端计算，天然权威、不可被前端伪造。
+            $md5 = @hash_file('md5', $tmpName);
+            $sha256 = @hash_file('sha256', $tmpName);
+            $fileHash = ($md5 !== false && $md5 !== '') ? $md5 : null;
+            $fileSha256 = ($sha256 !== false && $sha256 !== '') ? $sha256 : null;
+
+            if ($fileHash !== null && $fileSha256 !== null) {
+                // ① 批内初筛（MD5，快）
                 if (isset($batchHashes[$fileHash])) {
-                    $duplicates[] = "{$originalName}：与本批次中「{$batchHashes[$fileHash]}」重复，已跳过";
-                    continue;
+                    // 批内命中 —— 同批同文件必然同内容，直接判定重复。
+                    // 但为严谨，仍用 SHA-256 复核（两个不同文件同 MD5 的
+                    // 理论场景），确认一致才算重复。
+                    $batch = $batchHashes[$fileHash];
+                    if ($batch['sha256'] === $fileSha256) {
+                        $duplicates[] = "{$originalName}：与本批次中「{$batch['name']}」重复，已跳过";
+                        continue;
+                    }
+                    // 罕见：同 MD5 不同内容（碰撞）—— 不判重，按新图继续。
                 }
+
+                // ② 库内初筛（MD5，走索引）
                 $existing = Image::firstWhere('file_hash', $fileHash);
                 if ($existing !== null) {
-                    $duplicates[] = "{$originalName}：与已有图片「{$existing->original_name}」重复，已跳过";
-                    continue;
+                    // ③ 二次确认（SHA-256）：库内已有强哈希则直接比，零流量。
+                    if ($existing->file_sha256 !== null && $existing->file_sha256 !== '') {
+                        if ($existing->file_sha256 === $fileSha256) {
+                            $duplicates[] = "{$originalName}：与已有图片「{$existing->original_name}」重复，已跳过";
+                            continue;
+                        }
+                        // MD5 命中但 SHA-256 不符 → 互不重复，放行（防碰撞误杀）。
+                    } else {
+                        // 库内旧记录无强哈希 —— 从存储补算（仅疑似、存量少，低频）。
+                        $archivedSha = $storage->hashFile($existing->path);
+                        if ($archivedSha !== null && $archivedSha === $fileSha256) {
+                            $duplicates[] = "{$originalName}：与已有图片「{$existing->original_name}」重复，已跳过";
+                            continue;
+                        }
+                    }
                 }
-                $batchHashes[$fileHash] = $originalName;
-            } else {
-                $fileHash = null;
+
+                // 记录批内（存 MD5 + SHA-256 供后续同批比对）
+                $batchHashes[$fileHash] = ['name' => $originalName, 'sha256' => $fileSha256];
             }
 
             // Generate unique filename
@@ -221,6 +249,7 @@ class ImageController extends Controller
                     'mime_type' => $detectedMime,
                     'file_size' => $fileSize,
                     'file_hash' => $fileHash,
+                    'file_sha256' => $fileSha256,
                     'width' => $width,
                     'height' => $height,
                     'category_id' => $categoryId,

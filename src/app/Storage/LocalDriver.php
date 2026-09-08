@@ -154,6 +154,19 @@ class LocalDriver implements StorageInterface
         return is_file($this->uploadDir . '/' . ltrim($remotePath, '/'));
     }
 
+    /**
+     * v1.3.2 迭代: 本地文件直接流式计算 SHA-256。
+     */
+    public function hashFile(string $remotePath): ?string
+    {
+        $full = $this->uploadDir . '/' . ltrim($remotePath, '/');
+        if (!is_file($full)) {
+            return null;
+        }
+        $h = @hash_file('sha256', $full);
+        return ($h === false || $h === '') ? null : $h;
+    }
+
         /** Absolute filesystem directory currently in use (used by doctor.php). */
     public function uploadDir(): string
     {

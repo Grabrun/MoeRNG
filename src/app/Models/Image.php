@@ -12,7 +12,8 @@ class Image extends Model
     protected static array $fillable = [
         'filename', 'original_name', 'path', 'url', 'mime_type',
         'file_size', 'width', 'height', 'category_id', 'sort_order', 'status',
-        'storage', 'storage_provider', 'storage_profile_id'
+        'storage', 'storage_provider', 'storage_profile_id',
+        'file_hash', 'file_sha256'
     ];
 
     public function category(): ?Category
