@@ -369,8 +369,25 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
             ];
             $schemaMissing = [];
+            // 每表缓存一次列/索引清单（SHOW INDEX 的 FETCH_COLUMN 取的是第一列
+            // `Table`，不是 Key_name —— 必须用 FETCH_ASSOC 收 Key_name）
+            $colsCache = [];
+            $idxCache = [];
+            $tableCols = function (string $tbl) use ($pdo, &$colsCache): array {
+                return $colsCache[$tbl] ??= $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN);
+            };
+            $tableIdx = function (string $tbl) use ($pdo, &$idxCache): array {
+                if (!isset($idxCache[$tbl])) {
+                    $idxCache[$tbl] = [];
+                    foreach ($pdo->query("SHOW INDEX FROM `{$tbl}`")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                        $idxCache[$tbl][$r['Key_name']] = true;
+                    }
+                }
+                return $idxCache[$tbl];
+            };
+
             foreach ($schemaChecks as [$tbl, $col, $ddl]) {
-                if (!in_array($col, $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true)) {
+                if (!in_array($col, $tableCols($tbl), true)) {
                     $schemaMissing[] = [$tbl, $col, $ddl];
                 }
             }
@@ -381,8 +398,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 ['images', 'idx_storage_profile', 'storage_profile_id'],
             ];
             foreach ($idxChecks as [$tbl, $idx, $col]) {
-                $colExists = in_array($col, $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true);
-                if ($colExists && !in_array($idx, $pdo->query("SHOW INDEX FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true)) {
+                if (in_array($col, $tableCols($tbl), true) && !isset($tableIdx($tbl)[$idx])) {
                     $schemaMissing[] = [$tbl, $idx, "ADD INDEX `{$idx}` (`{$col}`)"];
                 }
             }
@@ -406,15 +422,57 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 $names = array_map(fn($m) => "{$m[0]}.{$m[1]}", $schemaMissing);
                 check('Schema migration completeness', false, 'MISSING: ' . implode(', ', $names));
                 if ($doctorFix) {
-                    $fixed = 0;
+                    $applied = 0;
+                    $already = 0;
+                    $alterErrors = [];
                     foreach ($schemaMissing as $m) {
-                        try { $pdo->exec("ALTER TABLE `{$m[0]}` {$m[2]}"); $fixed++; }
-                        catch (Throwable $e) { /* duplicate/denied — ignore, idempotent */ }
+                        try {
+                            $pdo->exec("ALTER TABLE `{$m[0]}` {$m[2]}");
+                            $applied++;
+                        } catch (Throwable $e) {
+                            $msg = $e->getMessage();
+                            // 1060 duplicate column / 1061 duplicate key name =
+                            // 已存在，视为幂等成功。其余（如 1142 ALTER denied）
+                            // 是真实错误，必须透出而不是笼统报"权限不足"。
+                            if (stripos($msg, '1060') !== false || stripos($msg, '1061') !== false
+                                || stripos($msg, 'duplicate') !== false) {
+                                $already++;
+                            } else {
+                                $alterErrors[] = "{$m[0]}.{$m[1]}: {$msg}";
+                            }
+                        }
                     }
-                    if ($fixed > 0) { check('Schema migration completeness (--fix)', true, "补全 {$fixed} 项"); }
-                    else { check('Schema migration completeness (--fix)', false, '无项可补或 ALTER 权限不足 — 请用有 ALTER 权限的账号手动执行上方 SQL'); }
+                    // 修复后重新验证 —— 以实际结构为准，而不是 ALTER 计数
+                    $stillMissing = [];
+                    foreach ($schemaChecks as [$tbl, $col, $ddl]) {
+                        if (!in_array($col, $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true)) {
+                            $stillMissing[] = "{$tbl}.{$col}";
+                        }
+                    }
+                    foreach ($idxChecks as [$tbl, $idx, $col]) {
+                        $haveIdx = [];
+                        foreach ($pdo->query("SHOW INDEX FROM `{$tbl}`")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                            $haveIdx[$r['Key_name']] = true;
+                        }
+                        if (in_array($col, $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true)
+                            && !isset($haveIdx[$idx])) {
+                            $stillMissing[] = "{$tbl}.{$idx}";
+                        }
+                    }
+                    if ($stillMissing === [] && $alterErrors === []) {
+                        check('Schema migration completeness (--fix)', true,
+                            "补全 {$applied} 项" . ($already > 0 ? "（{$already} 项已存在）" : '') . ' — 重新验证通过');
+                    } elseif ($stillMissing === []) {
+                        check('Schema migration completeness (--fix)', true,
+                            "补全 {$applied} 项；个别警告: " . implode('; ', $alterErrors));
+                    } else {
+                        check('Schema migration completeness (--fix)', false,
+                            '仍有缺失: ' . implode(', ', $stillMissing)
+                            . ($alterErrors !== [] ? ' | 错误: ' . implode('; ', $alterErrors) : '')
+                            . ' — 可能 ALTER 权限不足，请用有 ALTER 权限的账号手动执行');
+                    }
                 } else {
-                    line('       Run with --fix to apply, or execute manually with a DB user that has ALTER privilege.');
+                    line('       Run with --fix (CLI) or open doctor.php?type=fix (web, logged in) to apply.');
                 }
             }
         } catch (Throwable $e) {
