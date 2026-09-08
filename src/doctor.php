@@ -353,20 +353,55 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
     // here and hand the operator the exact SQL to run with a privileged account.
     if (isset($pdo)) {
         try {
-            $cols = $pdo->query("SHOW COLUMNS FROM `images`")->fetchAll(PDO::FETCH_COLUMN);
-            $haveStorage = in_array('storage', $cols, true);
-            $haveProvider = in_array('storage_provider', $cols, true);
-            $schemaOk = $haveStorage && $haveProvider;
-            if ($schemaOk) {
-                check('images storage columns', true, 'storage + storage_provider present');
+            // v1.3.2 迭代: 完整的「覆盖部署应自迁移」schema 完整性检查。
+            // 覆盖部署到已有库时，运行时自迁移可能因缺 ALTER 权限/中断而漏跑，
+            // 导致新增字段/索引缺失。此表列出应用期望的完整结构，缺失即 FAIL，
+            // --fix 时补全（DDL 与 Application 的迁移语义一致，幂等）。
+            $schemaChecks = [
+                // table, column|index, ddl to add (if missing)
+                ['images', 'storage',            "ADD COLUMN `storage` VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`"],
+                ['images', 'storage_provider',   "ADD COLUMN `storage_provider` VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`"],
+                ['images', 'storage_profile_id', "ADD COLUMN `storage_profile_id` INT UNSIGNED NULL AFTER `storage_provider`, ADD INDEX `idx_storage_profile` (`storage_profile_id`)"],
+                ['images', 'file_hash',          "ADD COLUMN `file_hash` CHAR(64) NULL DEFAULT NULL AFTER `file_size`"],
+                ['images', 'file_sha256',        "ADD COLUMN `file_sha256` CHAR(64) NULL DEFAULT NULL AFTER `file_hash`"],
+                ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
+                ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
+                ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
+            ];
+            $schemaMissing = [];
+            foreach ($schemaChecks as [$tbl, $col, $ddl]) {
+                if (!in_array($col, $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true)) {
+                    $schemaMissing[] = [$tbl, $col, $ddl];
+                }
+            }
+            // 索引完整性（仅当对应列已存在且索引缺失时补）
+            $idxChecks = [
+                ['images', 'idx_file_hash', 'file_hash'],
+                ['images', 'idx_file_sha256', 'file_sha256'],
+                ['images', 'idx_storage_profile', 'storage_profile_id'],
+            ];
+            foreach ($idxChecks as [$tbl, $idx, $col]) {
+                $colExists = in_array($col, $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true);
+                if ($colExists && !in_array($idx, $pdo->query("SHOW INDEX FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true)) {
+                    $schemaMissing[] = [$tbl, $idx, "ADD INDEX `{$idx}` (`{$col}`)"];
+                }
+            }
+            if ($schemaMissing === []) {
+                check('Schema migration completeness', true, 'all columns + indexes expected by the app are present');
             } else {
-                $missing = ($haveStorage ? '' : '`storage`') . ($haveProvider ? '' : ' `storage_provider`');
-                check('images storage columns', false, 'MISSING ' . trim($missing) . ' - uploads cannot be recorded');
-                line('       Run this SQL manually with a DB user that has ALTER privilege:');
-                line("         ALTER TABLE `images` ADD COLUMN `storage` VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`;");
-                line("         ALTER TABLE `images` ADD COLUMN `storage_provider` VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`;");
-                line('       (existing rows auto-fill to local / empty; S3 rows may need:');
-                line("         UPDATE `images` SET `storage_provider`='<your-provider>' WHERE `storage`='s3' AND `storage_provider`='';)");
+                $names = array_map(fn($m) => "{$m[0]}.{$m[1]}", $schemaMissing);
+                check('Schema migration completeness', false, 'MISSING: ' . implode(', ', $names));
+                if ($doctorFix) {
+                    $fixed = 0;
+                    foreach ($schemaMissing as $m) {
+                        try { $pdo->exec("ALTER TABLE `{$m[0]}` {$m[2]}"); $fixed++; }
+                        catch (Throwable $e) { /* duplicate/denied — ignore, idempotent */ }
+                    }
+                    if ($fixed > 0) { check('Schema migration completeness (--fix)', true, "补全 {$fixed} 项"); }
+                    else { check('Schema migration completeness (--fix)', false, '无项可补或 ALTER 权限不足 — 请用有 ALTER 权限的账号手动执行上方 SQL'); }
+                } else {
+                    line('       Run with --fix to apply, or execute manually with a DB user that has ALTER privilege.');
+                }
             }
         } catch (Throwable $e) {
             check('images schema probe', false, $e->getMessage());
