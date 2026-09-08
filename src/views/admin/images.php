@@ -94,6 +94,16 @@
     <button class="btn btn-outline btn-sm" id="batch-categorize" disabled>应用</button>
     <button class="btn btn-danger btn-sm" id="batch-delete">批量删除</button>
     <button class="btn btn-outline btn-sm" id="clear-selection">取消选择</button>
+    <button class="btn btn-outline btn-sm" id="backfill-hashes" title="为历史图片补算 MD5 与 SHA-256（用于重复检测）">补全历史图片哈希</button>
+</div>
+
+<!-- Hash backfill progress（复用轻量样式） -->
+<div id="backfill-progress" class="hidden" style="position:fixed;right:24px;bottom:24px;z-index:60;background:var(--surface,#1e1e2e);border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:12px 16px;min-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
+    <div style="font-size:13px;margin-bottom:8px;" id="backfill-text">准备回填…</div>
+    <div style="height:8px;border-radius:4px;background:rgba(128,128,128,.25);overflow:hidden;">
+        <div id="backfill-fill" style="height:100%;width:0%;border-radius:4px;background:var(--primary,#c084fc);transition:width .25s ease;"></div>
+    </div>
+    <div style="font-size:12px;margin-top:6px;opacity:.7;" id="backfill-detail"></div>
 </div>
 
 <!-- Upload Modal -->

@@ -114,6 +114,134 @@ class ImageController extends Controller
         $this->json(['ids' => $ids, 'total' => count($ids)]);
     }
 
+    /**
+     * v1.3.2 迭代: 历史图片哈希回填 —— Web 分批端点（管理员，POST + CSRF）。
+     *
+     * 每次 POST 处理一小批（默认 5 张）缺哈希的图片：定位其存储实例、把字节
+     * 取到服务器（对象存储经签名 URL 拉到临时文件，本地直接读）、对同一份
+     * 字节算 MD5 + SHA-256、只补缺失字段、用完即删临时文件。前端循环调用并
+     * 显示进度条。幂等 —— 已有双哈希的行永远跳过。
+     */
+    public function backfillHashes(Request $request): void
+    {
+        $this->validateCsrf();
+
+        $batchSize = max(1, min(20, (int) $request->input('batch', '5')));
+
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        $missingCond = "(file_sha256 IS NULL OR file_sha256='' OR file_hash IS NULL OR file_hash='')";
+        $total = (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
+        $remaining = (int) $pdo->query(
+            "SELECT COUNT(*) FROM `images` WHERE {$missingCond}"
+        )->fetchColumn();
+
+        $updated = 0;
+        $failed = 0;
+        $results = [];
+
+        if ($remaining > 0) {
+            $rows = $pdo->query(
+                "SELECT * FROM `images` WHERE {$missingCond} ORDER BY id ASC LIMIT {$batchSize}"
+            )->fetchAll(\PDO::FETCH_ASSOC);
+
+            foreach ($rows as $row) {
+                $id = (int) $row['id'];
+                $path = (string) $row['path'];
+                $hasMd5 = (string) ($row['file_hash'] ?? '') !== '';
+                $hasSha = (string) ($row['file_sha256'] ?? '') !== '';
+
+                try {
+                    // 该图所属存储实例 —— storage_profile_id 精确优先，缺省回退默认实例
+                    $profile = $row['storage_profile_id'] !== null
+                        ? StorageProfile::find((int) $row['storage_profile_id'])
+                        : null;
+                    if ($profile === null) {
+                        $profile = StorageProfile::defaultProfile();
+                    }
+                    if ($profile === null) {
+                        $failed++;
+                        $results[] = ['id' => $id, 'error' => '无可用存储实例'];
+                        continue;
+                    }
+                    $driver = $profile->driver();
+
+                    // —— 取字节到本地（对象存储拉临时文件；本地直读）——
+                    $localFile = null;
+                    $isTemp = false;
+                    if ($driver instanceof \App\Storage\LocalDriver) {
+                        $localFile = $driver->uploadDir() . '/' . ltrim($path, '/');
+                        if (!is_file($localFile) || !is_readable($localFile)) {
+                            $failed++;
+                            $results[] = ['id' => $id, 'error' => '本地文件不可读'];
+                            continue;
+                        }
+                    } else {
+                        try {
+                            $localFile = \App\Storage\S3Driver::downloadUrl($driver->url($path));
+                        } catch (\Throwable $e) {
+                            $localFile = null;
+                        }
+                        if ($localFile === null) {
+                            $failed++;
+                            $results[] = ['id' => $id, 'error' => '对象拉取失败'];
+                            continue;
+                        }
+                        $isTemp = true;
+                    }
+
+                    // —— 同一份字节算双哈希 ——
+                    $md5 = @hash_file('md5', $localFile);
+                    $sha = @hash_file('sha256', $localFile);
+                    if ($isTemp) {
+                        @unlink($localFile);
+                    }
+                    if ($md5 === false || $sha === false || $md5 === '' || $sha === '') {
+                        $failed++;
+                        $results[] = ['id' => $id, 'error' => '哈希计算失败'];
+                        continue;
+                    }
+
+                    $image = new Image($row);
+                    if (!$hasMd5) {
+                        $image->file_hash = $md5;
+                    }
+                    if (!$hasSha) {
+                        $image->file_sha256 = $sha;
+                    }
+                    if ($image->save()) {
+                        $updated++;
+                        $results[] = ['id' => $id, 'ok' => true];
+                    } else {
+                        $failed++;
+                        $results[] = ['id' => $id, 'error' => '保存失败'];
+                    }
+                } catch (\Throwable $e) {
+                    $failed++;
+                    $results[] = ['id' => $id, 'error' => $e->getMessage()];
+                }
+            }
+
+            $remaining = (int) $pdo->query(
+                "SELECT COUNT(*) FROM `images` WHERE {$missingCond}"
+            )->fetchColumn();
+        }
+
+        $this->json([
+            'success' => true,
+            'total' => $total,
+            'remaining' => $remaining,
+            'updated' => $updated,
+            'failed' => $failed,
+            'results' => $results,
+        ]);
+    }
+
     public function upload(Request $request): void
     {
         $this->validateCsrf();

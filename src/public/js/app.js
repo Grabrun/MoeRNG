@@ -415,6 +415,68 @@ function initImageGrid() {
         deleteImages(ids);
     });
 
+    // ── v1.3.2 迭代: 历史图片哈希回填（管理员，分批轮询 + 简单进度条）─────
+    // 每批由服务端拉取对象/读本地文件算 MD5+SHA-256 并落库；前端循环调用
+    // 直到 remaining=0，进度条按 (total-remaining)/total 递增。
+    const backfillBtn = document.getElementById('backfill-hashes');
+    backfillBtn?.addEventListener('click', async function() {
+        if (uploading) { showToast('有上传任务进行中，请稍候', 'error', 4000); return; }
+        if (!window.confirm('将为历史图片补算 MD5 与 SHA-256（对象存储会逐张拉取，可能耗时）。\n确定开始？')) return;
+
+        const box = document.getElementById('backfill-progress');
+        const fill = document.getElementById('backfill-fill');
+        const text = document.getElementById('backfill-text');
+        const detail = document.getElementById('backfill-detail');
+        const setUI = function(pct, t, d) {
+            fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+            if (t) text.textContent = t;
+            if (d !== undefined) detail.textContent = d;
+        };
+        box.classList.remove('hidden');
+        setUI(0, '准备回填…', '');
+        backfillBtn.disabled = true;
+        uploading = true;
+
+        let totalUpdated = 0, totalFailed = 0, total = 0, done = 0;
+        try {
+            for (;;) {
+                const fd = new FormData();
+                fd.append('_csrf_token', getCsrfToken());
+                fd.append('batch', '5');
+                const r = await fetch('/admin/images/backfill-hashes', {
+                    method: 'POST', body: fd,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                const j = await r.json();
+                if (!j || !j.success) {
+                    showToast('回填失败: ' + ((j && j.error) || '未知错误'), 'error', 8000);
+                    break;
+                }
+                total = j.total;
+                done = total - j.remaining;
+                totalUpdated += j.updated;
+                totalFailed += j.failed;
+                setUI(total > 0 ? done / total : 1,
+                    '回填中… ' + done + '/' + total,
+                    '已补 ' + totalUpdated + ' 张' + (totalFailed ? '，失败 ' + totalFailed + ' 张' : ''));
+                if (j.remaining === 0) break;
+            }
+            let msg = totalUpdated > 0
+                ? ('哈希回填完成：已补 ' + totalUpdated + ' 张')
+                : '哈希回填完成：所有图片均已携带哈希';
+            if (totalFailed > 0) msg += '，失败 ' + totalFailed + ' 张（详情见控制台）';
+            showToast(msg, totalFailed > 0 ? 'error' : 'success', 8000);
+            if (window.console && totalFailed > 0) console.warn('backfill failures logged per batch');
+            setTimeout(function() { window.location.reload(); }, 1500);
+        } catch (e) {
+            showToast('回填请求异常: ' + e.message, 'error', 8000);
+        } finally {
+            uploading = false;
+            backfillBtn.disabled = false;
+            setTimeout(function() { box.classList.add('hidden'); }, 1500);
+        }
+    });
+
     // v1.2.1 迭代: bulk re-categorize (admin UI audit I2)
     const batchCat = document.getElementById('batch-category');
     const batchCatBtn = document.getElementById('batch-categorize');

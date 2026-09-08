@@ -39,6 +39,8 @@ $router->group('/admin', function ($router) {
     $router->get('/images', [$images, 'index']);
     $router->get('/images/ids', [$images, 'ids']);
     $router->post('/images/upload', [$images, 'upload']);
+    // v1.3.2 迭代: 历史图片哈希回填 —— 管理员分批触发（前端进度条）
+    $router->post('/images/backfill-hashes', [$images, 'backfillHashes']);
     $router->post('/images/update', [$images, 'update']);
     $router->post('/images/delete', [$images, 'delete']);
     $router->post('/images/batch-delete', [$images, 'batchDelete']);
