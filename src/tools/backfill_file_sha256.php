@@ -16,33 +16,78 @@ declare(strict_types=1);
  *    缺失补 SHA-256），不覆盖已有值。
  *
  * 用法:
- *   php src/tools/backfill_file_sha256.php [--limit=N] [--stop-on-error]
+ *   php tools/backfill_file_sha256.php [--limit=N] [--stop-on-error]
+ *   （脚本可放站点根 tools/ 下或任意位置 —— 自动向上探测站点根）
+ *
+ * 安全: 仅限 CLI。Web 访问一律 403（脚本会写库并批量拉取对象，绝不开放 HTTP）。
  */
 
+// —— Web 拒绝：非 CLI 一律 403，在任何逻辑/输出之前 ——
 if (PHP_SAPI !== 'cli') {
-    fwrite(STDERR, "只能以 CLI 运行：php src/tools/backfill_file_sha256.php\n");
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=utf-8');
+    header('X-Robots-Tag: noindex, nofollow');
+    echo "403 Forbidden — this tool only runs from the CLI:\n";
+    echo "    php tools/backfill_file_sha256.php\n";
     exit(1);
 }
 
-$root = dirname(__DIR__, 2);          // .../src
-require_once $root . '/app/Autoloader.php';
-\App\Autoloader::register($root . '/app');
+// CLI 错误输出不依赖 STDERR 常量（php://stderr 在 CLI 恒可用）
+function bf_fail(string $msg): never
+{
+    file_put_contents('php://stderr', $msg);
+    exit(1);
+}
 
-use App\Models\Image;
-use App\Models\StorageProfile;
-use App\Storage\LocalDriver;
-use App\Storage\S3Driver;
-
+$argvArgs = $argv ?? [];
 $limit = null;
 $stopOnError = false;
-foreach ($argv as $i => $a) {
-    if ($a === '--limit' && isset($argv[$i + 1])) {
-        $limit = max(1, (int) $argv[$i + 1]);
+foreach ($argvArgs as $i => $a) {
+    if ($a === '--limit' && isset($argvArgs[$i + 1])) {
+        $limit = max(1, (int) $argvArgs[$i + 1]);
     }
     if ($a === '--stop-on-error') {
         $stopOnError = true;
     }
 }
+
+// —— 站点根探测：脚本可能位于 站点根 / tools/ / src/tools/，向上找
+//    第一个包含 app/Autoloader.php 的目录（最多 4 层）——
+$root = null;
+$probe = __DIR__;
+for ($i = 0; $i < 4; $i++) {
+    if (is_file($probe . '/app/Autoloader.php')) {
+        $root = $probe;
+        break;
+    }
+    $parent = dirname($probe);
+    if ($parent === $probe) {
+        break;
+    }
+    $probe = $parent;
+}
+if ($root === null) {
+    bf_fail("无法定位站点根（未找到 app/Autoloader.php）—— 请把脚本放在站点根或其 tools/ 子目录。\n");
+}
+
+require_once $root . '/app/Autoloader.php';
+\App\Autoloader::register($root . '/app');
+
+// 初始化数据库连接（Image/StorageProfile 走 Database 单例）
+$dbCfgFile = $root . '/config/database.php';
+if (!is_file($dbCfgFile)) {
+    bf_fail("未安装：缺少 {$dbCfgFile}（请先完成安装）。\n");
+}
+$dbCfg = require $dbCfgFile;
+if (!is_array($dbCfg)) {
+    bf_fail("config/database.php 格式异常。\n");
+}
+\App\Core\Database::init($dbCfg);
+
+use App\Models\Image;
+use App\Models\StorageProfile;
+use App\Storage\LocalDriver;
+use App\Storage\S3Driver;
 
 echo "=== 存量图片 哈希回填（对象存储拉临时文件算 MD5+SHA-256）===\n";
 
