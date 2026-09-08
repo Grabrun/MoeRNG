@@ -16,9 +16,17 @@ define('MOERNG_DEBUG_AUTOLOAD', true);
 $cli = PHP_SAPI === 'cli';
 
 // v1.3.2 迭代: 遗留问题清理开关。默认仅【检测并报告】; 加 --fix 才执行清理。
-// 用法: php doctor.php            -> 健康检查 + 遗留问题报告（dry-run）
-//       php doctor.php --fix      -> 健康检查 + 执行可安全清理的项
-$doctorFix = in_array('--fix', $argv ?? [], true);
+// 用法:
+//   php doctor.php               -> 健康检查 + 遗留问题报告（dry-run）
+//   php doctor.php --fix         -> 健康检查 + 执行可安全清理的项
+//   https://site/doctor.php      -> 健康检查 + 遗留问题报告
+//   https://site/doctor.php?type=fix -> 健康检查 + 执行可安全清理的项
+//
+// 注: HTTP 访问仅当登录后可达（见下方 Access control）。无论 CLI/HTTP，
+//     --fix / ?type=fix 二选一即可触发清理; 清理幂等。
+$doctorFix = $cli
+    ? in_array('--fix', $argv ?? [], true)
+    : (($_GET['type'] ?? '') === 'fix');
 
 /* -------------------------------------------------------------------------
  * Access control.
