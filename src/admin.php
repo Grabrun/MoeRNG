@@ -59,6 +59,9 @@ $router->group('/admin', function ($router) {
     $router->post('/settings/cache-clear', [$settings, 'cacheClear']);
     $router->post('/settings/backup', [$settings, 'backupNow']);
     $router->post('/settings/backup-delete', [$settings, 'backupDelete']);
+    // v1.3.2 迭代: 系统健康检查（检查 + 修复）—— 收编 CLI 迁移/回填工具
+    $router->get('/settings/health', [$settings, 'health']);
+    $router->post('/settings/health-fix', [$settings, 'healthFix']);
     $router->post('/settings/test-mail', [$settings, 'testMail']);
     $router->post('/settings/logo-upload', [$settings, 'logoUpload']);
     $router->get('/settings/logs', [$settings, 'logs']);

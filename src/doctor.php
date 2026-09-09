@@ -411,7 +411,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                     $noSha = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE file_sha256 IS NULL OR file_sha256=''")->fetchColumn();
                     if ($noMd5 > 0 || $noSha > 0) {
                         check('Image hash backfill', false,
-                            "{$noMd5} 张缺 file_hash, {$noSha} 张缺 file_sha256 — 请运行: php src/tools/backfill_file_sha256.php（对象存储将拉临时文件计算）");
+                            "{$noMd5} 张缺 file_hash, {$noSha} 张缺 file_sha256 — 请到后台「系统设置 → 健康检查」执行哈希回填");
                     } else {
                         check('Image hash backfill', true, 'all images carry both MD5 + SHA-256');
                     }

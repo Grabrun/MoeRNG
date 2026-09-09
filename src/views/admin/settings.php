@@ -81,6 +81,29 @@ admin_header('系统设置', 'page-settings');
     <p>站点、安全、性能、邮件与备份配置（仅管理员可修改，所有变更记录到操作日志）</p>
 </div>
 
+<!-- v1.3.2 迭代: 系统健康检查（检查 + 修复）—— 统一取代 CLI 迁移/回填工具 -->
+<section class="settings-group" id="health-check">
+    <div class="flex-between mb-2">
+        <h2 style="margin:0;">健康检查</h2>
+        <div class="flex gap-2">
+            <button type="button" class="btn btn-outline btn-sm" id="health-run">运行检查</button>
+            <button type="button" class="btn btn-primary btn-sm" id="health-fix" disabled>执行修复</button>
+        </div>
+    </div>
+    <p class="text-muted text-secondary text-sm mb-2">检查覆盖部署应自迁移的字段/索引、遗留设置行与历史图片哈希；「执行修复」自动补全缺失结构并清理遗留行。</p>
+    <div id="health-results" class="text-sm text-muted text-secondary">尚未运行检查 —— 点击「运行检查」。</div>
+    <div id="health-backfill-box" class="hidden mt-2" style="border:1px solid rgba(128,128,128,.3);border-radius:8px;padding:10px 12px;">
+        <div class="flex-between" style="gap:8px;">
+            <div style="font-size:13px;" id="health-backfill-text">准备回填…</div>
+            <button type="button" class="btn btn-primary btn-sm" id="health-backfill-run">开始回填</button>
+        </div>
+        <div style="height:8px;border-radius:4px;background:rgba(128,128,128,.25);overflow:hidden;margin:8px 0 6px;">
+            <div id="health-backfill-fill" style="height:100%;width:0%;border-radius:4px;background:var(--primary,#c084fc);transition:width .25s ease;"></div>
+        </div>
+        <div style="font-size:12px;opacity:.7;" id="health-backfill-detail"></div>
+    </div>
+</section>
+
 <div class="settings-toolbar flex gap-12 flex-wrap mb-3">
     <div class="settings-tabs flex gap-4 flex-wrap">
         <?php foreach ($groups as $gid => $gdef): ?>

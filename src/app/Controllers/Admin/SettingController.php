@@ -469,6 +469,177 @@ class SettingController extends Controller
         return $errors;
     }
 
+    /* ================================================================
+     * v1.3.2 迭代: 系统健康检查（检查 + 修复）—— 统一取代 CLI 迁移/回填工具。
+     * 检查项：
+     *   1) schema completeness —— 覆盖部署应自迁移的全部列/索引（可修复）
+     *   2) 遗留设置行（代码零读取的 key，如已移除的 direct_upload_enabled）—— 可修复
+     *   3) 历史图片哈希回填统计（缺 file_hash / file_sha256）—— 修复走
+     *      /admin/images/backfill-hashes 分批端点（前端循环 + 进度条）
+     * ================================================================ */
+
+    /** @return array<string,array{ok:bool,detail:string,fixable:bool,extra:array}> */
+    private function runHealthChecks(): array
+    {
+        $checks = [];
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            return ['database' => ['ok' => false, 'detail' => '数据库连接失败: ' . $e->getMessage(), 'fixable' => false, 'extra' => []]];
+        }
+
+        // —— 1) schema completeness ——
+        $schemaChecks = [
+            ['images', 'storage',            "ADD COLUMN `storage` VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`"],
+            ['images', 'storage_provider',   "ADD COLUMN `storage_provider` VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`"],
+            ['images', 'storage_profile_id', "ADD COLUMN `storage_profile_id` INT UNSIGNED NULL AFTER `storage_provider`"],
+            ['images', 'file_hash',          "ADD COLUMN `file_hash` CHAR(64) NULL DEFAULT NULL AFTER `file_size`"],
+            ['images', 'file_sha256',        "ADD COLUMN `file_sha256` CHAR(64) NULL DEFAULT NULL AFTER `file_hash`"],
+            ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
+            ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
+            ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
+        ];
+        $idxChecks = [
+            ['images', 'idx_file_hash', 'file_hash'],
+            ['images', 'idx_file_sha256', 'file_sha256'],
+            ['images', 'idx_storage_profile', 'storage_profile_id'],
+        ];
+        $missing = [];
+        $colsCache = [];
+        $idxCache = [];
+        $tableCols = function (string $tbl) use ($pdo, &$colsCache): array {
+            return $colsCache[$tbl] ??= $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(\PDO::FETCH_COLUMN);
+        };
+        $tableIdx = function (string $tbl) use ($pdo, &$idxCache): array {
+            if (!isset($idxCache[$tbl])) {
+                $idxCache[$tbl] = [];
+                foreach ($pdo->query("SHOW INDEX FROM `{$tbl}`")->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+                    $idxCache[$tbl][$r['Key_name']] = true;
+                }
+            }
+            return $idxCache[$tbl];
+        };
+        foreach ($schemaChecks as [$tbl, $col, $ddl]) {
+            if (!in_array($col, $tableCols($tbl), true)) {
+                $missing[] = [$tbl, $col, $ddl];
+            }
+        }
+        foreach ($idxChecks as [$tbl, $idx, $col]) {
+            if (in_array($col, $tableCols($tbl), true) && !isset($tableIdx($tbl)[$idx])) {
+                $missing[] = [$tbl, $idx, "ADD INDEX `{$idx}` (`{$col}`)"];
+            }
+        }
+        $checks['schema'] = [
+            'ok' => $missing === [],
+            'detail' => $missing === []
+                ? '所有应自迁移的字段与索引均已就位'
+                : '缺失: ' . implode(', ', array_map(fn($m) => "{$m[0]}.{$m[1]}", $missing)),
+            'fixable' => true,
+            'extra' => ['missing' => $missing],
+        ];
+
+        // —— 2) 遗留设置行 ——
+        $orphanKeys = ['direct_upload_enabled'];
+        $orphanFound = [];
+        try {
+            foreach ($orphanKeys as $k) {
+                $c = (int) $pdo->query("SELECT COUNT(*) FROM `settings` WHERE `key` = " . $pdo->quote($k))->fetchColumn();
+                if ($c > 0) {
+                    $orphanFound[$k] = $c;
+                }
+            }
+            $checks['orphan_settings'] = [
+                'ok' => $orphanFound === [],
+                'detail' => $orphanFound === []
+                    ? '无遗留设置行'
+                    : '发现遗留设置行: ' . implode(', ', array_keys($orphanFound)),
+                'fixable' => true,
+                'extra' => ['found' => $orphanFound],
+            ];
+        } catch (\Throwable $e) {
+            $checks['orphan_settings'] = ['ok' => true, 'detail' => 'settings 表不可探测（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
+        }
+
+        // —— 3) 哈希回填统计 ——
+        try {
+            $noMd5 = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE file_hash IS NULL OR file_hash=''")->fetchColumn();
+            $noSha = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE file_sha256 IS NULL OR file_sha256=''")->fetchColumn();
+            $checks['hash_backfill'] = [
+                'ok' => $noMd5 === 0 && $noSha === 0,
+                'detail' => $noMd5 === 0 && $noSha === 0
+                    ? '所有图片均携带 MD5 + SHA-256'
+                    : "{$noMd5} 张缺 file_hash, {$noSha} 张缺 file_sha256",
+                'fixable' => true,
+                'extra' => ['missing_md5' => $noMd5, 'missing_sha' => $noSha],
+            ];
+        } catch (\Throwable $e) {
+            $checks['hash_backfill'] = ['ok' => true, 'detail' => '统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
+        }
+
+        return $checks;
+    }
+
+    /** GET /admin/settings/health —— 检查结果（JSON）。 */
+    public function health(Request $request): void
+    {
+        $checks = $this->runHealthChecks();
+        $allOk = !in_array(false, array_column($checks, 'ok'), true);
+        $this->json(['success' => true, 'all_ok' => $allOk, 'checks' => $checks]);
+    }
+
+    /** POST /admin/settings/health-fix —— 执行可修复项（schema + 遗留设置行）。 */
+    public function healthFix(Request $request): void
+    {
+        $this->validateCsrf();
+        $checks = $this->runHealthChecks();
+        $applied = 0;
+        $already = 0;
+        $errors = [];
+        $deletedRows = 0;
+
+        // schema 补全（幂等：1060/1061 视为已存在）
+        $missing = $checks['schema']['extra']['missing'] ?? [];
+        try {
+            $pdo = \App\Core\Database::getInstance();
+            foreach ($missing as [$tbl, $col, $ddl]) {
+                try {
+                    $pdo->exec("ALTER TABLE `{$tbl}` {$ddl}");
+                    $applied++;
+                } catch (\Throwable $e) {
+                    $msg = $e->getMessage();
+                    if (stripos($msg, '1060') !== false || stripos($msg, '1061') !== false || stripos($msg, 'duplicate') !== false) {
+                        $already++;
+                    } else {
+                        $errors[] = "{$tbl}.{$col}: {$msg}";
+                    }
+                }
+            }
+            // 遗留设置行删除
+            $orphanFound = $checks['orphan_settings']['extra']['found'] ?? [];
+            foreach ($orphanFound as $k => $c) {
+                $deletedRows += $pdo->exec("DELETE FROM `settings` WHERE `key` = " . $pdo->quote($k));
+            }
+        } catch (\Throwable $e) {
+            $errors[] = $e->getMessage();
+        }
+
+        // 重新验证 schema（以复验为准）
+        $after = $this->runHealthChecks();
+        $schemaOkAfter = $after['schema']['ok'] ?? false;
+        $orphanOkAfter = $after['orphan_settings']['ok'] ?? true;
+
+        $this->json([
+            'success' => $schemaOkAfter && $orphanOkAfter && $errors === [],
+            'applied' => $applied,
+            'already' => $already,
+            'deleted_rows' => $deletedRows,
+            'errors' => $errors,
+            'schema_ok_after' => $schemaOkAfter,
+            'orphan_ok_after' => $orphanOkAfter,
+            'checks_after' => $after,
+        ]);
+    }
+
     /** Render helpers for the view. */
     public static function fieldValue(array $settings, string $key, array $def): string
     {
