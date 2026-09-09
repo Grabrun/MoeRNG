@@ -416,9 +416,18 @@ function initImageGrid() {
     });
 
     const backfillBtn = document.getElementById('backfill-hashes');
+    // v1.3.2: 两段式确认 —— window.confirm 可能被浏览器「阻止额外对话框」静默吞掉
+    let backfillArmed = false, backfillArmTimer = null;
     backfillBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有上传任务进行中，请稍候', 'error', 4000); return; }
-        if (!window.confirm('将为历史图片补算 MD5 与 SHA-256（对象存储会逐张拉取，可能耗时）。\n确定开始？')) return;
+        if (!backfillArmed) {
+            backfillArmed = true;
+            backfillBtn.textContent = '再次点击确认回填';
+            backfillArmTimer = setTimeout(function() { backfillArmed = false; backfillBtn.textContent = '补全历史图片哈希'; }, 4000);
+            return;
+        }
+        clearTimeout(backfillArmTimer); backfillArmed = false;
+        backfillBtn.textContent = '补全历史图片哈希';
 
         const box = document.getElementById('backfill-progress');
         const fill = document.getElementById('backfill-fill');
@@ -812,8 +821,7 @@ function initDropZone() {
         if (p && this.files.length > 0) p.textContent = '已选择 ' + this.files.length + ' 个文件';
     });
 
-    // v1.3.1 迭代: 防重入——串行队列进行中时忽略再次触发
-    var uploading = false;
+    // v1.3.1 迭代: 防重入——uploading 已上移为顶层全局（与健康面板回填共用互斥）
 
     document.getElementById('upload-submit')?.addEventListener('click', () => handleFiles(input ? input.files : []));
 
@@ -1175,6 +1183,9 @@ function initDeleteButtons() {
 // resolves to the helpers.js copy.
 // ---------------------------------------------------------------------------
 
+// v1.3.1/v1.3.2: 上传与回填共用防重入标志（顶层，两处互斥）
+var uploading = false;
+
 // ── v1.3.2 迭代: 哈希回填共享循环 + 系统设置健康检查面板 ──
 // 顶层作用域：图片管理页与设置页共用 runHashBackfill；initHealthPanel
 // 由 DOMContentLoaded 调用（元素不存在时 optional chaining 零副作用）。
@@ -1253,8 +1264,16 @@ healthRun?.addEventListener('click', runHealthCheck);
 // 进入设置页自动跑一次
 if (healthRun) runHealthCheck();
 
+let healthFixArmed = false, healthFixArmTimer = null;
 healthFix?.addEventListener('click', async function() {
-    if (!window.confirm('将补全缺失的字段/索引并清理遗留设置行（幂等操作）。\n确定执行？')) return;
+    if (!healthFixArmed) {
+        healthFixArmed = true;
+        healthFix.textContent = '再次点击确认修复';
+        healthFixArmTimer = setTimeout(function() { healthFixArmed = false; healthFix.textContent = '执行修复'; }, 4000);
+        return;
+    }
+    clearTimeout(healthFixArmTimer); healthFixArmed = false;
+    healthFix.textContent = '执行修复';
     healthFix.disabled = true;
     healthResults.textContent = '修复中…';
     try {
@@ -1282,9 +1301,17 @@ healthFix?.addEventListener('click', async function() {
 
 // 健康面板内的哈希回填按钮（仅 hash_backfill 未通过时可见）
 const healthBackfillRun = document.getElementById('health-backfill-run');
+let hpBackfillArmed = false, hpBackfillArmTimer = null;
 healthBackfillRun?.addEventListener('click', async function() {
     if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
-    if (!window.confirm('将为历史图片补算 MD5 与 SHA-256（对象存储会逐张拉取，可能耗时）。\n确定开始？')) return;
+    if (!hpBackfillArmed) {
+        hpBackfillArmed = true;
+        healthBackfillRun.textContent = '再次点击确认';
+        hpBackfillArmTimer = setTimeout(function() { hpBackfillArmed = false; healthBackfillRun.textContent = '开始回填'; }, 4000);
+        return;
+    }
+    clearTimeout(hpBackfillArmTimer); hpBackfillArmed = false;
+    healthBackfillRun.textContent = '开始回填';
     uploading = true;
     healthBackfillRun.disabled = true;
     const setUI = function(pct, t, d) {
