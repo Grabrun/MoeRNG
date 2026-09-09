@@ -325,8 +325,11 @@ if (document.readyState === 'loading') {
 })();
 
 
-// === Migrated from src/views\admin\users.php (CSP nonce migration) ===
-if (document.getElementById('user-modal')) {
+// === Migrated from src/views/admin/users.php (CSP nonce migration) ===
+// v1.3.2 修复: ①editUser 提升为顶层函数（data-edit-user 委托调用 window.editUser，
+// 原先藏在 if 块内依赖遗留提升语义）②「新建用户」清空表单改绑 data-open-modal
+// 按钮（CSP 迁移后 onclick 属性已不存在，旧选择器永远返回 null → TypeError →
+// helpers.js 顶层中断）③绑定加 null 守卫。
 function editUser(id, username, email, role) {
     document.getElementById('user-modal-title').textContent = '编辑用户';
     document.getElementById('user-id').value = id;
@@ -338,15 +341,17 @@ function editUser(id, username, email, role) {
     document.getElementById('user-form').action = '/admin/users/update';
     document.getElementById('user-modal').classList.add('active');
 }
-document.querySelector('[onclick="openModal(\'user-modal\')"]').addEventListener('click', function() {
-    document.getElementById('user-modal-title').textContent = '新建用户';
-    document.getElementById('user-id').value = '';
-    document.getElementById('user-username').value = '';
-    document.getElementById('user-email').value = '';
-    document.getElementById('user-password').value = '';
-    document.getElementById('pwd-hint').textContent = '';
-    document.getElementById('user-form').action = '/admin/users/create';
-});
+if (document.getElementById('user-modal')) {
+    var newUserBtn = document.querySelector('[data-open-modal="user-modal"]');
+    if (newUserBtn) newUserBtn.addEventListener('click', function() {
+        document.getElementById('user-modal-title').textContent = '新建用户';
+        document.getElementById('user-id').value = '';
+        document.getElementById('user-username').value = '';
+        document.getElementById('user-email').value = '';
+        document.getElementById('user-password').value = '';
+        document.getElementById('pwd-hint').textContent = '';
+        document.getElementById('user-form').action = '/admin/users/create';
+    });
 }
 
 
@@ -595,7 +600,9 @@ function editCategory(id, name, slug, desc, parentId, sort) {
 }
 
 // Reset form for new category
-document.querySelector('[onclick="openModal(\'category-modal\')"]').addEventListener('click', function() {
+// v1.3.2 修复: 改绑 data-open-modal（CSP 迁移后 onclick 属性已不存在）+ null 守卫
+var newCatBtn = document.querySelector('[data-open-modal="category-modal"]');
+if (newCatBtn) newCatBtn.addEventListener('click', function() {
     document.getElementById('category-modal-title').textContent = '新建分类';
     document.getElementById('cat-id').value = '';
     document.getElementById('cat-name').value = '';
