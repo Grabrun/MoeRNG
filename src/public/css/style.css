@@ -105,6 +105,8 @@ small { font-size: 0.85rem; color: var(--text-secondary); }
 .btn-outline { background: transparent; border: 1px solid var(--border-light); color: var(--text); }
 .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: var(--bg-card-hover); }
 .btn-danger { background: var(--danger); color: #fff; }
+.btn-warning { background: var(--warning); color: #2B2532; }
+.btn-warning:hover { background: #FFC472; }
 .btn-danger:hover { background: #E55F82; }
 .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
 .btn-lg { padding: 14px 32px; font-size: 1.1rem; border-radius: var(--radius-pill); }
