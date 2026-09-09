@@ -417,34 +417,6 @@ function initImageGrid() {
 
     // ── v1.3.2 迭代: 历史图片哈希回填（管理员，分批轮询 + 进度条）─────────
     // 每批由服务端拉取对象/读本地文件算 MD5+SHA-256 并落库；前端循环调用
-    // 直到 remaining=0，进度按 (total-remaining)/total 递增。
-    // 抽为共享函数：图片管理页与「系统设置 → 健康检查」面板共用。
-    async function runHashBackfill(setUI) {
-        let totalUpdated = 0, totalFailed = 0, total = 0, done = 0;
-        for (;;) {
-            const fd = new FormData();
-            fd.append('_csrf_token', getCsrfToken());
-            fd.append('batch', '5');
-            const r = await fetch('/admin/images/backfill-hashes', {
-                method: 'POST', body: fd,
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            });
-            const j = await r.json();
-            if (!j || !j.success) {
-                throw new Error((j && j.error) || '未知错误');
-            }
-            total = j.total;
-            done = total - j.remaining;
-            totalUpdated += j.updated;
-            totalFailed += j.failed;
-            setUI(total > 0 ? done / total : 1,
-                '回填中… ' + done + '/' + total,
-                '已补 ' + totalUpdated + ' 张' + (totalFailed ? '，失败 ' + totalFailed + ' 张' : ''));
-            if (j.remaining === 0) break;
-        }
-        return { updated: totalUpdated, failed: totalFailed, total: total };
-    }
-
     const backfillBtn = document.getElementById('backfill-hashes');
     backfillBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有上传任务进行中，请稍候', 'error', 4000); return; }
@@ -481,104 +453,136 @@ function initImageGrid() {
         }
     });
 
-    // ── v1.3.2 迭代: 系统设置 → 健康检查面板（检查 + 修复 + 回填）────────
-    const healthRun = document.getElementById('health-run');
-    const healthFix = document.getElementById('health-fix');
-    const healthResults = document.getElementById('health-results');
-    const healthBackfillBox = document.getElementById('health-backfill-box');
-    const healthBackfillText = document.getElementById('health-backfill-text');
-    const healthBackfillFill = document.getElementById('health-backfill-fill');
-    const healthBackfillDetail = document.getElementById('health-backfill-detail');
-
-    function renderHealth(checks) {
-        const badge = function(ok) { return ok ? '[ OK ]' : '[待修复]'; };
-        healthResults.innerHTML = Object.keys(checks).map(function(k) {
-            const c = checks[k];
-            const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', hash_backfill: '历史图片哈希' };
-            return '<div>' + badge(c.ok) + ' ' + (labels[k] || k) + ' — ' + c.detail + '</div>';
-        }).join('');
-        // 「执行修复」仅在有可修复未通过项时可用
-        const fixable = Object.keys(checks).some(function(k) {
-            return !checks[k].ok && checks[k].fixable && k !== 'hash_backfill';
+// 直到 remaining=0，进度按 (total-remaining)/total 递增。
+// 抽为共享函数：图片管理页与「系统设置 → 健康检查」面板共用。
+async function runHashBackfill(setUI) {
+    let totalUpdated = 0, totalFailed = 0, total = 0, done = 0;
+    for (;;) {
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        fd.append('batch', '5');
+        const r = await fetch('/admin/images/backfill-hashes', {
+            method: 'POST', body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
-        healthFix.disabled = !fixable;
-        // 哈希回填区块：仅 hash_backfill 未通过时显示
-        const needBackfill = checks.hash_backfill && !checks.hash_backfill.ok;
-        healthBackfillBox?.classList.toggle('hidden', !needBackfill);
+        const j = await r.json();
+        if (!j || !j.success) {
+            throw new Error((j && j.error) || '未知错误');
+        }
+        total = j.total;
+        done = total - j.remaining;
+        totalUpdated += j.updated;
+        totalFailed += j.failed;
+        setUI(total > 0 ? done / total : 1,
+            '回填中… ' + done + '/' + total,
+            '已补 ' + totalUpdated + ' 张' + (totalFailed ? '，失败 ' + totalFailed + ' 张' : ''));
+        if (j.remaining === 0) break;
     }
+    return { updated: totalUpdated, failed: totalFailed, total: total };
+}
 
-    async function runHealthCheck() {
-        healthResults.textContent = '检查中…';
-        try {
-            const r = await fetch('/admin/settings/health', {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            });
-            const j = await r.json();
-            if (!j || !j.success) { healthResults.textContent = '检查失败。'; return; }
-            renderHealth(j.checks);
-        } catch (e) {
-            healthResults.textContent = '检查请求异常: ' + e.message;
-        }
+
+function initHealthPanel() {
+// ── v1.3.2 迭代: 系统设置 → 健康检查面板（检查 + 修复 + 回填）────────
+const healthRun = document.getElementById('health-run');
+const healthFix = document.getElementById('health-fix');
+const healthResults = document.getElementById('health-results');
+const healthBackfillBox = document.getElementById('health-backfill-box');
+const healthBackfillText = document.getElementById('health-backfill-text');
+const healthBackfillFill = document.getElementById('health-backfill-fill');
+const healthBackfillDetail = document.getElementById('health-backfill-detail');
+
+function renderHealth(checks) {
+    const badge = function(ok) { return ok ? '[ OK ]' : '[待修复]'; };
+    healthResults.innerHTML = Object.keys(checks).map(function(k) {
+        const c = checks[k];
+        const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', hash_backfill: '历史图片哈希' };
+        return '<div>' + badge(c.ok) + ' ' + (labels[k] || k) + ' — ' + c.detail + '</div>';
+    }).join('');
+    // 「执行修复」仅在有可修复未通过项时可用
+    const fixable = Object.keys(checks).some(function(k) {
+        return !checks[k].ok && checks[k].fixable && k !== 'hash_backfill';
+    });
+    healthFix.disabled = !fixable;
+    // 哈希回填区块：仅 hash_backfill 未通过时显示
+    const needBackfill = checks.hash_backfill && !checks.hash_backfill.ok;
+    healthBackfillBox?.classList.toggle('hidden', !needBackfill);
+}
+
+async function runHealthCheck() {
+    healthResults.textContent = '检查中…';
+    try {
+        const r = await fetch('/admin/settings/health', {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const j = await r.json();
+        if (!j || !j.success) { healthResults.textContent = '检查失败。'; return; }
+        renderHealth(j.checks);
+    } catch (e) {
+        healthResults.textContent = '检查请求异常: ' + e.message;
     }
+}
 
-    healthRun?.addEventListener('click', runHealthCheck);
-    // 进入设置页自动跑一次
-    if (healthRun) runHealthCheck();
+healthRun?.addEventListener('click', runHealthCheck);
+// 进入设置页自动跑一次
+if (healthRun) runHealthCheck();
 
-    healthFix?.addEventListener('click', async function() {
-        if (!window.confirm('将补全缺失的字段/索引并清理遗留设置行（幂等操作）。\n确定执行？')) return;
-        healthFix.disabled = true;
-        healthResults.textContent = '修复中…';
-        try {
-            const fd = new FormData();
-            fd.append('_csrf_token', getCsrfToken());
-            const r = await fetch('/admin/settings/health-fix', {
-                method: 'POST', body: fd,
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            });
-            const j = await r.json();
-            if (!j || !j.success) {
-                healthResults.innerHTML = '<div>[FAIL] 修复未完全成功' +
-                    (j && j.errors && j.errors.length ? ' — ' + j.errors.join('; ') : '') + '</div>';
-                showToast('修复未完全成功，详见检查结果', 'error', 8000);
-                return;
-            }
-            showToast('修复完成：补全 ' + j.applied + ' 项，清理 ' + j.deleted_rows + ' 行遗留设置', 'success', 6000);
-            await runHealthCheck();
-        } catch (e) {
-            showToast('修复请求异常: ' + e.message, 'error', 8000);
-        } finally {
-            healthFix.disabled = false;
+healthFix?.addEventListener('click', async function() {
+    if (!window.confirm('将补全缺失的字段/索引并清理遗留设置行（幂等操作）。\n确定执行？')) return;
+    healthFix.disabled = true;
+    healthResults.textContent = '修复中…';
+    try {
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        const r = await fetch('/admin/settings/health-fix', {
+            method: 'POST', body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const j = await r.json();
+        if (!j || !j.success) {
+            healthResults.innerHTML = '<div>[FAIL] 修复未完全成功' +
+                (j && j.errors && j.errors.length ? ' — ' + j.errors.join('; ') : '') + '</div>';
+            showToast('修复未完全成功，详见检查结果', 'error', 8000);
+            return;
         }
-    });
+        showToast('修复完成：补全 ' + j.applied + ' 项，清理 ' + j.deleted_rows + ' 行遗留设置', 'success', 6000);
+        await runHealthCheck();
+    } catch (e) {
+        showToast('修复请求异常: ' + e.message, 'error', 8000);
+    } finally {
+        healthFix.disabled = false;
+    }
+});
 
-    // 健康面板内的哈希回填按钮（仅 hash_backfill 未通过时可见）
-    const healthBackfillRun = document.getElementById('health-backfill-run');
-    healthBackfillRun?.addEventListener('click', async function() {
-        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
-        if (!window.confirm('将为历史图片补算 MD5 与 SHA-256（对象存储会逐张拉取，可能耗时）。\n确定开始？')) return;
-        uploading = true;
-        healthBackfillRun.disabled = true;
-        const setUI = function(pct, t, d) {
-            healthBackfillFill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
-            if (t) healthBackfillText.textContent = t;
-            if (d !== undefined) healthBackfillDetail.textContent = d;
-        };
-        try {
-            const res = await runHashBackfill(setUI);
-            healthBackfillText.textContent = res.failed > 0
-                ? ('回填完成，失败 ' + res.failed + ' 张')
-                : '回填完成：所有图片均已携带哈希';
-            healthBackfillDetail.textContent = '已补 ' + res.updated + ' 张';
-            showToast('哈希回填完成：已补 ' + res.updated + ' 张', res.failed > 0 ? 'error' : 'success', 6000);
-            await runHealthCheck();
-        } catch (err) {
-            showToast('回填请求异常: ' + err.message, 'error', 8000);
-        } finally {
-            healthBackfillRun.disabled = false;
-            uploading = false;
-        }
-    });
+// 健康面板内的哈希回填按钮（仅 hash_backfill 未通过时可见）
+const healthBackfillRun = document.getElementById('health-backfill-run');
+healthBackfillRun?.addEventListener('click', async function() {
+    if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
+    if (!window.confirm('将为历史图片补算 MD5 与 SHA-256（对象存储会逐张拉取，可能耗时）。\n确定开始？')) return;
+    uploading = true;
+    healthBackfillRun.disabled = true;
+    const setUI = function(pct, t, d) {
+        healthBackfillFill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+        if (t) healthBackfillText.textContent = t;
+        if (d !== undefined) healthBackfillDetail.textContent = d;
+    };
+    try {
+        const res = await runHashBackfill(setUI);
+        healthBackfillText.textContent = res.failed > 0
+            ? ('回填完成，失败 ' + res.failed + ' 张')
+            : '回填完成：所有图片均已携带哈希';
+        healthBackfillDetail.textContent = '已补 ' + res.updated + ' 张';
+        showToast('哈希回填完成：已补 ' + res.updated + ' 张', res.failed > 0 ? 'error' : 'success', 6000);
+        await runHealthCheck();
+    } catch (err) {
+        showToast('回填请求异常: ' + err.message, 'error', 8000);
+    } finally {
+        healthBackfillRun.disabled = false;
+        uploading = false;
+    }
+});
+
+}
 
     // v1.2.1 迭代: bulk re-categorize (admin UI audit I2)
     const batchCat = document.getElementById('batch-category');
@@ -1314,6 +1318,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initDropZone();
     initSortable();
     initTabs();
+    initHealthPanel();
 
     // v1.2.0 迭代: per-page selector on the image list — keeps the current
     // search / category filters, resets to page 1.

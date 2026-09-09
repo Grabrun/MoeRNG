@@ -3,7 +3,7 @@ include __DIR__ . '/helpers.php';
 /** @var array $settings @var array $groups @var array $backups */
 $groupNames = array_keys($groups);
 $activeGroup = $_GET['tab'] ?? ($groupNames[0] ?? 'site');
-if (!in_array($activeGroup, $groupNames, true)) $activeGroup = $groupNames[0] ?? 'site';
+if (!in_array($activeGroup, array_merge($groupNames, ['health']), true)) $activeGroup = $groupNames[0] ?? 'site';
 
 function renderField(string $key, array $def, array $settings): void
 {
@@ -82,7 +82,7 @@ admin_header('系统设置', 'page-settings');
 </div>
 
 <!-- v1.3.2 迭代: 系统健康检查（检查 + 修复）—— 统一取代 CLI 迁移/回填工具 -->
-<section class="settings-group" id="health-check">
+<section class="settings-group <?= $activeGroup !== 'health' ? 'hidden' : '' ?>" id="health">
     <div class="flex-between mb-2">
         <h2 style="margin:0;">健康检查</h2>
         <div class="flex gap-2">
@@ -106,6 +106,8 @@ admin_header('系统设置', 'page-settings');
 
 <div class="settings-toolbar flex gap-12 flex-wrap mb-3">
     <div class="settings-tabs flex gap-4 flex-wrap">
+        <a href="?tab=health#health"
+           class="settings-tab btn btn-sm <?= $activeGroup === 'health' ? 'btn-primary' : '' ?> no-underline">健康检查</a>
         <?php foreach ($groups as $gid => $gdef): ?>
         <a href="?tab=<?= h($gid) ?>#<?= h($gid) ?>"
            class="settings-tab btn btn-sm <?= $gid === $activeGroup ? 'btn-primary' : '' ?> no-underline"><?= h($gdef['label']) ?></a>
