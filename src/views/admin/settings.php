@@ -110,15 +110,15 @@ admin_header('系统设置', 'page-settings');
                 <button type="button" class="btn btn-primary btn-sm" id="health-fix" disabled>执行修复</button>
             </div>
             <div id="health-results" class="text-sm text-muted text-secondary">尚未运行检查 —— 点击「运行检查」。</div>
-            <div id="health-backfill-box" class="hidden mt-2" style="border:1px solid rgba(128,128,128,.3);border-radius:8px;padding:10px 12px;">
-                <div class="flex-between" style="gap:8px;">
-                    <div style="font-size:13px;" id="health-backfill-text">准备回填…</div>
+            <div id="health-backfill-box" class="hidden mt-2 health-backfill-box">
+                <div class="flex-between health-backfill-head">
+                    <div class="health-progress-text" id="health-backfill-text">准备回填…</div>
                     <button type="button" class="btn btn-primary btn-sm" id="health-backfill-run">开始回填</button>
                 </div>
-                <div style="height:8px;border-radius:4px;background:rgba(128,128,128,.25);overflow:hidden;margin:8px 0 6px;">
-                    <div id="health-backfill-fill" style="height:100%;width:0%;border-radius:4px;background:var(--primary,#c084fc);transition:width .25s ease;"></div>
+                <div class="health-progress-track">
+                    <div id="health-backfill-fill" class="health-progress-fill"></div>
                 </div>
-                <div style="font-size:12px;opacity:.7;" id="health-backfill-detail"></div>
+                <div class="health-progress-detail" id="health-backfill-detail"></div>
             </div>
         </div>
     </div>

@@ -1700,3 +1700,14 @@ body.modal-open { overflow: hidden; }
 .provider-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 0 0 16px; }
 .provider-legend { padding: 0 8px; font-weight: 600; }
 .span-all { grid-column: 1 / -1; }
+
+/* ── v1.3.2 迭代: 健康检查 / 哈希回填面板（nonce-CSP：禁止内联 style，样式一律走类）── */
+.health-backfill-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.health-backfill-head { gap: 8px; }
+.health-progress-track { height: 8px; border-radius: 4px; background: rgba(128,128,128,.25); overflow: hidden; margin: 8px 0 6px; }
+.health-progress-fill { height: 100%; width: 0%; border-radius: 4px; background: var(--primary, #c084fc); transition: width .25s ease; }
+.health-progress-text { font-size: 13px; }
+.health-progress-detail { font-size: 12px; opacity: .7; }
+.backfill-float { position: fixed; right: 24px; bottom: 24px; z-index: 60; background: var(--surface, #1e1e2e); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; min-width: 280px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.backfill-float .health-progress-text { margin-bottom: 8px; }
+.backfill-float .health-progress-detail { margin-top: 6px; }

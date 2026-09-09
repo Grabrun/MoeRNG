@@ -98,12 +98,12 @@
 </div>
 
 <!-- Hash backfill progress（复用轻量样式） -->
-<div id="backfill-progress" class="hidden" style="position:fixed;right:24px;bottom:24px;z-index:60;background:var(--surface,#1e1e2e);border:1px solid rgba(128,128,128,.35);border-radius:10px;padding:12px 16px;min-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
-    <div style="font-size:13px;margin-bottom:8px;" id="backfill-text">准备回填…</div>
-    <div style="height:8px;border-radius:4px;background:rgba(128,128,128,.25);overflow:hidden;">
-        <div id="backfill-fill" style="height:100%;width:0%;border-radius:4px;background:var(--primary,#c084fc);transition:width .25s ease;"></div>
+<div id="backfill-progress" class="hidden backfill-float">
+    <div class="health-progress-text" id="backfill-text">准备回填…</div>
+    <div class="health-progress-track">
+        <div id="backfill-fill" class="health-progress-fill"></div>
     </div>
-    <div style="font-size:12px;margin-top:6px;opacity:.7;" id="backfill-detail"></div>
+    <div class="health-progress-detail" id="backfill-detail"></div>
 </div>
 
 <!-- Upload Modal -->
