@@ -280,6 +280,62 @@ class ImageController extends Controller
         ]);
     }
 
+    /**
+     * GET /admin/images/queue —— 图片处理管理页（状态总览 + 开始/重试）。
+     */
+    public function queue(Request $request): void
+    {
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->render('admin/queue', [
+                'error' => '数据库连接失败: ' . $e->getMessage(),
+                'stats' => ['pending' => 0, 'processing' => 0, 'done' => 0, 'failed' => 0, 'total' => 0],
+                'pendingRows' => [],
+                'failedRows' => [],
+                'incomingDir' => self::incomingDir(),
+            ]);
+            return;
+        }
+
+        $count = function (string $where) use ($pdo): int {
+            return (int) $pdo->query("SELECT COUNT(*) FROM `images`" . ($where !== '' ? " WHERE {$where}" : ''))->fetchColumn();
+        };
+
+        $stats = [
+            'pending'    => $count("process_status = 'pending'"),
+            'processing' => $count("process_status = 'processing'"),
+            'done'       => $count("process_status = 'done'"),
+            'failed'     => $count("process_status = 'failed'"),
+            'total'      => $count(''),
+        ];
+
+        $pendingRows = $pdo->query(
+            "SELECT id, original_name, file_size, created_at FROM `images` WHERE process_status = 'pending' ORDER BY id ASC LIMIT 50"
+        )->fetchAll(\PDO::FETCH_ASSOC);
+
+        $failedRows = $pdo->query(
+            "SELECT id, original_name, process_error, file_size, created_at FROM `images` WHERE process_status = 'failed' ORDER BY id DESC LIMIT 50"
+        )->fetchAll(\PDO::FETCH_ASSOC);
+
+        $incomingDir = self::incomingDir();
+        // 失败项的临时文件是否仍在（决定能否直接重试）
+        foreach ($failedRows as &$fr) {
+            $row = $pdo->query("SELECT `path` FROM `images` WHERE id = " . (int) $fr['id'])->fetch(\PDO::FETCH_ASSOC);
+            $p = (string) ($row['path'] ?? '');
+            $fr['temp_exists'] = $p !== '' && is_file($incomingDir . '/' . ltrim($p, '/'));
+        }
+        unset($fr);
+
+        $this->render('admin/queue', [
+            'error' => '',
+            'stats' => $stats,
+            'pendingRows' => $pendingRows,
+            'failedRows' => $failedRows,
+            'incomingDir' => $incomingDir,
+        ]);
+    }
+
     /** POST /admin/images/requeue-failed —— 把 failed 的图片重置回 pending 重试。 */
     public function requeueFailed(Request $request): void
     {

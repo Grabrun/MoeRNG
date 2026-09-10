@@ -1390,12 +1390,72 @@ healthBackfillRun?.addEventListener('click', async function() {
 });
 }
 
+// ── v1.3.2-beta.2: 图片处理管理页（状态总览 + 开始处理 / 重试失败项）──
+function initQueuePage() {
+    const startBtn = document.getElementById('queue-start');
+    const requeueBtn = document.getElementById('queue-requeue');
+    if (!startBtn && !requeueBtn) return;
+
+    const box = document.getElementById('queue-progress');
+    const fill = document.getElementById('queue-fill');
+    const text = document.getElementById('queue-text');
+    const detail = document.getElementById('queue-detail');
+    const setUI = function(pct, t, d) {
+        if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+        if (text && t) text.textContent = t;
+        if (detail && d !== undefined) detail.textContent = d;
+    };
+
+    async function runQueue(label) {
+        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
+        uploading = true;
+        if (startBtn) startBtn.disabled = true;
+        if (requeueBtn) requeueBtn.disabled = true;
+        if (box) { box.classList.remove('hidden'); setUI(0, label || '处理中…', ''); }
+        try {
+            const res = await runProcessQueue(setUI);
+            showToast('处理完成：成功 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 6000);
+            setTimeout(() => window.location.reload(), 1500);
+        } catch (e) {
+            showToast('处理异常: ' + e.message, 'error', 8000);
+        } finally {
+            uploading = false;
+            if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+        }
+    }
+
+    startBtn?.addEventListener('click', function() { runQueue('处理中…'); });
+
+    requeueBtn?.addEventListener('click', async function() {
+        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
+        uploading = true;
+        try {
+            const fd = new FormData();
+            fd.append('_csrf_token', getCsrfToken());
+            const r = await fetch('/admin/images/requeue-failed', {
+                method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const j = await r.json();
+            if (!j || !j.success) { showToast('重试失败: ' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
+            if (j.requeued === 0) { showToast('没有可重试的失败项（临时文件已丢失的项无法重试）', 'success', 5000); return; }
+            showToast('已重新入队 ' + j.requeued + ' 张，开始处理…', 'success', 4000);
+        } catch (e) {
+            showToast('重试请求异常: ' + e.message, 'error', 8000);
+            uploading = false;
+            return;
+        }
+        uploading = false;
+        runQueue('重试处理中…');
+    });
+}
+
 // Init all on DOM ready
 document.addEventListener('DOMContentLoaded', function() {
     initThemeToggle();
     initApiTester();
     initImageGrid();
     initHealthPanel();
+    initQueuePage();
     initApiKeys();
     initCategoryActions();
     initDropZone();

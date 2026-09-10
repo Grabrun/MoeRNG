@@ -1648,3 +1648,6 @@ body.modal-open { overflow: hidden; }
 .proc-badge { position: absolute; top: 8px; left: 8px; z-index: 3; font-size: 11px; line-height: 1; padding: 4px 7px; border-radius: var(--radius-pill); color: #fff; letter-spacing: .3px; }
 .proc-pending { background: var(--info); }
 .proc-failed { background: var(--danger); }
+
+/* ── v1.3.2-beta.2: 图片处理管理页 ── */
+.queue-steps { margin: 0; padding-left: 20px; line-height: 1.9; }
