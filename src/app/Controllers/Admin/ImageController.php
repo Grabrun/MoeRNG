@@ -206,6 +206,19 @@ class ImageController extends Controller
     }
 
     /**
+     * 丢弃「已生成但未及上传」的临时缩略图文件（异常路径防泄漏）。
+     * uploadThumbs() 内已用 finally 清理，这里只兜底：任何在其之前抛出的异常
+     * （如原图上传失败、DB 写入失败）都不会留下临时文件。
+     */
+    private function discardThumbs(?array $gen): void
+    {
+        if (!is_array($gen) || empty($gen['thumbs'])) return;
+        foreach ($gen['thumbs'] as $t) {
+            if (!empty($t['tmp'])) @unlink($t['tmp']);
+        }
+    }
+
+    /**
      * 把生成的各档缩略图上传到目标存储，返回 尺寸 => key（失败档自动跳过）。
      * 无论成功与否都会删除临时文件。
      */
@@ -278,6 +291,9 @@ class ImageController extends Controller
                 $path = (string) $row['path'];
                 $incomingFile = $incomingDir . '/' . ltrim($path, '/');
 
+                // v1.3.2-beta.2: 声明在 try 外 —— catch 里用它清理未上传的临时缩略图
+                $gen = null;
+
                 try {
                     if (!is_file($incomingFile)) {
                         throw new \RuntimeException('临时文件不存在（可能已被清理）');
@@ -295,12 +311,12 @@ class ImageController extends Controller
                     }
                     $storage = $profile->driver();
 
+                    // —— 先上传原图到最终存储（失败即抛，此时尚未生成任何临时文件）——
+                    $url = $storage->upload($incomingFile, $path, $mime);
+
                     // —— 多尺寸缩略图（一次解码生成 sm/md/lg；GD 不可用或源图
                     //    不可解码时降级为无缩略图，不阻断原图入库）——
                     $gen = $this->makeThumbnails($incomingFile, (string) $row['mime_type'], $path);
-
-                    // —— 上传原图到最终存储 ——
-                    $url = $storage->upload($incomingFile, $path, $mime);
 
                     // —— 逐档上传缩略图（单档失败不影响其它档）——
                     $thumbKeys = $this->uploadThumbs($storage, $gen['thumbs']);
@@ -320,6 +336,7 @@ class ImageController extends Controller
                     $done++;
                     $results[] = ['id' => $id, 'ok' => true];
                 } catch (\Throwable $e) {
+                    $this->discardThumbs($gen); // 防临时缩略图泄漏
                     $failed++;
                     $err = mb_substr($e->getMessage(), 0, 480);
                     try {
@@ -403,6 +420,7 @@ class ImageController extends Controller
             foreach ($rows as $row) {
                 $id = (int) $row['id'];
                 $path = (string) $row['path'];
+                $gen = null; // v1.3.2-beta.2: catch 里用于清理未及上传的临时缩略图
                 try {
                     $profile = $row['storage_profile_id'] !== null
                         ? StorageProfile::find((int) $row['storage_profile_id'])
@@ -454,6 +472,7 @@ class ImageController extends Controller
                     $done++;
                     $results[] = ['id' => $id, 'ok' => true];
                 } catch (\Throwable $e) {
+                    $this->discardThumbs($gen); // 防临时缩略图泄漏
                     $failed++;
                     $results[] = ['id' => $id, 'error' => mb_substr($e->getMessage(), 0, 300)];
                 }
