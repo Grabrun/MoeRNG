@@ -17,6 +17,9 @@ releases/
 
 # ── DSH agent memory (deployment & credential discussion) ─────────────
 .dsh/
+# 本地代理工作数据（日志/记忆/验证 harness）—— 同 .dsh/，不得进公开仓库；
+# release.py 用 `git add -A`，若不忽略会把本地记忆一起提交
+.workbuddy/
 
 
 # ── OS / editor cruft ─────────────────────────────────────────────────
