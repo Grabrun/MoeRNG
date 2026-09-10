@@ -99,10 +99,11 @@ window.adminPost = async function(url, data) {
     });
 
     let payload = null;
-    try { payload = await resp.json(); } catch (e) { payload = null; }
+    let parseErr = '';
+    try { payload = await parseJsonResponse(resp); } catch (e) { payload = null; parseErr = e.message; }
 
     if (!resp.ok || !payload || payload.success !== true) {
-        const msg = (payload && (payload.error || payload.message)) || ('请求失败（HTTP ' + resp.status + '）');
+        const msg = (payload && (payload.error || payload.message)) || parseErr || ('请求失败（HTTP ' + resp.status + '）');
         throw new Error(msg);
     }
     return payload;
@@ -399,7 +400,7 @@ function initImageGrid() {
             const resp = await fetch('/admin/images/ids?' + params.toString(), {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
             });
-            const data = await resp.json();
+            const data = await parseJsonResponse(resp);
             if (!data || !Array.isArray(data.ids)) {
                 showToast('获取全部图片失败', 'error');
                 return;
@@ -433,7 +434,7 @@ function initImageGrid() {
             const fd = new FormData();
             fd.append('_csrf_token', getCsrfToken());
             const r = await fetch('/admin/images/requeue-failed', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-            const j = await r.json();
+            const j = await parseJsonResponse(r);
             if (!j || !j.success) { showToast('重试失败: ' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
             if (j.requeued > 0) {
                 showToast('已重新入队 ' + j.requeued + ' 张，开始处理…', 'success', 5000);
@@ -1162,8 +1163,9 @@ function initSortable() {
         order.forEach((id, i) => form.append('order[]', id));
 
         fetch('/admin/images/sort', { method: 'POST', body: form })
-            .then(r => r.json())
-            .then(d => { if (d.success) showToast('Sort order saved', 'success'); });
+            .then(r => parseJsonResponse(r, '保存排序'))
+            .then(d => { if (d.success) showToast('Sort order saved', 'success'); })
+            .catch(e => showToast(e.message, 'error', 6000));
     }
 }
 
@@ -1316,6 +1318,42 @@ setTimeout(async function() {
 // 抽为共享函数：图片管理页与「系统设置 → 健康检查」面板共用。
 // v1.3.2-beta.2: 历史图片缩略图补全共享循环（最终存储取回原图 → 生成缩略图 →
 // 仅回填 thumb_path，不改 process_status）。防死循环：整批全败即停。
+// ── v1.3.3-beta.1: 健壮 JSON 解析 ─────────────────────────────────────
+// 服务器返回**空响应体**（PHP 致命错误 / 执行超时）时，resp.json() 会抛出极难定位的
+//   "Failed to execute 'json' on 'Response': Unexpected end of JSON input"
+// 非 JSON 响应（错误页/前导警告输出）也类似。这里统一转成可读原因：
+// 带上 HTTP 状态码与响应体片段，直接指出"空响应 = 通常是 PHP 致命错误或超时"。
+async function parseJsonResponse(resp, label) {
+    const where = label ? (label + '：') : '';
+    let raw;
+    try {
+        raw = await resp.text();
+    } catch (e) {
+        throw new Error(where + '读取响应失败：' + (e && e.message ? e.message : e));
+    }
+    if (raw === '' || raw.trim() === '') {
+        throw new Error(where + '服务器返回空响应（HTTP ' + resp.status
+            + '）——通常是 PHP 致命错误或执行超时，请查看 PHP 错误日志');
+    }
+    try {
+        return JSON.parse(raw);
+    } catch (e) {
+        const snippet = raw.replace(/\s+/g, ' ').slice(0, 160);
+        throw new Error(where + '服务器返回了非 JSON 响应（HTTP ' + resp.status + '）：' + snippet);
+    }
+}
+
+// 表单 POST + 健壮解析（统一带上 CSRF 与 X-Requested-With）
+async function postJson(url, fd, label) {
+    let resp;
+    try {
+        resp = await fetch(url, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    } catch (e) {
+        throw new Error((label ? label + '：' : '') + '网络请求失败：' + (e && e.message ? e.message : e));
+    }
+    return parseJsonResponse(resp, label);
+}
+
 // v1.3.2-beta.2: 图片处理队列共享循环（上传后自动触发 / 图片页清积压 / 处理页共用）。
 // 每批由服务端完成缩略图生成 + 最终存储上传 + 临时文件清理；循环直到 remaining=0。
 // v1.3.3-beta.1 修复: 本函数曾在一次脚本异常中整体丢失（3 处调用点引用未定义函数，
@@ -1342,7 +1380,7 @@ async function runProcessQueue(setUI, onTick) {
             method: 'POST', body: fd,
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
-        const j = await r.json();
+        const j = await parseJsonResponse(r, '处理队列');
         if (!j || !j.success) {
             throw new Error((j && j.error) || '未知错误');
         }
@@ -1391,7 +1429,7 @@ async function runBackfillThumbs(setUI) {
             method: 'POST', body: fd,
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
-        const j = await r.json();
+        const j = await parseJsonResponse(r, '补全缩略图');
         if (!j || !j.success) {
             throw new Error((j && j.error) || '未知错误');
         }
@@ -1421,7 +1459,7 @@ async function runHashBackfill(setUI) {
             method: 'POST', body: fd,
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
-        const j = await r.json();
+        const j = await parseJsonResponse(r, '哈希回填');
         if (!j || !j.success) {
             throw new Error((j && j.error) || '未知错误');
         }
@@ -1470,7 +1508,7 @@ async function runHealthCheck() {
         const r = await fetch('/admin/settings/health', {
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
-        const j = await r.json();
+        const j = await parseJsonResponse(r);
         if (!j || !j.success) { healthResults.textContent = '检查失败。'; return; }
         renderHealth(j.checks);
     } catch (e) {
@@ -1501,7 +1539,7 @@ healthFix?.addEventListener('click', async function() {
             method: 'POST', body: fd,
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
-        const j = await r.json();
+        const j = await parseJsonResponse(r);
         if (!j || !j.success) {
             healthResults.innerHTML = '<div>[FAIL] 修复未完全成功' +
                 (j && j.errors && j.errors.length ? ' — ' + j.errors.join('; ') : '') + '</div>';
@@ -1656,7 +1694,7 @@ function initQueuePage() {
             const r = await fetch('/admin/images/requeue-failed', {
                 method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
             });
-            const j = await r.json();
+            const j = await parseJsonResponse(r);
             if (!j || !j.success) { showToast('重试失败: ' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
             if (j.requeued === 0) { showToast('没有可重试的失败项（临时文件已丢失的项无法重试）', 'success', 5000); return; }
             showToast('已重新入队 ' + j.requeued + ' 张，开始处理…', 'success', 4000);
@@ -1957,7 +1995,7 @@ function initRandomDemo() {
 
         try {
             const resp = await fetch('/api/v1/random?' + params.toString(), { cache: 'no-store' });
-            const data = await resp.json();
+            const data = await parseJsonResponse(resp);
             if (!data.success || !data.data || !data.data.url) throw new Error(data.message || '请求失败');
             showImage(data.data.url, data.data.category || '', data.data.thumbs || null);
         } catch (e) {

@@ -238,6 +238,39 @@ class ImageController extends Controller
         return $keys;
     }
 
+    /**
+     * v1.3.3-beta.1: 给重型端点（GD 解码 / 对象存储上传）装上「致命错误也返回 JSON」的保险。
+     *
+     * 背景：PHP 致命错误（内存耗尽 / 执行超时 / 未捕获 Error）会让响应体**为空**，
+     * 前端只能报 "Unexpected end of JSON input"，完全看不到真实原因。
+     *
+     * 同时提升资源上限：单张 4000×6000 的 JPEG 解码就需约 96MB（w×h×4 字节），
+     * 默认 memory_limit=128M 下批量处理必然 OOM。
+     */
+    private function jsonFatalGuard(string $label): void
+    {
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(120);
+
+        register_shutdown_function(static function () use ($label): void {
+            $e = error_get_last();
+            $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR];
+            if (!$e || !in_array($e['type'], $fatalTypes, true)) {
+                return; // 正常结束（或仅有 warning/notice）→ 不干预
+            }
+            if (!headers_sent()) {
+                http_response_code(500);
+                header('Content-Type: application/json; charset=utf-8');
+            }
+            echo json_encode([
+                'success' => false,
+                'fatal'   => true,
+                'error'   => 'PHP 致命错误（' . $label . '）: ' . $e['message']
+                             . ' @ ' . basename((string) $e['file']) . ':' . $e['line'],
+            ], JSON_INVALID_UTF8_SUBSTITUTE);
+        });
+    }
+
     /** v1.3.2-beta.2: 临时存放目录（站点根 storage/incoming，web 不可达）。 */
     public static function incomingDir(): string
     {
@@ -260,6 +293,7 @@ class ImageController extends Controller
     public function processQueue(Request $request): void
     {
         $this->validateCsrf();
+        $this->jsonFatalGuard('process-queue');   // 致命错误 → 合法 JSON（而非空响应）
 
         $batchSize = max(1, min(10, (int) $request->input('batch', '3')));
 
@@ -420,6 +454,7 @@ class ImageController extends Controller
     public function backfillThumbs(Request $request): void
     {
         $this->validateCsrf();
+        $this->jsonFatalGuard('backfill-thumbs');   // 同上（同样做 GD 解码）
         $batchSize = max(1, min(10, (int) $request->input('batch', '3')));
 
         // 环境守卫：无 GD/webp 时直接返回错误（避免逐张失败与前端空转）

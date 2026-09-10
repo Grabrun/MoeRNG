@@ -27,7 +27,27 @@ class Response
         foreach ($this->headers as $k => $v) {
             header("{$k}: {$v}");
         }
-        echo json_encode($data, $flags);
+
+        // v1.3.3-beta.1 修复（生产 P0）: json_encode() 失败时返回 false，直接 echo 会
+        // 输出**空响应体** —— 前端 fetch().json() 于是抛出
+        //   "Failed to execute 'json' on 'Response': Unexpected end of JSON input"
+        // 这类空响应极难定位（看不到任何错误信息）。两个措施：
+        //   1) 始终加 JSON_INVALID_UTF8_SUBSTITUTE —— 非法 UTF-8（异常消息里常带
+        //      文件名/字节序列）不再让整个编码失败，而是替换为 U+FFFD；
+        //   2) 若仍失败，输出一个**保证合法**的降级 JSON，携带 json_last_error_msg()。
+        $flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+        $body = json_encode($data, $flags);
+        if ($body === false) {
+            $fallback = json_encode([
+                'success' => false,
+                'error'   => 'JSON 编码失败: ' . json_last_error_msg() . '（返回数据含无法编码的内容）',
+                'json_encode_failed' => true,
+            ], JSON_INVALID_UTF8_SUBSTITUTE);
+            // 降级 JSON 自身若也失败（不应发生），至少给一个合法的最小 JSON
+            echo $fallback !== false ? $fallback : '{"success":false,"error":"response encoding failed"}';
+            exit;
+        }
+        echo $body;
         exit;
     }
 
