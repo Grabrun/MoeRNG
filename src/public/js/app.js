@@ -440,6 +440,32 @@ function initImageGrid() {
         }
     });
 
+    // 补全历史缩略图（图片管理页）
+    document.getElementById('backfill-thumbs')?.addEventListener('click', async function() {
+        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
+        const box = document.getElementById('backfill-progress');
+        const fill = document.getElementById('backfill-fill');
+        const text = document.getElementById('backfill-text');
+        const detail = document.getElementById('backfill-detail');
+        const setUI = function(pct, t, d) {
+            if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+            if (text) text.textContent = t;
+            if (detail && d !== undefined) detail.textContent = d;
+        };
+        uploading = true;
+        if (box) { box.classList.remove('hidden'); setUI(0, '准备补全缩略图…', ''); }
+        try {
+            const res = await runBackfillThumbs(setUI);
+            showToast('缩略图补全完成：已补 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 8000);
+            setTimeout(() => window.location.reload(), 1500);
+        } catch (e) {
+            showToast('缩略图补全异常: ' + e.message, 'error', 10000);
+        } finally {
+            uploading = false;
+            if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+        }
+    });
+
     const backfillBtn = document.getElementById('backfill-hashes');
     // v1.3.2: 两段式确认 —— window.confirm 可能被浏览器「阻止额外对话框」静默吞掉
     let backfillArmed = false, backfillArmTimer = null;
@@ -1247,6 +1273,38 @@ setTimeout(async function() {
 // 每批由服务端拉取对象/读本地文件算 MD5+SHA-256 并落库；前端循环调用
 // 直到 remaining=0，进度按 (total-remaining)/total 递增。
 // 抽为共享函数：图片管理页与「系统设置 → 健康检查」面板共用。
+// v1.3.2-beta.2: 历史图片缩略图补全共享循环（最终存储取回原图 → 生成缩略图 →
+// 仅回填 thumb_path，不改 process_status）。防死循环：整批全败即停。
+async function runBackfillThumbs(setUI) {
+    let totalDone = 0, totalFailed = 0, total = 0, done = 0;
+    for (;;) {
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        fd.append('batch', '3');
+        const r = await fetch('/admin/images/backfill-thumbs', {
+            method: 'POST', body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const j = await r.json();
+        if (!j || !j.success) {
+            throw new Error((j && j.error) || '未知错误');
+        }
+        total = j.total;
+        done = total - j.remaining;
+        totalDone += j.done;
+        totalFailed += j.failed;
+        setUI(total > 0 ? done / total : 1,
+            '补全缩略图… ' + done + '/' + total,
+            '已补 ' + totalDone + ' 张' + (totalFailed ? '，失败 ' + totalFailed + ' 张' : ''));
+        if (j.remaining === 0) break;
+        // 整批全败（如存储不可达/GD 不支持）→ 停止，避免无限空转
+        if (j.done === 0 && j.failed > 0) {
+            throw new Error('连续失败，已中止（' + ((j.results && j.results[0] && j.results[0].error) || '') + '）');
+        }
+    }
+    return { done: totalDone, failed: totalFailed, total: total };
+}
+
 async function runHashBackfill(setUI) {
     let totalUpdated = 0, totalFailed = 0, total = 0, done = 0;
     for (;;) {
@@ -1287,12 +1345,12 @@ function renderHealth(checks) {
     const badge = function(ok) { return ok ? '[ OK ]' : '[待修复]'; };
     healthResults.innerHTML = Object.keys(checks).map(function(k) {
         const c = checks[k];
-        const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', image_queue: '图片处理队列', hash_backfill: '历史图片哈希' };
+        const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', image_queue: '图片处理队列', thumb_backfill: '历史缩略图', hash_backfill: '历史图片哈希' };
         return '<div>' + badge(c.ok) + ' ' + (labels[k] || k) + ' — ' + c.detail + '</div>';
     }).join('');
     // 「执行修复」仅在有可修复未通过项时可用
     const fixable = Object.keys(checks).some(function(k) {
-        return !checks[k].ok && checks[k].fixable && k !== 'hash_backfill' && k !== 'image_queue';
+        return !checks[k].ok && checks[k].fixable && k !== 'hash_backfill' && k !== 'image_queue' && k !== 'thumb_backfill';
     });
     healthFix.disabled = !fixable;
     // 哈希回填区块：仅 hash_backfill 未通过时显示
@@ -1425,6 +1483,26 @@ function initQueuePage() {
     }
 
     startBtn?.addEventListener('click', function() { runQueue('处理中…'); });
+
+    // 补全历史缩略图（不改变处理状态，图片始终可见）
+    const thumbBtn = document.getElementById('queue-backfill-thumbs');
+    thumbBtn?.addEventListener('click', async function() {
+        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
+        uploading = true;
+        if (thumbBtn) thumbBtn.disabled = true;
+        if (box) { box.classList.remove('hidden'); setUI(0, '补全缩略图…', ''); }
+        try {
+            const res = await runBackfillThumbs(setUI);
+            showToast('缩略图补全完成：已补 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 8000);
+            setTimeout(() => window.location.reload(), 1500);
+        } catch (e) {
+            showToast('缩略图补全异常: ' + e.message, 'error', 10000);
+        } finally {
+            uploading = false;
+            if (thumbBtn) thumbBtn.disabled = false;
+            if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+        }
+    });
 
     requeueBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }

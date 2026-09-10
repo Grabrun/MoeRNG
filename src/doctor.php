@@ -423,6 +423,20 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                     check('Image hash backfill', true, '统计失败（忽略）: ' . $e->getMessage(), true);
                 }
 
+                // v1.3.2-beta.2: 历史缩略图缺失（存量图）
+                try {
+                    $noThumb = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'done' AND (thumb_path IS NULL OR thumb_path = '')")->fetchColumn();
+                    if ($noThumb === 0) {
+                        check('Image thumbnails', true, 'all images have thumbnails');
+                    } else {
+                        check('Image thumbnails', true,
+                            "{$noThumb} 张缺缩略图 — 后台「图片处理」页点击「补全历史缩略图」（不改状态，图片始终可见）",
+                            true);
+                    }
+                } catch (Throwable $e) {
+                    check('Image thumbnails', true, '统计失败（忽略）: ' . $e->getMessage(), true);
+                }
+
                 // v1.3.2-beta.2: 图片处理队列积压（pending/failed）
                 try {
                     $qPending = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'pending'")->fetchColumn();

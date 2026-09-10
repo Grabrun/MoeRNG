@@ -582,6 +582,23 @@ class SettingController extends Controller
             $checks['image_queue'] = ['ok' => true, 'detail' => '队列统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
+        // —— v1.3.2-beta.2: 历史缩略图缺失统计（存量图，不影响前台展示）——
+        try {
+            $noThumb = (int) $pdo->query(
+                "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND (thumb_path IS NULL OR thumb_path = '')"
+            )->fetchColumn();
+            $checks['thumb_backfill'] = [
+                'ok' => $noThumb === 0,
+                'detail' => $noThumb === 0
+                    ? '所有图片均已有缩略图'
+                    : "{$noThumb} 张缺缩略图 — 到「图片处理」页点击「补全历史缩略图」（不改状态，图片始终可见）",
+                'fixable' => true,
+                'extra' => ['missing' => $noThumb],
+            ];
+        } catch (\Throwable $e) {
+            $checks['thumb_backfill'] = ['ok' => true, 'detail' => '统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
+        }
+
         // —— 3) 哈希回填统计 ——
         try {
             $noMd5 = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE file_hash IS NULL OR file_hash=''")->fetchColumn();

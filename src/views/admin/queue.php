@@ -12,6 +12,7 @@ admin_header('图片处理', 'page-queue');
     <div class="flex gap-2">
         <button class="btn btn-primary btn-sm" id="queue-start" <?= $stats['pending'] === 0 ? 'disabled' : '' ?>><?= icon('loader', 16) ?> 开始处理</button>
         <button class="btn btn-outline btn-sm" id="queue-requeue" <?= $stats['failed'] === 0 ? 'disabled' : '' ?>><?= icon('refresh', 16) ?> 重试失败项</button>
+        <button class="btn btn-outline btn-sm" id="queue-backfill-thumbs" <?= $stats['no_thumb'] === 0 ? 'disabled' : '' ?>><?= icon('image', 16) ?> 补全历史缩略图</button>
     </div>
 </div>
 
@@ -39,6 +40,12 @@ admin_header('图片处理', 'page-queue');
         <div class="stat-value"><?= number_format($stats['failed']) ?></div>
     </div>
 </div>
+
+<?php if ($stats['no_thumb'] > 0): ?>
+<div class="card mb-3">
+    <p class="text-sm mb-0">另有 <strong><?= number_format($stats['no_thumb']) ?></strong> 张历史图片缺少缩略图（不影响前台展示）。点击右上角「补全历史缩略图」为它们生成缩略图——处理过程中图片始终可见，仅回填缩略图，不改变处理状态。</p>
+</div>
+<?php endif; ?>
 
 <!-- 处理进度浮层（处理/重试时显示） -->
 <div id="queue-progress" class="hidden backfill-float">

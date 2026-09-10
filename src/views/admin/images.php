@@ -101,6 +101,7 @@
     <button class="btn btn-outline btn-sm" id="clear-selection">取消选择</button>
     <button class="btn btn-outline btn-sm" id="backfill-hashes" title="为历史图片补算 MD5 与 SHA-256（用于重复检测）">补全历史图片哈希</button>
     <button class="btn btn-outline btn-sm" id="requeue-failed" title="把处理失败的图片重新排入处理队列（需临时文件仍在）">重试失败项</button>
+    <button class="btn btn-outline btn-sm" id="backfill-thumbs" title="为历史图片补生成缩略图（不改动处理状态，图片始终可见）">补全历史缩略图</button>
 </div>
 
 <!-- Hash backfill progress（复用轻量样式） -->

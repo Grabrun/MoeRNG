@@ -41,6 +41,8 @@ $router->group('/admin', function ($router) {
     $router->post('/images/upload', [$images, 'upload']);
     // v1.3.2 迭代: 历史图片哈希回填 —— 管理员分批触发（前端进度条）
     $router->post('/images/backfill-hashes', [$images, 'backfillHashes']);
+    // v1.3.2-beta.2: 补全历史图片缩略图（存量图，不改处理状态）
+    $router->post('/images/backfill-thumbs', [$images, 'backfillThumbs']);
     // v1.3.2-beta.2: 异步图片处理队列（管理员分批驱动）+ 失败重排队
     $router->get('/images/queue', [$images, 'queue']);
     $router->post('/images/process-queue', [$images, 'processQueue']);

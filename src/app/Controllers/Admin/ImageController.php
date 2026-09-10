@@ -114,6 +114,60 @@ class ImageController extends Controller
         $this->json(['ids' => $ids, 'total' => count($ids)]);
     }
 
+    /**
+     * v1.3.2-beta.2: 生成缩略图到系统临时文件（GD；不可用时返回 null 表示降级跳过）。
+     * 供新上传队列 Worker 与「补全历史缩略图」共用。
+     *
+     * @return array{0: ?string, 1: ?string} [临时文件路径, 存储 key]，失败/降级为 [null, null]
+     */
+    private function makeThumbnail(string $srcFile, string $mime, string $path): array
+    {
+        if (!function_exists('imagecreatetruecolor')) {
+            return [null, null];
+        }
+        $src = null;
+        if ($mime === 'image/jpeg') $src = @imagecreatefromjpeg($srcFile);
+        elseif ($mime === 'image/png') $src = @imagecreatefrompng($srcFile);
+        elseif ($mime === 'image/gif') $src = @imagecreatefromgif($srcFile);
+        elseif ($mime === 'image/webp' && function_exists('imagecreatefromwebp')) $src = @imagecreatefromwebp($srcFile);
+        // 扩展名兜底（mime 可能缺失/不准）
+        if (($src === null || $src === false) && function_exists('getimagesize')) {
+            $info = @getimagesize($srcFile);
+            $m2 = is_array($info) ? (string) ($info['mime'] ?? '') : '';
+            if ($m2 === 'image/jpeg') $src = @imagecreatefromjpeg($srcFile);
+            elseif ($m2 === 'image/png') $src = @imagecreatefrompng($srcFile);
+            elseif ($m2 === 'image/gif') $src = @imagecreatefromgif($srcFile);
+            elseif ($m2 === 'image/webp' && function_exists('imagecreatefromwebp')) $src = @imagecreatefromwebp($srcFile);
+        }
+        if ($src === null || $src === false) {
+            return [null, null];
+        }
+
+        $w = imagesx($src);
+        $h = imagesy($src);
+        $max = 480;
+        $scale = min(1, $max / max($w, $h));
+        $tw = max(1, (int) round($w * $scale));
+        $th = max(1, (int) round($h * $scale));
+        $dst = imagecreatetruecolor($tw, $th);
+        imagealphablending($dst, false);
+        imagesavealpha($dst, true);
+        $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+        imagefill($dst, 0, 0, $transparent);
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
+
+        $key = 'thumbs/' . ltrim((string) preg_replace('/\.[a-z0-9]+$/i', '.webp', $path), '/');
+        $tmp = tempnam(sys_get_temp_dir(), 'moerng-thumb-');
+        $ok = function_exists('imagewebp') && imagewebp($dst, $tmp, 82);
+        imagedestroy($dst);
+        imagedestroy($src);
+        if (!$ok) {
+            @unlink($tmp);
+            return [null, null];
+        }
+        return [$tmp, $key];
+    }
+
     /** v1.3.2-beta.2: 临时存放目录（站点根 storage/incoming，web 不可达）。 */
     public static function incomingDir(): string
     {
@@ -184,44 +238,8 @@ class ImageController extends Controller
                     }
                     $storage = $profile->driver();
 
-                    // —— 缩略图（GD，最大边 480，webp；环境不支持则降级跳过）——
-                    $thumbTmp = null;
-                    $thumbKey = null;
-                    $mime = (string) $row['mime_type'];
-                    if (function_exists('imagecreatetruecolor')) {
-                        $src = null;
-                        if ($mime === 'image/jpeg') $src = @imagecreatefromjpeg($incomingFile);
-                        elseif ($mime === 'image/png') $src = @imagecreatefrompng($incomingFile);
-                        elseif ($mime === 'image/gif') $src = @imagecreatefromgif($incomingFile);
-                        elseif ($mime === 'image/webp' && function_exists('imagecreatefromwebp')) $src = @imagecreatefromwebp($incomingFile);
-
-                        if ($src !== null && $src !== false) {
-                            $w = imagesx($src);
-                            $h = imagesy($src);
-                            $max = 480;
-                            $scale = min(1, $max / max($w, $h));
-                            $tw = max(1, (int) round($w * $scale));
-                            $th = max(1, (int) round($h * $scale));
-                            $dst = imagecreatetruecolor($tw, $th);
-                            // 保留透明度
-                            imagealphablending($dst, false);
-                            imagesavealpha($dst, true);
-                            $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
-                            imagefill($dst, 0, 0, $transparent);
-                            imagecopyresampled($dst, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
-
-                            $thumbKey = preg_replace('/\.[a-z0-9]+$/i', '.webp', $path);
-                            $thumbKey = 'thumbs/' . ltrim($thumbKey, '/');
-                            $thumbTmp = tempnam(sys_get_temp_dir(), 'moerng-thumb-');
-                            if (!imagewebp($dst, $thumbTmp, 82)) {
-                                @unlink($thumbTmp);
-                                $thumbTmp = null;
-                                $thumbKey = null; // webp 写入失败 → 降级为无缩略图
-                            }
-                            imagedestroy($dst);
-                            imagedestroy($src);
-                        }
-                    }
+                    // —— 缩略图（共用 makeThumbnail；环境不支持则降级跳过）——
+                    [$thumbTmp, $thumbKey] = $this->makeThumbnail($incomingFile, (string) $row['mime_type'], $path);
 
                     // —— 上传原图 + 缩略图到最终存储 ——
                     $url = $storage->upload($incomingFile, $path, $mime);
@@ -281,6 +299,117 @@ class ImageController extends Controller
     }
 
     /**
+     * POST /admin/images/backfill-thumbs —— 补全历史图片缩略图（分批，幂等）。
+     *
+     * 判据：process_status='done' AND (thumb_path IS NULL OR thumb_path='')
+     * —— 关键：**不改变 process_status**。存量图已在线上展示，若置回 pending
+     * 会因前台过滤条件而全部暂时下架；本流程改为从「最终存储」取回原图生成
+     * 缩略图、仅回填 thumb_path，图片始终可见。成功后 thumb_path 非空，天然
+     * 幂等（不会被重复选中）。
+     */
+    public function backfillThumbs(Request $request): void
+    {
+        $this->validateCsrf();
+        $batchSize = max(1, min(10, (int) $request->input('batch', '3')));
+
+        // 环境守卫：无 GD/webp 时直接返回错误（避免逐张失败与前端空转）
+        if (!function_exists('imagecreatetruecolor') || !function_exists('imagewebp')) {
+            $this->json(['success' => false, 'error' => 'PHP GD 或 WebP 支持不可用，无法生成缩略图（请安装/启用 gd 扩展的 webp 支持）'], 500);
+            return;
+        }
+
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        $missingCond = "(thumb_path IS NULL OR thumb_path = '')";
+        $total = (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
+        $remaining = (int) $pdo->query(
+            "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$missingCond}"
+        )->fetchColumn();
+
+        $done = 0;
+        $failed = 0;
+        $results = [];
+
+        if ($remaining > 0) {
+            $rows = $pdo->query(
+                "SELECT * FROM `images` WHERE process_status = 'done' AND {$missingCond} ORDER BY id ASC LIMIT {$batchSize}"
+            )->fetchAll(\PDO::FETCH_ASSOC);
+
+            foreach ($rows as $row) {
+                $id = (int) $row['id'];
+                $path = (string) $row['path'];
+                try {
+                    $profile = $row['storage_profile_id'] !== null
+                        ? StorageProfile::find((int) $row['storage_profile_id'])
+                        : null;
+                    if ($profile === null) {
+                        $profile = StorageProfile::defaultProfile();
+                    }
+                    if ($profile === null) {
+                        throw new \RuntimeException('无可用存储实例');
+                    }
+                    $driver = $profile->driver();
+
+                    // —— 从最终存储取回原图字节 ——
+                    $localFile = null;
+                    $isTemp = false;
+                    if ($driver instanceof \App\Storage\LocalDriver) {
+                        $localFile = $driver->uploadDir() . '/' . ltrim($path, '/');
+                        if (!is_file($localFile) || !is_readable($localFile)) {
+                            throw new \RuntimeException('原图文件不存在（' . $path . '）');
+                        }
+                    } else {
+                        $localFile = \App\Storage\S3Driver::downloadUrl($driver->url($path));
+                        if ($localFile === null) {
+                            throw new \RuntimeException('对象存储取回失败');
+                        }
+                        $isTemp = true;
+                    }
+
+                    // —— 生成缩略图并上传（makeThumbnail 共用）——
+                    [$thumbTmp, $thumbKey] = $this->makeThumbnail($localFile, (string) $row['mime_type'], $path);
+                    if ($isTemp) {
+                        @unlink($localFile);
+                    }
+                    if ($thumbTmp === null || $thumbKey === null) {
+                        throw new \RuntimeException('缩略图生成失败（源文件可能损坏或格式不支持）');
+                    }
+                    $driver->upload($thumbTmp, $thumbKey, 'image/webp');
+                    @unlink($thumbTmp);
+
+                    // —— 仅回填 thumb_path，状态保持 done ——
+                    $pdo->prepare("UPDATE `images` SET `thumb_path` = ? WHERE `id` = ?")
+                        ->execute([$thumbKey, $id]);
+
+                    $done++;
+                    $results[] = ['id' => $id, 'ok' => true];
+                } catch (\Throwable $e) {
+                    $failed++;
+                    $results[] = ['id' => $id, 'error' => mb_substr($e->getMessage(), 0, 300)];
+                }
+            }
+
+            $remaining = (int) $pdo->query(
+                "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$missingCond}"
+            )->fetchColumn();
+        }
+
+        $this->json([
+            'success' => true,
+            'total' => $total,
+            'remaining' => $remaining,
+            'done' => $done,
+            'failed' => $failed,
+            'results' => $results,
+        ]);
+    }
+
+    /**
      * GET /admin/images/queue —— 图片处理管理页（状态总览 + 开始/重试）。
      */
     public function queue(Request $request): void
@@ -290,7 +419,7 @@ class ImageController extends Controller
         } catch (\Throwable $e) {
             $this->render('admin/queue', [
                 'error' => '数据库连接失败: ' . $e->getMessage(),
-                'stats' => ['pending' => 0, 'processing' => 0, 'done' => 0, 'failed' => 0, 'total' => 0],
+                'stats' => ['pending' => 0, 'processing' => 0, 'done' => 0, 'failed' => 0, 'no_thumb' => 0, 'total' => 0],
                 'pendingRows' => [],
                 'failedRows' => [],
                 'incomingDir' => self::incomingDir(),
@@ -307,6 +436,7 @@ class ImageController extends Controller
             'processing' => $count("process_status = 'processing'"),
             'done'       => $count("process_status = 'done'"),
             'failed'     => $count("process_status = 'failed'"),
+            'no_thumb'   => $count("process_status = 'done' AND (thumb_path IS NULL OR thumb_path = '')"),
             'total'      => $count(''),
         ];
 
