@@ -270,6 +270,14 @@ class ImageController extends Controller
             return;
         }
 
+        // v1.3.3-beta.1: 先把上次中断（超时/致命错误）遗留的 'processing' 行复位为
+        // pending —— 放在开头，使它们在本轮立即被拾取，而不是白等一轮。
+        try {
+            $pdo->exec("UPDATE `images` SET `process_status` = 'pending' WHERE `process_status` = 'processing'");
+        } catch (\Throwable) {
+            // 列缺失等异常忽略：健康检查会提示补列
+        }
+
         $total = (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
         $pendingBefore = (int) $pdo->query(
             "SELECT COUNT(*) FROM `images` WHERE process_status = 'pending'"
@@ -285,6 +293,15 @@ class ImageController extends Controller
             )->fetchAll(\PDO::FETCH_ASSOC);
 
             $incomingDir = self::incomingDir();
+
+            // v1.3.3-beta.1: 本批先标记为 'processing' —— ①「处理中」计数从此有真实
+            // 含义（此前恒为 0：只有 done/failed 会被写入）；②若本请求中途中断
+            // （超时/致命错误），这些行会在下次运行开头被复位并重试。
+            // 注意：processing 行对前台不可见（前台只出 process_status='done'）。
+            if ($rows !== []) {
+                $ids = array_map(static fn($r) => (int) $r['id'], $rows);
+                $pdo->exec("UPDATE `images` SET `process_status` = 'processing' WHERE `id` IN (" . implode(',', $ids) . ")");
+            }
 
             foreach ($rows as $row) {
                 $id = (int) $row['id'];
@@ -352,8 +369,6 @@ class ImageController extends Controller
                 }
             }
 
-            // 顺带把 'processing' 卡死的行（前次进程中断）复位为 pending
-            $pdo->exec("UPDATE `images` SET `process_status` = 'pending' WHERE `process_status` = 'processing'");
         }
 
         // remaining 只计 pending —— 它是前端循环的终止条件；failed 需人工
@@ -365,6 +380,20 @@ class ImageController extends Controller
             "SELECT COUNT(*) FROM `images` WHERE process_status = 'failed'"
         )->fetchColumn();
 
+        // v1.3.3-beta.1: 附带实时统计 —— 前端每批据此刷新状态卡片（此前卡片是
+        // 服务端一次性渲染的静态值，处理过程中完全不动）。
+        $count = static function (string $where) use ($pdo): int {
+            return (int) $pdo->query("SELECT COUNT(*) FROM `images`" . ($where !== '' ? " WHERE {$where}" : ''))->fetchColumn();
+        };
+        $stats = [
+            'pending'    => $remaining,
+            'processing' => $count("process_status = 'processing'"),
+            'done'       => $count("process_status = 'done'"),
+            'failed'     => $failedLeft,
+            'no_thumb'   => $count("process_status = 'done' AND (thumbs IS NULL OR thumbs = '')"),
+            'total'      => $total,
+        ];
+
         $this->json([
             'success' => true,
             'total' => $total,
@@ -372,6 +401,7 @@ class ImageController extends Controller
             'failed_left' => $failedLeft,
             'done' => $done,
             'failed' => $failed,
+            'stats' => $stats,
             'results' => $results,
         ]);
     }

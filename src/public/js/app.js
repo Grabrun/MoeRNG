@@ -1320,12 +1320,24 @@ setTimeout(async function() {
 // 每批由服务端完成缩略图生成 + 最终存储上传 + 临时文件清理；循环直到 remaining=0。
 // v1.3.3-beta.1 修复: 本函数曾在一次脚本异常中整体丢失（3 处调用点引用未定义函数，
 // 点击报 "runProcessQueue is not defined"），且无 harness 覆盖 —— 现已纳入 click 矩阵。
-async function runProcessQueue(setUI) {
-    let totalDone = 0, totalFailed = 0, total = 0, done = 0;
+// setUI(pct, text, detail) 控制进度条；onTick({phase, stats, ...}) 让调用方实时刷新
+// 状态卡片（phase: start | inflight | batch | done）。
+async function runProcessQueue(setUI, onTick) {
+    const BATCH = 3;
+    let totalDone = 0, totalFailed = 0;
+    let scopeTotal = null;   // 本轮范围（开始时的待处理数），progress 以它为分母
+    let lastStats = null;
+
+    if (onTick) onTick({ phase: 'start', stats: null });
+
     for (;;) {
         const fd = new FormData();
         fd.append('_csrf_token', getCsrfToken());
-        fd.append('batch', '3');
+        fd.append('batch', String(BATCH));
+        // v1.3.3-beta.1: 请求在途期间把「处理中」显示为即将被本批标记的行数
+        //（服务端确实在这一刻把这些行置为 processing），让计数真实可见。
+        if (onTick) onTick({ phase: 'inflight', stats: lastStats, batch: BATCH });
+
         const r = await fetch('/admin/images/process-queue', {
             method: 'POST', body: fd,
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -1334,21 +1346,39 @@ async function runProcessQueue(setUI) {
         if (!j || !j.success) {
             throw new Error((j && j.error) || '未知错误');
         }
-        total = j.total;
-        done = total - j.remaining;
-        totalDone += j.done;
-        totalFailed += j.failed;
-        setUI(total > 0 ? done / total : 1,
-            '处理中… ' + done + '/' + total,
+
+        const nDone = Number(j.done) || 0;
+        const nFailed = Number(j.failed) || 0;
+        const remaining = Number(j.remaining) || 0;
+
+        // v1.3.3-beta.1 修复: 进度分母改为「本轮范围」。
+        // 原先用 total(全表图片数) - remaining(待处理) —— 库里已有 995 张完成时，
+        // 第一批就显示 995/1000，进度条瞬间满格且数字不再变化（"数据不实时更新"的根因）。
+        if (scopeTotal === null) {
+            scopeTotal = remaining + nDone + nFailed;
+        }
+        const processed = Math.max(0, scopeTotal - remaining);
+
+        totalDone += nDone;
+        totalFailed += nFailed;
+
+        setUI(scopeTotal > 0 ? processed / scopeTotal : 1,
+            '处理中… ' + processed + '/' + scopeTotal,
             '已完成 ' + totalDone + ' 张' + (totalFailed ? '，失败 ' + totalFailed + ' 张' : ''));
-        if (j.remaining === 0) break;
+
+        lastStats = j.stats || null;
+        if (onTick) onTick({ phase: 'batch', stats: lastStats });
+
+        if (remaining === 0) break;
         // 整批全败（存储不可达 / 临时文件全丢）→ 中止，避免无限空转
-        if (j.done === 0 && j.failed > 0) {
+        if (nDone === 0 && nFailed > 0) {
             const first = (j.results && j.results[0] && j.results[0].error) || '';
             throw new Error('连续失败，已中止' + (first ? '（' + first + '）' : ''));
         }
     }
-    return { done: totalDone, failed: totalFailed, total: total };
+
+    if (onTick) onTick({ phase: 'done', stats: lastStats });
+    return { done: totalDone, failed: totalFailed, total: scopeTotal || 0 };
 }
 
 async function runBackfillThumbs(setUI) {
@@ -1540,6 +1570,43 @@ function initQueuePage() {
         if (detail && d !== undefined) detail.textContent = d;
     };
 
+    // v1.3.3-beta.1: 状态卡片实时刷新 —— 此前四张卡是服务端一次性渲染的静态值，
+    // 处理期间完全不动（"数据不会实时更新"）。现在每批响应都把服务端统计写入卡片。
+    const statEls = {
+        pending: document.getElementById('stat-pending'),
+        processing: document.getElementById('stat-processing'),
+        done: document.getElementById('stat-done'),
+        failed: document.getElementById('stat-failed'),
+    };
+    const last = { stats: null };
+    function paint(stats) {
+        if (!stats) return;
+        for (const key of Object.keys(statEls)) {
+            const el = statEls[key];
+            if (!el) continue;
+            const v = Number(stats[key]);
+            el.textContent = Number.isFinite(v) ? v.toLocaleString() : '0';
+        }
+    }
+    // phase: start | inflight | batch | done
+    function onTick(t) {
+        if (t.phase === 'batch' || t.phase === 'done') {
+            last.stats = t.stats || last.stats;
+            paint(last.stats);
+            if (t.phase === 'done' && last.stats) {
+                // 完成后同步按钮可用性（无需等 reload 才变灰）
+                const s2 = last.stats;
+                if (startBtn) startBtn.disabled = Number(s2.pending) === 0;
+                if (requeueBtn) requeueBtn.disabled = Number(s2.failed) === 0;
+                if (thumbBtn) thumbBtn.disabled = Number(s2.no_thumb) === 0;
+            }
+        } else if (t.phase === 'inflight' && last.stats) {
+            // 请求在途：服务端此刻正把至多 batch 行置为 processing —— 如实显示
+            const inflight = Math.min(Number(t.batch) || 3, Number(last.stats.pending) || 0);
+            paint(Object.assign({}, last.stats, { processing: inflight, pending: Math.max(0, (Number(last.stats.pending) || 0) - inflight) }));
+        }
+    }
+
     async function runQueue(label) {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
         uploading = true;
@@ -1547,7 +1614,7 @@ function initQueuePage() {
         if (requeueBtn) requeueBtn.disabled = true;
         if (box) { box.classList.remove('hidden'); setUI(0, label || '处理中…', ''); }
         try {
-            const res = await runProcessQueue(setUI);
+            const res = await runProcessQueue(setUI, onTick);
             showToast('处理完成：成功 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 6000);
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {

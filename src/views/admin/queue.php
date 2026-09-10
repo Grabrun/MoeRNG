@@ -25,19 +25,19 @@ admin_header('图片处理', 'page-queue');
 <div class="stats-grid grid grid-4 mb-3">
     <div class="stat-card">
         <div class="stat-label">待处理</div>
-        <div class="stat-value"><?= number_format($stats['pending']) ?></div>
+        <div class="stat-value" id="stat-pending"><?= number_format($stats['pending']) ?></div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">处理中</div>
-        <div class="stat-value"><?= number_format($stats['processing']) ?></div>
+        <div class="stat-label" title="正在处理的行（每批处理时短暂出现）；若长期大于 0 表示上次请求中断遗留，下次「开始处理」会自动复位重试">处理中</div>
+        <div class="stat-value" id="stat-processing"><?= number_format($stats['processing']) ?></div>
     </div>
     <div class="stat-card">
         <div class="stat-label">已完成</div>
-        <div class="stat-value"><?= number_format($stats['done']) ?></div>
+        <div class="stat-value" id="stat-done"><?= number_format($stats['done']) ?></div>
     </div>
     <div class="stat-card">
         <div class="stat-label">失败</div>
-        <div class="stat-value"><?= number_format($stats['failed']) ?></div>
+        <div class="stat-value" id="stat-failed"><?= number_format($stats['failed']) ?></div>
     </div>
 </div>
 
