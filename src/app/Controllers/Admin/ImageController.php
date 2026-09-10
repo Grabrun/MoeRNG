@@ -311,12 +311,17 @@ class ImageController extends Controller
                     }
                     $storage = $profile->driver();
 
+                    // v1.3.3-beta.1 修复: mime 在此统一取用 —— 原先它定义在被替换掉的
+                    // 缩略图块里，重排后成为未定义变量（PHP 求值为 null，触发
+                    // S3Driver::upload() 的第 3 参数 TypeError）。
+                    $mime = (string) ($row['mime_type'] ?? '');
+
                     // —— 先上传原图到最终存储（失败即抛，此时尚未生成任何临时文件）——
                     $url = $storage->upload($incomingFile, $path, $mime);
 
                     // —— 多尺寸缩略图（一次解码生成 sm/md/lg；GD 不可用或源图
                     //    不可解码时降级为无缩略图，不阻断原图入库）——
-                    $gen = $this->makeThumbnails($incomingFile, (string) $row['mime_type'], $path);
+                    $gen = $this->makeThumbnails($incomingFile, $mime, $path);
 
                     // —— 逐档上传缩略图（单档失败不影响其它档）——
                     $thumbKeys = $this->uploadThumbs($storage, $gen['thumbs']);
