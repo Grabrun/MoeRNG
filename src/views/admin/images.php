@@ -39,6 +39,11 @@
             <button type="button" data-image-action="view" title="查看大图" aria-label="查看大图"><?= icon('eye', 16) ?></button>
             <button type="button" class="copy-btn" data-copy-text="<?= h($img->url()) ?>" title="复制链接" aria-label="复制链接"><?= icon('copy', 16) ?></button>
         </div>
+        <?php $ps = (string) ($img->process_status ?? 'done'); ?>
+        <?php if ($ps !== 'done'): ?>
+        <span class="proc-badge <?= $ps === 'failed' ? 'proc-failed' : 'proc-pending' ?>"
+              title="<?= h((string) ($img->process_error ?? '') ?: '等待异步处理（缩略图与最终存储）') ?>"><?= $ps === 'failed' ? '处理失败' : '处理中' ?></span>
+        <?php endif; ?>
         <img src="<?= h($img->url()) ?>" alt="<?= h($img->original_name) ?>" loading="lazy">
         <div class="overlay">
             <span><?= h(mb_strlen($img->original_name) > 20 ? mb_substr($img->original_name,0,20).'...' : $img->original_name) ?></span>
@@ -95,6 +100,7 @@
     <button class="btn btn-danger btn-sm" id="batch-delete">批量删除</button>
     <button class="btn btn-outline btn-sm" id="clear-selection">取消选择</button>
     <button class="btn btn-outline btn-sm" id="backfill-hashes" title="为历史图片补算 MD5 与 SHA-256（用于重复检测）">补全历史图片哈希</button>
+    <button class="btn btn-outline btn-sm" id="requeue-failed" title="把处理失败的图片重新排入处理队列（需临时文件仍在）">重试失败项</button>
 </div>
 
 <!-- Hash backfill progress（复用轻量样式） -->

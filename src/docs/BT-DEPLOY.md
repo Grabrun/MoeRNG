@@ -106,3 +106,19 @@ beta.2 迭代中**已整体移除**——原因：规划中的图片处理能力
 「浏览器 → 服务器 → 对象存储」，服务器端可对字节做任意处理后再转存云上。
 若未来某类大文件确需直传，可从 git 历史（commit 0bd34e8..eca36e8）找回
 相关实现作参考。
+
+---
+
+## v1.3.2-beta.2 补充：拒绝 storage/ 访问（必加）
+
+上传改用「临时目录 + 异步处理队列」后，站点根出现 `storage/incoming/` 临时目录。
+它不应被 Web 访问，请在伪静态规则中一并拒绝：
+
+```nginx
+location ~ ^/(config|app|views|releases|backups|var|storage)/ {
+    deny all;
+    return 404;
+}
+```
+
+> 若使用 Apache，`storage/incoming/.htaccess`（程序自动生成）已含 `Require all denied`，无需额外配置。

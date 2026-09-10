@@ -41,6 +41,9 @@ $router->group('/admin', function ($router) {
     $router->post('/images/upload', [$images, 'upload']);
     // v1.3.2 迭代: 历史图片哈希回填 —— 管理员分批触发（前端进度条）
     $router->post('/images/backfill-hashes', [$images, 'backfillHashes']);
+    // v1.3.2-beta.2: 异步图片处理队列（管理员分批驱动）+ 失败重排队
+    $router->post('/images/process-queue', [$images, 'processQueue']);
+    $router->post('/images/requeue-failed', [$images, 'requeueFailed']);
     $router->post('/images/update', [$images, 'update']);
     $router->post('/images/delete', [$images, 'delete']);
     $router->post('/images/batch-delete', [$images, 'batchDelete']);

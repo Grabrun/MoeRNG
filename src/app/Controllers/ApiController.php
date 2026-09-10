@@ -80,6 +80,7 @@ class ApiController extends Controller
             'data' => [
                 'id' => $image->id,
                 'url' => $image->url(),
+                'thumb' => $image->thumbUrl(),
                 'width' => $image->width,
                 'height' => $image->height,
                 'mime_type' => $image->mime_type,
@@ -118,6 +119,7 @@ class ApiController extends Controller
             return [
                 'id' => $img->id,
                 'url' => $img->url(),
+                'thumb' => $img->thumbUrl(),
                 'width' => $img->width,
                 'height' => $img->height,
                 'mime_type' => $img->mime_type,

@@ -1643,3 +1643,8 @@ body.modal-open { overflow: hidden; }
 .logo-uploader { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .log-detail { color: var(--text-muted, rgba(255,255,255,.62)); font-size: 0.85rem; }
 .footer-custom { color: var(--text-muted, rgba(255,255,255,.62)); font-size: 0.85rem; opacity: .85; }
+
+/* ── v1.3.2-beta.2: 图片处理队列状态徽章 ── */
+.proc-badge { position: absolute; top: 8px; left: 8px; z-index: 3; font-size: 11px; line-height: 1; padding: 4px 7px; border-radius: var(--radius-pill); color: #fff; letter-spacing: .3px; }
+.proc-pending { background: var(--info); }
+.proc-failed { background: var(--danger); }

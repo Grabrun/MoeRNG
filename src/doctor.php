@@ -364,6 +364,9 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 ['images', 'storage_profile_id', "ADD COLUMN `storage_profile_id` INT UNSIGNED NULL AFTER `storage_provider`, ADD INDEX `idx_storage_profile` (`storage_profile_id`)"],
                 ['images', 'file_hash',          "ADD COLUMN `file_hash` CHAR(64) NULL DEFAULT NULL AFTER `file_size`"],
                 ['images', 'file_sha256',        "ADD COLUMN `file_sha256` CHAR(64) NULL DEFAULT NULL AFTER `file_hash`"],
+                ['images', 'process_status',     "ADD COLUMN `process_status` ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`"],
+                ['images', 'thumb_path',         "ADD COLUMN `thumb_path` VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`"],
+                ['images', 'process_error',      "ADD COLUMN `process_error` VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`"],
                 ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
                 ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
                 ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
@@ -396,6 +399,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 ['images', 'idx_file_hash', 'file_hash'],
                 ['images', 'idx_file_sha256', 'file_sha256'],
                 ['images', 'idx_storage_profile', 'storage_profile_id'],
+                ['images', 'idx_process_status', 'process_status'],
             ];
             foreach ($idxChecks as [$tbl, $idx, $col]) {
                 if (in_array($col, $tableCols($tbl), true) && !isset($tableIdx($tbl)[$idx])) {
@@ -417,6 +421,20 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                     }
                 } catch (Throwable $e) {
                     check('Image hash backfill', true, '统计失败（忽略）: ' . $e->getMessage(), true);
+                }
+
+                // v1.3.2-beta.2: 图片处理队列积压（pending/failed）
+                try {
+                    $qPending = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'pending'")->fetchColumn();
+                    $qFailed = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'failed'")->fetchColumn();
+                    if ($qPending === 0 && $qFailed === 0) {
+                        check('Image process queue', true, '队列为空');
+                    } else {
+                        check('Image process queue', $qPending === 0,
+                            "待处理 {$qPending} 张, 失败 {$qFailed} 张 — 打开后台「图片管理」页自动处理；失败项用「重试失败项」重新入队");
+                    }
+                } catch (Throwable $e) {
+                    check('Image process queue', true, '统计失败（忽略）: ' . $e->getMessage(), true);
                 }
             } else {
                 $names = array_map(fn($m) => "{$m[0]}.{$m[1]}", $schemaMissing);

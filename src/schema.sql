@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS `images` (
     `category_id` INT DEFAULT NULL,
     `sort_order` INT NOT NULL DEFAULT 0,
     `status` ENUM('active', 'hidden', 'deleted') NOT NULL DEFAULT 'active',
+    `process_status` ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done',
+    `thumb_path` VARCHAR(512) NULL DEFAULT NULL,
+    `process_error` VARCHAR(500) NULL DEFAULT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX `idx_category` (`category_id`),
@@ -78,6 +81,7 @@ CREATE TABLE IF NOT EXISTS `images` (
     INDEX `idx_storage_profile` (`storage_profile_id`),
     INDEX `idx_file_hash` (`file_hash`),
     INDEX `idx_file_sha256` (`file_sha256`),
+    INDEX `idx_process_status` (`process_status`),
     FOREIGN KEY (`category_id`) REFERENCES `categories`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

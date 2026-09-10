@@ -13,7 +13,8 @@ class Image extends Model
         'filename', 'original_name', 'path', 'url', 'mime_type',
         'file_size', 'width', 'height', 'category_id', 'sort_order', 'status',
         'storage', 'storage_provider', 'storage_profile_id',
-        'file_hash', 'file_sha256'
+        'file_hash', 'file_sha256',
+        'process_status', 'thumb_path', 'process_error'
     ];
 
     public function category(): ?Category
@@ -44,6 +45,24 @@ class Image extends Model
             }
         }
         return (string) ($this->attributes['url'] ?? '');
+    }
+
+    /**
+     * v1.3.2-beta.2 迭代: 缩略图对外 URL —— 与 url() 同机制（经存储 driver
+     * 动态生成，支持 CDN/预签名）。无缩略图（process_status 未完成或老图）
+     * 返回空串，调用方应回退原图 url()。
+     */
+    public function thumbUrl(): string
+    {
+        $thumb = (string) ($this->attributes['thumb_path'] ?? '');
+        if ($thumb === '') return '';
+        try {
+            $url = self::driverFor($this)->url($thumb);
+            if ($url !== '') return $url;
+        } catch (\Throwable) {
+            // fall through
+        }
+        return '';
     }
 
     /** Absolute-ish stored URL as persisted in the DB (diagnostics only). */
@@ -77,26 +96,26 @@ class Image extends Model
 
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             $stmt = Database::getInstance()->prepare(
-                "SELECT COUNT(*) FROM images WHERE status = 'active' AND category_id IN ({$placeholders})"
+                "SELECT COUNT(*) FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IN ({$placeholders})"
             );
             $stmt->execute($ids);
             $total = (int) $stmt->fetchColumn();
             if ($total === 0) return null;
 
             $offset = random_int(0, $total - 1);
-            $sql = "SELECT * FROM images WHERE status = 'active' AND category_id IN ({$placeholders}) LIMIT 1 OFFSET {$offset}";
+            $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IN ({$placeholders}) LIMIT 1 OFFSET {$offset}";
             $stmt = Database::getInstance()->prepare($sql);
             $stmt->execute($ids);
         } else {
             $stmt = Database::getInstance()->prepare(
-                "SELECT COUNT(*) FROM images WHERE status = 'active'"
+                "SELECT COUNT(*) FROM images WHERE status = 'active' AND process_status = 'done'"
             );
             $stmt->execute();
             $total = (int) $stmt->fetchColumn();
             if ($total === 0) return null;
 
             $offset = random_int(0, $total - 1);
-            $sql = "SELECT * FROM images WHERE status = 'active' LIMIT 1 OFFSET {$offset}";
+            $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' LIMIT 1 OFFSET {$offset}";
             $stmt = Database::getInstance()->prepare($sql);
             $stmt->execute();
         }
@@ -114,11 +133,11 @@ class Image extends Model
     public static function randomBatch(?int $categoryId, int $limit = 12): array
     {
         if ($categoryId === null) {
-            $sql = "SELECT * FROM images WHERE status = 'active' AND category_id IS NULL ORDER BY RAND() LIMIT {$limit}";
+            $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IS NULL ORDER BY RAND() LIMIT {$limit}";
             $stmt = Database::getInstance()->prepare($sql);
             $stmt->execute();
         } else {
-            $sql = "SELECT * FROM images WHERE status = 'active' AND category_id = ? ORDER BY RAND() LIMIT {$limit}";
+            $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' AND category_id = ? ORDER BY RAND() LIMIT {$limit}";
             $stmt = Database::getInstance()->prepare($sql);
             $stmt->execute([$categoryId]);
         }
@@ -149,7 +168,7 @@ class Image extends Model
         if (empty($ids)) return [];
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $sql = "SELECT * FROM images WHERE status = 'active' AND category_id IN ({$placeholders}) ORDER BY sort_order ASC, id DESC LIMIT {$limit} OFFSET {$offset}";
+        $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IN ({$placeholders}) ORDER BY sort_order ASC, id DESC LIMIT {$limit} OFFSET {$offset}";
         $stmt = Database::getInstance()->prepare($sql);
         $stmt->execute($ids);
 
@@ -162,7 +181,7 @@ class Image extends Model
         if (empty($ids)) return 0;
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $sql = "SELECT COUNT(*) FROM images WHERE status = 'active' AND category_id IN ({$placeholders})";
+        $sql = "SELECT COUNT(*) FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IN ({$placeholders})";
         $stmt = Database::getInstance()->prepare($sql);
         $stmt->execute($ids);
         return (int) $stmt->fetchColumn();

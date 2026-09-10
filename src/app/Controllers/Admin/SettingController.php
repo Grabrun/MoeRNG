@@ -495,6 +495,9 @@ class SettingController extends Controller
             ['images', 'storage_profile_id', "ADD COLUMN `storage_profile_id` INT UNSIGNED NULL AFTER `storage_provider`"],
             ['images', 'file_hash',          "ADD COLUMN `file_hash` CHAR(64) NULL DEFAULT NULL AFTER `file_size`"],
             ['images', 'file_sha256',        "ADD COLUMN `file_sha256` CHAR(64) NULL DEFAULT NULL AFTER `file_hash`"],
+            ['images', 'process_status',     "ADD COLUMN `process_status` ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`"],
+            ['images', 'thumb_path',         "ADD COLUMN `thumb_path` VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`"],
+            ['images', 'process_error',      "ADD COLUMN `process_error` VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`"],
             ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
             ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
             ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
@@ -503,6 +506,7 @@ class SettingController extends Controller
             ['images', 'idx_file_hash', 'file_hash'],
             ['images', 'idx_file_sha256', 'file_sha256'],
             ['images', 'idx_storage_profile', 'storage_profile_id'],
+            ['images', 'idx_process_status', 'process_status'],
         ];
         $missing = [];
         $colsCache = [];
@@ -558,6 +562,24 @@ class SettingController extends Controller
             ];
         } catch (\Throwable $e) {
             $checks['orphan_settings'] = ['ok' => true, 'detail' => 'settings 表不可探测（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
+        }
+
+        // —— v1.3.2-beta.2: 图片处理队列积压统计 ——
+        try {
+            $qPending = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE process_status = 'pending'")->fetchColumn();
+            $qFailed = (int) $pdo->query(
+                "SELECT COUNT(*) FROM `images` WHERE process_status = 'failed'"
+            )->fetchColumn();
+            $checks['image_queue'] = [
+                'ok' => $qPending === 0 && $qFailed === 0,
+                'detail' => $qPending === 0 && $qFailed === 0
+                    ? '处理队列为空'
+                    : "待处理 {$qPending} 张, 失败 {$qFailed} 张",
+                'fixable' => true,
+                'extra' => ['pending' => $qPending, 'failed' => $qFailed],
+            ];
+        } catch (\Throwable $e) {
+            $checks['image_queue'] = ['ok' => true, 'detail' => '队列统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
         // —— 3) 哈希回填统计 ——

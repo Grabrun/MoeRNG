@@ -415,6 +415,31 @@ function initImageGrid() {
         deleteImages(ids);
     });
 
+    // v1.3.2-beta.2: 重试处理失败的图片（failed → pending，随后触发队列）
+    document.getElementById('requeue-failed')?.addEventListener('click', async function() {
+        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
+        uploading = true;
+        try {
+            const fd = new FormData();
+            fd.append('_csrf_token', getCsrfToken());
+            const r = await fetch('/admin/images/requeue-failed', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const j = await r.json();
+            if (!j || !j.success) { showToast('重试失败: ' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
+            if (j.requeued > 0) {
+                showToast('已重新入队 ' + j.requeued + ' 张，开始处理…', 'success', 5000);
+                const res = await runProcessQueue(function() {});
+                showToast('重试完成：成功 ' + res.done + ' 张' + (res.failed ? '，仍失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 6000);
+                setTimeout(() => window.location.reload(), 1200);
+            } else {
+                showToast('没有需要重试的失败项', 'success', 4000);
+            }
+        } catch (e) {
+            showToast('重试请求异常: ' + e.message, 'error', 8000);
+        } finally {
+            uploading = false;
+        }
+    });
+
     const backfillBtn = document.getElementById('backfill-hashes');
     // v1.3.2: 两段式确认 —— window.confirm 可能被浏览器「阻止额外对话框」静默吞掉
     let backfillArmed = false, backfillArmTimer = null;
@@ -1189,6 +1214,35 @@ var uploading = false;
 // ── v1.3.2 迭代: 哈希回填共享循环 + 系统设置健康检查面板 ──
 // 顶层作用域：图片管理页与设置页共用 runHashBackfill；initHealthPanel
 // 由 DOMContentLoaded 调用（元素不存在时 optional chaining 零副作用）。
+// v1.3.2-beta.2: 图片页加载时静默清处理队列积压（有积压才显示浮层进度条；
+// 管理员浏览图片页即驱动异步管线，无需额外 cron）。
+setTimeout(async function() {
+    if (uploading) return;
+    const qbox = document.getElementById('backfill-progress');
+    const qfill = document.getElementById('backfill-fill');
+    const qtext = document.getElementById('backfill-text');
+    const qdetail = document.getElementById('backfill-detail');
+    const setUI = function(pct, t, d) {
+        if (qfill) qfill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+        if (qtext) qtext.textContent = t;
+        if (qdetail !== undefined && qdetail) qdetail.textContent = d;
+    };
+    try {
+        uploading = true;
+        if (qbox) qbox.classList.remove('hidden');
+        const res = await runProcessQueue(setUI);
+        if (res.done > 0) {
+            showToast('积压图片处理完成：已入库 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 6000);
+            setTimeout(() => window.location.reload(), 1200);
+        }
+    } catch (e) { /* 静默：无积压或未登录态 */ }
+    finally {
+        uploading = false;
+        if (qbox) setTimeout(() => qbox.classList.add('hidden'), 800);
+    }
+}, 1500);
+
+
 // ── v1.3.2 迭代: 历史图片哈希回填（管理员，分批轮询 + 进度条）─────────
 // 每批由服务端拉取对象/读本地文件算 MD5+SHA-256 并落库；前端循环调用
 // 直到 remaining=0，进度按 (total-remaining)/total 递增。
@@ -1233,12 +1287,12 @@ function renderHealth(checks) {
     const badge = function(ok) { return ok ? '[ OK ]' : '[待修复]'; };
     healthResults.innerHTML = Object.keys(checks).map(function(k) {
         const c = checks[k];
-        const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', hash_backfill: '历史图片哈希' };
+        const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', image_queue: '图片处理队列', hash_backfill: '历史图片哈希' };
         return '<div>' + badge(c.ok) + ' ' + (labels[k] || k) + ' — ' + c.detail + '</div>';
     }).join('');
     // 「执行修复」仅在有可修复未通过项时可用
     const fixable = Object.keys(checks).some(function(k) {
-        return !checks[k].ok && checks[k].fixable && k !== 'hash_backfill';
+        return !checks[k].ok && checks[k].fixable && k !== 'hash_backfill' && k !== 'image_queue';
     });
     healthFix.disabled = !fixable;
     // 哈希回填区块：仅 hash_backfill 未通过时显示

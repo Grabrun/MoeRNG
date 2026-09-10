@@ -114,6 +114,185 @@ class ImageController extends Controller
         $this->json(['ids' => $ids, 'total' => count($ids)]);
     }
 
+    /** v1.3.2-beta.2: 临时存放目录（站点根 storage/incoming，web 不可达）。 */
+    public static function incomingDir(): string
+    {
+        return dirname(__DIR__, 3) . '/storage/incoming';
+    }
+
+    /**
+     * v1.3.2-beta.2 迭代: 异步处理队列 Worker（管理员驱动，Web 分批）。
+     *
+     * 每次调用处理一小批 pending 图片：
+     *   1. 从 storage/incoming 取临时原图；
+     *   2. GD 生成缩略图（最大边 480px，webp，质量 82；无 GD/webp 时降级为
+     *      不生成缩略图，仅搬运原图）；
+     *   3. 原图 + 缩略图上传到该图所属的最终存储实例；
+     *   4. 记录置 done（path/url/thumb_path 落库）；
+     *   5. 删除临时文件（原图与缩略图临时副本）。
+     * 失败置 failed + process_error，临时文件保留供重试（requeueFailed 可把
+     * failed 重置回 pending）。前端循环调用直到 remaining=0。
+     */
+    public function processQueue(Request $request): void
+    {
+        $this->validateCsrf();
+
+        $batchSize = max(1, min(10, (int) $request->input('batch', '3')));
+
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        $total = (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
+        $pendingBefore = (int) $pdo->query(
+            "SELECT COUNT(*) FROM `images` WHERE process_status = 'pending'"
+        )->fetchColumn();
+
+        $done = 0;
+        $failed = 0;
+        $results = [];
+
+        if ($pendingBefore > 0) {
+            $rows = $pdo->query(
+                "SELECT * FROM `images` WHERE process_status = 'pending' ORDER BY id ASC LIMIT {$batchSize}"
+            )->fetchAll(\PDO::FETCH_ASSOC);
+
+            $incomingDir = self::incomingDir();
+
+            foreach ($rows as $row) {
+                $id = (int) $row['id'];
+                $path = (string) $row['path'];
+                $incomingFile = $incomingDir . '/' . ltrim($path, '/');
+
+                try {
+                    if (!is_file($incomingFile)) {
+                        throw new \RuntimeException('临时文件不存在（可能已被清理）');
+                    }
+
+                    // —— 该图所属存储实例 ——
+                    $profile = $row['storage_profile_id'] !== null
+                        ? StorageProfile::find((int) $row['storage_profile_id'])
+                        : null;
+                    if ($profile === null) {
+                        $profile = StorageProfile::defaultProfile();
+                    }
+                    if ($profile === null) {
+                        throw new \RuntimeException('无可用存储实例');
+                    }
+                    $storage = $profile->driver();
+
+                    // —— 缩略图（GD，最大边 480，webp；环境不支持则降级跳过）——
+                    $thumbTmp = null;
+                    $thumbKey = null;
+                    $mime = (string) $row['mime_type'];
+                    if (function_exists('imagecreatetruecolor')) {
+                        $src = null;
+                        if ($mime === 'image/jpeg') $src = @imagecreatefromjpeg($incomingFile);
+                        elseif ($mime === 'image/png') $src = @imagecreatefrompng($incomingFile);
+                        elseif ($mime === 'image/gif') $src = @imagecreatefromgif($incomingFile);
+                        elseif ($mime === 'image/webp' && function_exists('imagecreatefromwebp')) $src = @imagecreatefromwebp($incomingFile);
+
+                        if ($src !== null && $src !== false) {
+                            $w = imagesx($src);
+                            $h = imagesy($src);
+                            $max = 480;
+                            $scale = min(1, $max / max($w, $h));
+                            $tw = max(1, (int) round($w * $scale));
+                            $th = max(1, (int) round($h * $scale));
+                            $dst = imagecreatetruecolor($tw, $th);
+                            // 保留透明度
+                            imagealphablending($dst, false);
+                            imagesavealpha($dst, true);
+                            $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+                            imagefill($dst, 0, 0, $transparent);
+                            imagecopyresampled($dst, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
+
+                            $thumbKey = preg_replace('/\.[a-z0-9]+$/i', '.webp', $path);
+                            $thumbKey = 'thumbs/' . ltrim($thumbKey, '/');
+                            $thumbTmp = tempnam(sys_get_temp_dir(), 'moerng-thumb-');
+                            if (!imagewebp($dst, $thumbTmp, 82)) {
+                                @unlink($thumbTmp);
+                                $thumbTmp = null;
+                                $thumbKey = null; // webp 写入失败 → 降级为无缩略图
+                            }
+                            imagedestroy($dst);
+                            imagedestroy($src);
+                        }
+                    }
+
+                    // —— 上传原图 + 缩略图到最终存储 ——
+                    $url = $storage->upload($incomingFile, $path, $mime);
+                    $thumbPath = null;
+                    if ($thumbTmp !== null && $thumbKey !== null) {
+                        $thumbPath = $thumbKey;
+                        $storage->upload($thumbTmp, $thumbKey, 'image/webp');
+                        @unlink($thumbTmp);
+                    }
+
+                    // —— 记录置 done ——
+                    $upd = $pdo->prepare(
+                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ?"
+                    );
+                    $upd->execute([$url, $thumbPath, $id]);
+
+                    // —— 成功后删除临时原图 ——
+                    @unlink($incomingFile);
+                    // 空的日期目录顺手清理（忽略失败）
+                    @rmdir(dirname($incomingFile));
+
+                    $done++;
+                    $results[] = ['id' => $id, 'ok' => true];
+                } catch (\Throwable $e) {
+                    $failed++;
+                    $err = mb_substr($e->getMessage(), 0, 480);
+                    try {
+                        $pdo->prepare("UPDATE `images` SET `process_status` = 'failed', `process_error` = ? WHERE `id` = ?")
+                            ->execute([$err, $id]);
+                    } catch (\Throwable) { /* 忽略 */ }
+                    $results[] = ['id' => $id, 'error' => $err];
+                }
+            }
+
+            // 顺带把 'processing' 卡死的行（前次进程中断）复位为 pending
+            $pdo->exec("UPDATE `images` SET `process_status` = 'pending' WHERE `process_status` = 'processing'");
+        }
+
+        // remaining 只计 pending —— 它是前端循环的终止条件；failed 需人工
+        // 显式重试（requeueFailed），若并入 remaining 会导致循环永不终止。
+        $remaining = (int) $pdo->query(
+            "SELECT COUNT(*) FROM `images` WHERE process_status = 'pending'"
+        )->fetchColumn();
+        $failedLeft = (int) $pdo->query(
+            "SELECT COUNT(*) FROM `images` WHERE process_status = 'failed'"
+        )->fetchColumn();
+
+        $this->json([
+            'success' => true,
+            'total' => $total,
+            'remaining' => $remaining,
+            'failed_left' => $failedLeft,
+            'done' => $done,
+            'failed' => $failed,
+            'results' => $results,
+        ]);
+    }
+
+    /** POST /admin/images/requeue-failed —— 把 failed 的图片重置回 pending 重试。 */
+    public function requeueFailed(Request $request): void
+    {
+        $this->validateCsrf();
+        try {
+            $pdo = \App\Core\Database::getInstance();
+            $n = $pdo->exec("UPDATE `images` SET `process_status` = 'pending' WHERE `process_status` = 'failed'");
+            $this->json(['success' => true, 'requeued' => (int) $n]);
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
     /**
      * v1.3.2 迭代: 历史图片哈希回填 —— Web 分批端点（管理员，POST + CSRF）。
      *
@@ -367,13 +546,22 @@ class ImageController extends Controller
                 $width = $imgInfo ? $imgInfo[0] : 0;
                 $height = $imgInfo ? $imgInfo[1] : 0;
 
-                $url = $storage->upload($tmpName, $remotePath, $detectedMime);
+                // v1.3.2-beta.2 迭代: 异步处理管线 —— 上传落「临时目录」即为成功。
+                // 记录以 process_status='pending' 入队，由管理页驱动的队列 Worker
+                // 生成缩略图、上传最终存储并把记录置 done；临时文件随后删除。
+                $incomingFile = self::incomingDir() . '/' . $remotePath;
+                if (!is_dir(dirname($incomingFile))) {
+                    @mkdir(dirname($incomingFile), 0755, true);
+                }
+                if (!@move_uploaded_file($tmpName, $incomingFile)) {
+                    throw new \RuntimeException('临时文件写入失败（storage/incoming 不可写）');
+                }
 
                 $image = new Image([
                     'filename' => $filename,
                     'original_name' => $originalName,
                     'path' => $remotePath,
-                    'url' => $url,
+                    'url' => '',
                     'mime_type' => $detectedMime,
                     'file_size' => $fileSize,
                     'file_hash' => $fileHash,
@@ -383,6 +571,7 @@ class ImageController extends Controller
                     'category_id' => $categoryId,
                     'sort_order' => 0,
                     'status' => 'active',
+                    'process_status' => 'pending',
                     'storage' => $storageType,
                     'storage_provider' => $storageProvider,
                     'storage_profile_id' => $profileId,
@@ -409,7 +598,7 @@ class ImageController extends Controller
         if ($this->isAjax()) {
             // v1.3.1: 全部为重复也算"有结果"（success=true）——不是服务器错误。
             if ($uploaded > 0 || $dupCount > 0) {
-                $msg = $uploaded > 0 ? "上传完成：成功 {$uploaded} 张" : '所选图片均为重复，未新增';
+                $msg = $uploaded > 0 ? "上传成功 {$uploaded} 张（已进入处理队列，稍后自动完成存储与缩略图）" : '所选图片均为重复，未新增';
                 if ($dupCount > 0) {
                     $msg .= $uploaded > 0 ? "，重复跳过 {$dupCount} 张" : "（共 {$dupCount} 张）";
                 }

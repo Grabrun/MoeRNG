@@ -46,7 +46,7 @@ server {
     # Denied paths. These MUST appear before the "\.php$" block, because regex
     # locations are evaluated in the order they are declared.
     # -------------------------------------------------------------------------
-    location ~ ^/(config|app|views|releases|backups|var)/ {
+    location ~ ^/(config|app|views|releases|backups|var|storage)/ {
         deny all;
         return 404;
     }
@@ -144,7 +144,7 @@ server {
 # PSEUDO-STATIC ONLY (宝塔 伪静态 输入框，粘贴以下内容即可)
 # =============================================================================
 #
-# location ~ ^/(config|app|views|releases)/ { deny all; return 404; }
+# location ~ ^/(config|app|views|releases|storage)/ { deny all; return 404; }
 # location ~* \.(sql|md|log|ini)$ { deny all; return 404; }
 # location ^~ /public/uploads/ { location ~ \.php$ { deny all; } }
 # location /api     { try_files $uri /api.php$is_args$args; }

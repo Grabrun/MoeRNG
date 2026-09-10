@@ -237,7 +237,18 @@ class Application
         // call — caught and swallowed by runStorageMigration, so the columns
         // never got added and every upload silently failed. PDO is the truth.
         $needed = [];
-        foreach (['storage', 'storage_provider', 'file_hash', 'file_sha256'] as $col) {
+        // v1.3.2-beta.2: 临时存放目录（storage/incoming）—— 上传先落这里，
+        // web 不可达（站点根下的 storage/ 不经 public/）；.htaccess 双保险拒绝直链。
+        $incoming = dirname(__DIR__, 2) . '/storage/incoming';
+        if (!is_dir($incoming)) {
+            @mkdir($incoming, 0755, true);
+        }
+        if (!is_file($incoming . '/.htaccess')) {
+            @file_put_contents($incoming . '/.htaccess', "Require all denied\n");
+        }
+
+        foreach (['storage', 'storage_provider', 'file_hash', 'file_sha256',
+                  'process_status', 'thumb_path', 'process_error'] as $col) {
             if (!$this->columnExists($db, 'images', $col)) {
                 $needed[] = $col;
             }
@@ -255,6 +266,11 @@ class Application
             // v1.3.2 迭代: 分层校验 —— MD5 快速初筛 + SHA-256 二次验证。
             // 旧数据为 NULL，由 tools/backfill_file_sha256.php 一次性回填。
             'file_sha256'      => "CHAR(64) NULL DEFAULT NULL AFTER `file_hash`",
+            // v1.3.2-beta.2 迭代: 异步图片处理管线 —— 上传落临时目录即成功（pending），
+            // 队列Worker 生成缩略图并上传最终存储后置 done；存量图默认 done。
+            'process_status'   => "ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`",
+            'thumb_path'       => "VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`",
+            'process_error'    => "VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`",
         ];
 
         $errors = [];
@@ -278,6 +294,16 @@ class Application
             $msg = $e->getMessage();
             if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
                 $errors[] = "ADD INDEX idx_file_hash failed: {$msg}";
+            }
+        }
+
+        // v1.3.2-beta.2: 处理队列状态索引（幂等）。
+        try {
+            $db->exec("ALTER TABLE `images` ADD INDEX `idx_process_status` (`process_status`)");
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
+                $errors[] = "ADD INDEX idx_process_status failed: {$msg}";
             }
         }
 
