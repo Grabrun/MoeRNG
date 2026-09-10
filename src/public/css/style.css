@@ -471,6 +471,26 @@ pre code { background: none; color: var(--text); padding: 0; }
 /* Utility */
 .text-center { text-align: center; }
 .text-right { text-align: right; }
+.text-left { text-align: left; }
+
+/* ── v1.3.3-beta.1 审计补齐：JS 已在用的反馈类（此前无任何样式 → 用户看不到反馈）── */
+.image-item.image-broken { outline: 1px dashed var(--danger); outline-offset: -2px; }
+.image-broken-fallback {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-input); color: var(--text-secondary); opacity: .85;
+}
+.image-broken-fallback svg { width: 24px; height: 24px; }
+
+/* 新建 API Key 后的行高亮（JS 添加） */
+.row-highlight { animation: rowHighlight 2.4s ease-out 1; }
+@keyframes rowHighlight {
+    0%   { background: color-mix(in srgb, var(--primary) 22%, transparent); }
+    100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .row-highlight { animation: none; outline: 1px solid var(--primary); outline-offset: -2px; }
+}
 .text-muted { color: var(--text-secondary); }
 .text-primary { color: var(--primary); }
 .text-accent { color: var(--accent); }

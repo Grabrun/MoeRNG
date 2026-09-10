@@ -32,6 +32,47 @@ class InstallController extends Controller
     /**
      * POST /install/step2 - Database config
      */
+    /**
+     * v1.3.3-beta.1 修复（深度审计）: 安装向导「上一步」是 GET 链接（<a href>），但
+     * step2/3/4 只注册了 POST —— 点击必然 404。这些方法只**重渲染**对应步骤（数据
+     * 取自 session），绝不写入，因此不会像复用 POST 处理器那样用空值覆盖安装状态。
+     */
+    private function guardNotInstalled(): void
+    {
+        if (\App\Core\Config::get('app.installed', false)) {
+            $this->redirect('/');
+        }
+    }
+
+    /** GET /install/step2 —— 回到数据库配置（重渲染，不写 session）。 */
+    public function showStep2(Request $request): void
+    {
+        $this->guardNotInstalled();
+        $this->render('install/step2', [
+            'db' => \App\Core\Session::get('install_db') ?: [
+                'host' => '127.0.0.1', 'port' => '3306',
+                'database' => '', 'username' => '', 'password' => '',
+            ],
+            'error' => '',
+        ]);
+    }
+
+    /** GET /install/step3 —— 回到管理员账号（重渲染，不写 session）。 */
+    public function showStep3(Request $request): void
+    {
+        $this->guardNotInstalled();
+        $this->render('install/step3', ['error' => '']);
+    }
+
+    /** GET /install/step4 —— 回到存储配置（重渲染，不写 session）。 */
+    public function showStep4(Request $request): void
+    {
+        $this->guardNotInstalled();
+        $this->render('install/step4', [
+            'storage' => ['driver' => 'local', 'local_path' => 'public/uploads'],
+        ]);
+    }
+
     public function step2(Request $request): void
     {
         // Security: block reinstall on an already-installed site. Without
