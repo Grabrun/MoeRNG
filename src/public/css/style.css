@@ -23,6 +23,10 @@
     --warning: #FFB454;
     --danger: #FF7A9C;
     --info: #6FB8FF;
+    --danger-hover: #E55F82;
+    --warning-hover: #FFC472;
+    --accent-ink: #1E1630;
+    --warning-ink: #2B2532;
     --radius: 20px;
     --radius-sm: 12px;
     --radius-lg: 28px;
@@ -100,14 +104,14 @@ small { font-size: 0.85rem; color: var(--text-secondary); }
 }
 .btn-primary { background: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(195,137,232,.35); }
-.btn-accent { background: var(--accent); color: #1E1630; }
+.btn-accent { background: var(--accent); color: var(--accent-ink); }
 .btn-accent:hover { background: var(--accent-dark); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(111,227,194,.35); }
 .btn-outline { background: transparent; border: 1px solid var(--border-light); color: var(--text); }
 .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: var(--bg-card-hover); }
 .btn-danger { background: var(--danger); color: #fff; }
-.btn-warning { background: var(--warning); color: #2B2532; }
-.btn-warning:hover { background: #FFC472; }
-.btn-danger:hover { background: #E55F82; }
+.btn-warning { background: var(--warning); color: var(--warning-ink); }
+.btn-warning:hover { background: var(--warning-hover); }
+.btn-danger:hover { background: var(--danger-hover); }
 .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
 .btn-lg { padding: 14px 32px; font-size: 1.1rem; border-radius: var(--radius-pill); }
 
@@ -277,6 +281,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 /* v1.2.1 修复: minmax(0,1fr) 替代裸 1fr——轨道隐式最小尺寸 auto 会被
    大图/长文本的固有宽度撑爆（仪表盘最近上传卡片 3889px 溢出的根因），
    显式 min=0 让内容可收缩，全站根治此类布局溢出 */
+.grid-1 { grid-template-columns: minmax(0, 1fr); }
 .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -475,6 +480,7 @@ pre code { background: none; color: var(--text); padding: 0; }
 .mt-2 { margin-top: 16px; }
 .mt-3 { margin-top: 24px; }
 .mt-4 { margin-top: 32px; }
+.mb-0 { margin-bottom: 0; }
 .mb-1 { margin-bottom: 8px; }
 .mb-2 { margin-bottom: 16px; }
 .mb-3 { margin-bottom: 24px; }
@@ -1233,48 +1239,6 @@ body.modal-open { overflow: hidden; }
    View-level <style> blocks removed — nonce no longer needed.
    ============================================================ */
 
-/* === Migrated from src/views\admin\helpers.php (CSP nonce migration) === */
-.sidebar-brand img { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; }
-        .admin-layout { display: flex; min-height: 100vh; }
-        .sidebar { width: 240px; background: var(--bg-card); border-right: 1px solid var(--border); padding: 24px 16px; position: fixed; top: 0; left: 0; bottom: 0; overflow-y: auto; z-index: 100; }
-        .sidebar-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; padding: 0 12px; gap: 8px; }
-        .sidebar-brand { font-size: 1.3rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 10px; text-decoration: none; }
-        .sidebar-brand span { line-height: 1; }
-        .sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-        .sidebar-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: all var(--transition); }
-        .sidebar-nav a:hover, .sidebar-nav a.active { background: var(--bg-input); color: var(--text); }
-        .sidebar-nav a.active { color: var(--primary); position: relative; }
-        /* v1.1.1: active item gets a left accent bar */
-        .sidebar-nav a.active::before {
-            content: ''; position: absolute; left: -16px; top: 20%; bottom: 20%;
-            width: 3px; border-radius: 2px; background: var(--primary);
-        }
-        .sidebar-nav a span { line-height: 1; }
-        .sidebar-footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
-        .sidebar-footer a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: all var(--transition); }
-        .sidebar-footer a:hover { background: var(--bg-input); color: var(--text); }
-        /* v1.3.0-beta.2 (CVE-2026-MR-005): logout is a POST form now — render the
-           form transparently and style its button exactly like the sibling links */
-        .sidebar-footer .logout-form { display: contents; }
-        .sidebar-footer .logout-form button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; background: none; border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 0.9rem; font-family: inherit; cursor: pointer; text-align: left; transition: all var(--transition); }
-        .sidebar-footer .logout-form button:hover { background: var(--bg-input); color: var(--text); }
-        .main-content { margin-left: 240px; flex: 1; padding: 32px; min-width: 0; }
-        .page-header { margin-bottom: 32px; }
-        .page-header h1 { font-size: 1.5rem; }
-        .page-header p { color: var(--text-secondary); font-size: 0.9rem; }
-        #batch-bar { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg-card); border: 1px solid var(--primary); border-radius: var(--radius); padding: 12px 24px; display: flex; align-items: center; gap: 16px; z-index: 500; box-shadow: var(--shadow); }
-        @media (max-width: 768px) {
-            /* v1.2.1 fix: don't override style.css's drawer (.sidebar translateX)
-               here — the internal <style> loads AFTER style.css and was forcing
-               the sidebar back to a full-width inline column, which crushed
-               .main-content to ~30px. Let the drawer (transform translateX(-100%))
-               defined in style.css do its job; the hamburger toggle (sidebar-toggle
-               button + sidebar.open class) reveals it. */
-            .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
-            .main-content { margin-left: 0; padding: 20px 16px; }
-        }
-
-
 /* === Migrated from src/views\admin\layout.php (CSP nonce migration) === */
 .admin-layout { display: flex; min-height: 100vh; }
         .sidebar {
@@ -1308,37 +1272,6 @@ body.modal-open { overflow: hidden; }
         }
 
 
-/* === Migrated from src/views\admin\login.php (CSP nonce migration) === */
-.login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
-        .login-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 40px; width: 100%; max-width: 400px; }
-        .login-card .login-logo { display: block; width: 72px; height: 72px; margin: 0 auto 12px; border-radius: 16px; object-fit: contain; }
-        .login-card h1 { text-align: center; margin-bottom: 8px; color: var(--primary); }
-        .login-card .subtitle { text-align: center; color: var(--text-secondary); margin-bottom: 32px; }
-        /* v1.2.1 登录增强: remember-me checkbox row */
-        .login-card .login-options { margin: 4px 0 16px; }
-        .login-card .remember-label { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 0.88rem; color: var(--text-secondary); }
-        .login-card .remember-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
-        .login-card .remember-text { line-height: 1; }
-
-
-/* === Migrated from src/views\admin\settings.php (CSP nonce migration) === */
-.toggle-wrap { display: flex; align-items: center; gap: 10px; padding-top: 4px; }
-.toggle { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
-.toggle input { opacity: 0; width: 0; height: 0; }
-.toggle-slider {
-    position: absolute; cursor: pointer; inset: 0; border-radius: 24px;
-    background: var(--bg-input); border: 1px solid var(--border); transition: all var(--transition);
-}
-.toggle-slider::before {
-    content: ""; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px;
-    border-radius: 50%; background: var(--text-secondary); transition: all var(--transition);
-}
-.toggle input:checked + .toggle-slider { background: var(--primary); border-color: var(--primary); }
-.toggle input:checked + .toggle-slider::before { transform: translateX(20px); background: #fff; }
-.toggle-text { font-size: 0.85rem; color: var(--text-secondary); }
-.settings-tab { cursor: pointer; }
-
-
 /* === Migrated from src/views\install\complete.php (CSP nonce migration) === */
 .install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; } .install-header { text-align: center; margin-bottom: 40px; } .install-header h1 { color: var(--primary); font-size: 2.2rem; }
 
@@ -1349,17 +1282,6 @@ body.modal-open { overflow: hidden; }
         .install-header h1 { color: var(--primary); font-size: 2.2rem; }
         .install-logo { display: block; width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 14px; }
 
-
-/* === Migrated from src/views\install\step2.php (CSP nonce migration) === */
-.install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; } .install-header { text-align: center; margin-bottom: 40px; } .install-header h1 { color: var(--primary); font-size: 2.2rem; }
-
-
-/* === Migrated from src/views\install\step3.php (CSP nonce migration) === */
-.install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; } .install-header { text-align: center; margin-bottom: 40px; } .install-header h1 { color: var(--primary); font-size: 2.2rem; }
-
-
-/* === Migrated from src/views\install\step4.php (CSP nonce migration) === */
-.install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; } .install-header { text-align: center; margin-bottom: 40px; } .install-header h1 { color: var(--primary); font-size: 2.2rem; }
 
 /* === Migrated from src/views/home.php (CSP nonce migration, V-02 fix, recovered from git) === */
 /* v1.2.1-beta.3 迭代: hero 双栏布局（Design Tokens §5 两栏 hero-grid） */
@@ -1699,7 +1621,7 @@ body.modal-open { overflow: hidden; }
 .text-success { color: var(--success); }
 .logo-preview-wrap { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .logo-preview-img { width: 72px; height: 72px; object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px; background: var(--bg-input); display: block; }
-.provider-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 0 0 16px; }
+.provider-card { border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 0 0 16px; }
 .provider-legend { padding: 0 8px; font-weight: 600; }
 .span-all { grid-column: 1 / -1; }
 
@@ -1707,9 +1629,17 @@ body.modal-open { overflow: hidden; }
 .health-backfill-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 .health-backfill-head { gap: 8px; }
 .health-progress-track { height: 8px; border-radius: 4px; background: rgba(128,128,128,.25); overflow: hidden; margin: 8px 0 6px; }
-.health-progress-fill { height: 100%; width: 0%; border-radius: 4px; background: var(--primary, #c084fc); transition: width .25s ease; }
+.health-progress-fill { height: 100%; width: 0%; border-radius: 4px; background: var(--primary); transition: width .25s ease; }
 .health-progress-text { font-size: 13px; }
 .health-progress-detail { font-size: 12px; opacity: .7; }
-.backfill-float { position: fixed; right: 24px; bottom: 24px; z-index: 60; background: var(--surface, #1e1e2e); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; min-width: 280px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.backfill-float { position: fixed; right: 24px; bottom: 24px; z-index: 60; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; min-width: 280px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 .backfill-float .health-progress-text { margin-bottom: 8px; }
 .backfill-float .health-progress-detail { margin-top: 6px; }
+
+/* ── v1.3.2 审计补齐：对齐设计体系的缺失类 ── */
+.justify-center { justify-content: center; }
+.font-mono { font-family: ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace; }
+.logo-upload-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.logo-uploader { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.log-detail { color: var(--text-muted, rgba(255,255,255,.62)); font-size: 0.85rem; }
+.footer-custom { color: var(--text-muted, rgba(255,255,255,.62)); font-size: 0.85rem; opacity: .85; }

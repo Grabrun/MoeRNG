@@ -155,7 +155,7 @@ admin_header('系统设置', 'page-settings');
 
     <div class="card mb-3">
         <h3 class="mb-2">备份管理</h3>
-        <div class="d-flex flex gap-12 mb-3">
+        <div class="flex gap-12 mb-3">
             <form method="POST" action="/admin/settings/backup">
                 <?= $csrf_field ?>
                 <button type="submit" class="btn btn-warning" data-confirm="立即执行一次完整备份（数据库 + 上传文件）？">立即备份</button>
