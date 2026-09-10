@@ -86,43 +86,17 @@ admin_header('系统设置', 'page-settings');
 
 <div class="settings-toolbar flex gap-12 flex-wrap mb-3">
     <div class="settings-tabs flex gap-4 flex-wrap">
-        <a href="?tab=health#health"
-           class="settings-tab btn btn-sm <?= $activeGroup === 'health' ? 'btn-primary' : '' ?> no-underline">健康检查</a>
         <?php foreach ($groups as $gid => $gdef): ?>
         <a href="?tab=<?= h($gid) ?>#<?= h($gid) ?>"
            class="settings-tab btn btn-sm <?= $gid === $activeGroup ? 'btn-primary' : '' ?> no-underline"><?= h($gdef['label']) ?></a>
         <?php endforeach; ?>
+        <a href="?tab=health#health"
+           class="settings-tab btn btn-sm <?= $activeGroup === 'health' ? 'btn-primary' : '' ?> no-underline">健康检查</a>
     </div>
     <div class="flex-1"></div>
     <input type="search" id="settings-search" class="form-control max-w-260" placeholder="搜索设置项…">
     <a href="/admin/settings/logs" class="btn btn-sm no-underline">查看操作日志 →</a>
 </div>
-
-<section class="settings-group <?= $activeGroup !== 'health' ? 'hidden' : '' ?>" id="health" data-group="health">
-    <div class="card mb-3">
-        <h3 class="mb-2 flex flex-between">
-            <span>健康检查</span>
-            <small class="font-normal text-secondary">覆盖部署自迁移字段/索引 · 遗留设置行 · 历史图片哈希（检查 + 一键修复）</small>
-        </h3>
-        <div class="settings-group-body">
-            <div class="flex gap-2 mb-2">
-                <button type="button" class="btn btn-outline btn-sm" id="health-run">运行检查</button>
-                <button type="button" class="btn btn-primary btn-sm" id="health-fix" disabled>执行修复</button>
-            </div>
-            <div id="health-results" class="text-sm text-muted text-secondary">尚未运行检查 —— 点击「运行检查」。</div>
-            <div id="health-backfill-box" class="hidden mt-2 health-backfill-box">
-                <div class="flex-between health-backfill-head">
-                    <div class="health-progress-text" id="health-backfill-text">准备回填…</div>
-                    <button type="button" class="btn btn-primary btn-sm" id="health-backfill-run">开始回填</button>
-                </div>
-                <div class="health-progress-track">
-                    <div id="health-backfill-fill" class="health-progress-fill"></div>
-                </div>
-                <div class="health-progress-detail" id="health-backfill-detail"></div>
-            </div>
-        </div>
-    </div>
-</section>
 
 <?php foreach ($groups as $gid => $gdef): ?>
 <section class="settings-group <?= $gid !== $activeGroup ? 'hidden' : '' ?>" id="<?= h($gid) ?>" data-group="<?= h($gid) ?>">
@@ -218,5 +192,31 @@ admin_header('系统设置', 'page-settings');
     <?php endif; ?>
 </section>
 <?php endforeach; ?>
+
+<section class="settings-group <?= $activeGroup !== 'health' ? 'hidden' : '' ?>" id="health" data-group="health">
+    <div class="card mb-3">
+        <h3 class="mb-2 flex flex-between">
+            <span>健康检查</span>
+            <small class="font-normal text-secondary">覆盖部署自迁移字段/索引 · 遗留设置行 · 历史图片哈希（检查 + 一键修复）</small>
+        </h3>
+        <div class="settings-group-body">
+            <div class="flex gap-2 mb-2">
+                <button type="button" class="btn btn-outline btn-sm" id="health-run">运行检查</button>
+                <button type="button" class="btn btn-primary btn-sm" id="health-fix" disabled>执行修复</button>
+            </div>
+            <div id="health-results" class="text-sm text-muted text-secondary">尚未运行检查 —— 点击「运行检查」。</div>
+            <div id="health-backfill-box" class="hidden mt-2 health-backfill-box">
+                <div class="flex-between health-backfill-head">
+                    <div class="health-progress-text" id="health-backfill-text">准备回填…</div>
+                    <button type="button" class="btn btn-primary btn-sm" id="health-backfill-run">开始回填</button>
+                </div>
+                <div class="health-progress-track">
+                    <div id="health-backfill-fill" class="health-progress-fill"></div>
+                </div>
+                <div class="health-progress-detail" id="health-backfill-detail"></div>
+            </div>
+        </div>
+    </div>
+</section>
 
 <?php admin_footer(); ?>
