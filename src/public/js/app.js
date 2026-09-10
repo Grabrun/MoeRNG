@@ -969,19 +969,43 @@ function initDropZone() {
             progressText.textContent = saving ? (label + '正在保存…') : (label + Math.min(100, totalPct) + '%');
         }
 
-        function finish(aborted) {
+        // v1.3.2-beta.2: async —— 上传落临时目录即成功，随后立即驱动处理队列
+        //（生成多尺寸缩略图 + 上传最终存储），完成后再刷新列表。
+        async function finish(aborted) {
             uploading = false;
             progressBar.classList.add('hidden');
             progressFill.classList.remove('processing');
             if (uploadedCount > 0 || allDuplicates.length > 0) {
-                var msg = uploadedCount > 0 ? ('上传完成：成功 ' + uploadedCount + ' 张') : '所选图片均为重复，未新增';
+                var msg = uploadedCount > 0 ? ('上传成功 ' + uploadedCount + ' 张，已进入处理队列') : '所选图片均为重复，未新增';
                 if (allDuplicates.length) msg += uploadedCount > 0 ? ('，重复跳过 ' + allDuplicates.length + ' 张') : ('（共 ' + allDuplicates.length + ' 张）');
                 if (allErrors.length) msg += '，失败 ' + allErrors.length + ' 项';
                 if (aborted) msg += '（后续批次已中止：登录状态过期，请刷新页面重试）';
                 showToast(msg, aborted || allErrors.length ? 'error' : 'success', aborted || allErrors.length ? 10000 : 5000);
                 if (allErrors.length && window.console) console.warn('upload errors:', allErrors);
                 if (allDuplicates.length && window.console) console.info('upload duplicates:', allDuplicates);
-                setTimeout(() => window.location.reload(), 1200);
+
+                // —— 立即驱动处理队列（缩略图 + 最终存储 + 删临时文件）——
+                if (uploadedCount > 0) {
+                    const qbox = document.getElementById('backfill-progress');
+                    const qfill = document.getElementById('backfill-fill');
+                    const qtext = document.getElementById('backfill-text');
+                    const qdetail = document.getElementById('backfill-detail');
+                    const setUI = function(pct, t, d) {
+                        if (qfill) qfill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+                        if (qtext && t) qtext.textContent = t;
+                        if (qdetail && d !== undefined) qdetail.textContent = d;
+                    };
+                    if (qbox) { qbox.classList.remove('hidden'); setUI(0, '图片处理中…', ''); }
+                    try {
+                        const qres = await runProcessQueue(setUI);
+                        showToast('图片处理完成：已入库 ' + qres.done + ' 张' + (qres.failed ? '，失败 ' + qres.failed + ' 张（可在「图片处理」页重试）' : ''), qres.failed ? 'error' : 'success', 7000);
+                    } catch (qe) {
+                        showToast('队列处理异常：' + qe.message + '（可到「图片处理」页重试）', 'error', 9000);
+                    } finally {
+                        if (qbox) setTimeout(() => qbox.classList.add('hidden'), 1200);
+                    }
+                }
+                setTimeout(() => window.location.reload(), 1400);
             } else {
                 showToast(aborted ? '登录状态已过期（CSRF），请刷新页面后重试' : (allErrors.length ? allErrors.join(' | ') : '上传失败：没有文件被上传'), 'error', 8000);
             }
@@ -1274,7 +1298,11 @@ setTimeout(async function() {
             showToast('积压图片处理完成：已入库 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 6000);
             setTimeout(() => window.location.reload(), 1200);
         }
-    } catch (e) { /* 静默：无积压或未登录态 */ }
+    } catch (e) {
+        // v1.3.3-beta.1 修复: 原先完全静默 —— 一旦此处出错（函数未定义 / 接口异常）
+        // 连控制台都没有线索，线上表现为"图片页什么也没发生"。改为告警。
+        if (window.console) console.warn('process-queue drain failed:', (e && e.message) ? e.message : e);
+    }
     finally {
         uploading = false;
         if (qbox) setTimeout(() => qbox.classList.add('hidden'), 800);
@@ -1288,6 +1316,41 @@ setTimeout(async function() {
 // 抽为共享函数：图片管理页与「系统设置 → 健康检查」面板共用。
 // v1.3.2-beta.2: 历史图片缩略图补全共享循环（最终存储取回原图 → 生成缩略图 →
 // 仅回填 thumb_path，不改 process_status）。防死循环：整批全败即停。
+// v1.3.2-beta.2: 图片处理队列共享循环（上传后自动触发 / 图片页清积压 / 处理页共用）。
+// 每批由服务端完成缩略图生成 + 最终存储上传 + 临时文件清理；循环直到 remaining=0。
+// v1.3.3-beta.1 修复: 本函数曾在一次脚本异常中整体丢失（3 处调用点引用未定义函数，
+// 点击报 "runProcessQueue is not defined"），且无 harness 覆盖 —— 现已纳入 click 矩阵。
+async function runProcessQueue(setUI) {
+    let totalDone = 0, totalFailed = 0, total = 0, done = 0;
+    for (;;) {
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        fd.append('batch', '3');
+        const r = await fetch('/admin/images/process-queue', {
+            method: 'POST', body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const j = await r.json();
+        if (!j || !j.success) {
+            throw new Error((j && j.error) || '未知错误');
+        }
+        total = j.total;
+        done = total - j.remaining;
+        totalDone += j.done;
+        totalFailed += j.failed;
+        setUI(total > 0 ? done / total : 1,
+            '处理中… ' + done + '/' + total,
+            '已完成 ' + totalDone + ' 张' + (totalFailed ? '，失败 ' + totalFailed + ' 张' : ''));
+        if (j.remaining === 0) break;
+        // 整批全败（存储不可达 / 临时文件全丢）→ 中止，避免无限空转
+        if (j.done === 0 && j.failed > 0) {
+            const first = (j.results && j.results[0] && j.results[0].error) || '';
+            throw new Error('连续失败，已中止' + (first ? '（' + first + '）' : ''));
+        }
+    }
+    return { done: totalDone, failed: totalFailed, total: total };
+}
+
 async function runBackfillThumbs(setUI) {
     let totalDone = 0, totalFailed = 0, total = 0, done = 0;
     for (;;) {
