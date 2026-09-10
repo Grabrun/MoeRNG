@@ -326,7 +326,7 @@ function initImageGrid() {
                 return; // handled by initLightbox — do NOT toggle selection
             }
             if (actionBtn.dataset.imageAction === 'preview') {
-                openPreview(item.dataset.url, item.dataset.name);
+                openPreview(item.dataset.thumbLg || item.dataset.url, item.dataset.name, item.dataset.url);
             } else if (actionBtn.dataset.imageAction === 'delete') {
                 deleteImages([item.dataset.id], item.dataset.name);
             }
@@ -356,14 +356,24 @@ function initImageGrid() {
             const all = Array.from(grid.querySelectorAll('.image-item'));
             window.openLightbox(all.indexOf(item));
         } else {
-            openPreview(item.dataset.url, item.dataset.name);
+            openPreview(item.dataset.thumbLg || item.dataset.url, item.dataset.name, item.dataset.url);
         }
     });
 
     // Broken thumbnails should be obvious rather than silently blank.
     grid.querySelectorAll('img').forEach(img => {
         img.addEventListener('error', function() {
-            this.closest('.image-item')?.classList.add('image-broken');
+            const item = this.closest('.image-item');
+            // v1.3.2-beta.2: 缩略图可能因存储迁移/CDN 变更失效 —— 先用原图重试
+            // 一次，仍失败才标记破图（避免"明明有图却显示破图"）。
+            const orig = (item && item.dataset.url) || '';
+            if (orig && !this.dataset.fellBack && this.getAttribute('src') !== orig) {
+                this.dataset.fellBack = '1';
+                this.removeAttribute('srcset');
+                this.src = orig;
+                return;
+            }
+            item?.classList.add('image-broken');
         });
     });
 
@@ -586,15 +596,18 @@ function initImageGrid() {
         el.textContent = next.toLocaleString();
     }
 
-    function openPreview(url, name) {
+    // v1.3.2-beta.2: src 为「展示图」（可用 lg 缩略图），fullUrl 为原图链接。
+    // 弹窗里显示小图、复制/跳转仍是原图 —— 两者刻意分离。
+    function openPreview(src, name, fullUrl) {
         const modal = document.getElementById('preview-modal');
         if (!modal) return;
         const img = document.getElementById('preview-image');
         const title = document.getElementById('preview-title');
         const link = document.getElementById('preview-link');
-        if (img) img.src = url || '';
+        const full = fullUrl || src || '';
+        if (img) { img.removeAttribute('srcset'); img.src = src || ''; }
         if (title) title.textContent = name || '预览';
-        if (link) { link.href = url || '#'; link.textContent = url || ''; }
+        if (link) { link.href = full || '#'; link.textContent = full || ''; }
         modal.classList.add('active');
     }
     window.openPreview = openPreview;
@@ -1597,6 +1610,8 @@ function initLightbox() {
 
     let items = [];
     let current = -1;
+    // v1.3.2-beta.2: 当前项的原图 URL（灯箱显示用 lg 缩略图，复制用原图）
+    let currentOriginal = '';
 
     function refreshItems() {
         items = grid ? Array.from(grid.querySelectorAll('.image-item')) : [];
@@ -1606,7 +1621,11 @@ function initLightbox() {
         if (current < 0 || current >= items.length) { close(); return; }
         const item = items[current];
         const url = item.dataset.url || '';
-        img.src = url;
+        currentOriginal = url;
+        // v1.3.2-beta.2: 大图优先 lg 缩略图（≈1280px webp，远小于原图），
+        // 无 lg 时回退原图；复制按钮仍复制原图链接。
+        img.removeAttribute('srcset');
+        img.src = item.dataset.thumbLg || url;
         img.alt = item.dataset.name || '';
         if (nameEl) nameEl.textContent = item.dataset.name || '';
         if (urlEl) urlEl.textContent = url;
@@ -1667,7 +1686,7 @@ function initLightbox() {
     document.getElementById('lb-prev')?.addEventListener('click', function() { step(-1); });
     document.getElementById('lb-next')?.addEventListener('click', function() { step(1); });
     copyBtn?.addEventListener('click', async function() {
-        const url = img.src || '';
+        const url = currentOriginal || img.src || '';
         const ok = await copyText(url);
         showToast(ok ? '链接已复制到剪贴板' : '复制失败', ok ? 'success' : 'error');
     });
@@ -1716,11 +1735,17 @@ function initRandomDemo() {
 
     let currentUrl = '';
     let currentName = '';
+    let currentLbUrl = '';   // v1.3.2-beta.2: 灯箱用的 lg 缩略图（回退原图）
 
-    function showImage(url, category) {
+    // v1.3.2-beta.2: thumbs 为 API 返回的多尺寸映射（sm/md/lg）——预览框用 md
+    // （CSS 上限 480px），灯箱用 lg；下载与复制链接始终是原图 url。
+    function showImage(url, category, thumbs) {
+        const t = thumbs || {};
+        currentLbUrl = t.lg || url;
         currentUrl = url;
         currentName = (category ? category + '-' : '') + 'random.' + (url.split('.').pop() || 'jpg');
-        imgBox.src = url;
+        imgBox.removeAttribute('srcset');
+        imgBox.src = t.md || url;
         imgBox.alt = category ? '随机图片：' + category : '随机图片';
         // v1.2.1 修复: imgBox/zoomBtn/dlBtn carry a 'hidden' class (display:none
         // !important) in the markup, so toggle via classList — an inline
@@ -1761,7 +1786,7 @@ function initRandomDemo() {
     // v1.2.1-beta.3 修复: 之前只有图片本体有点击事件，眼睛图标按钮（zoomBtn）无反应
     function openLightbox() {
         if (!currentUrl) return;
-        if (lbImg) lbImg.src = currentUrl;
+        if (lbImg) { lbImg.removeAttribute('srcset'); lbImg.src = currentLbUrl || currentUrl; }
         if (lb) lb.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
     }
@@ -1804,7 +1829,7 @@ function initRandomDemo() {
             const resp = await fetch('/api/v1/random?' + params.toString(), { cache: 'no-store' });
             const data = await resp.json();
             if (!data.success || !data.data || !data.data.url) throw new Error(data.message || '请求失败');
-            showImage(data.data.url, data.data.category || '');
+            showImage(data.data.url, data.data.category || '', data.data.thumbs || null);
         } catch (e) {
             imgBox.style.opacity = '1';
             imgBox.src = '';

@@ -498,6 +498,7 @@ class SettingController extends Controller
             ['images', 'process_status',     "ADD COLUMN `process_status` ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`"],
             ['images', 'thumb_path',         "ADD COLUMN `thumb_path` VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`"],
             ['images', 'process_error',      "ADD COLUMN `process_error` VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`"],
+            ['images', 'thumbs',             "ADD COLUMN `thumbs` VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`"],
             ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
             ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
             ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
@@ -585,13 +586,13 @@ class SettingController extends Controller
         // —— v1.3.2-beta.2: 历史缩略图缺失统计（存量图，不影响前台展示）——
         try {
             $noThumb = (int) $pdo->query(
-                "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND (thumb_path IS NULL OR thumb_path = '')"
+                "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND (thumbs IS NULL OR thumbs = '')"
             )->fetchColumn();
             $checks['thumb_backfill'] = [
                 'ok' => $noThumb === 0,
                 'detail' => $noThumb === 0
                     ? '所有图片均已有缩略图'
-                    : "{$noThumb} 张缺缩略图 — 到「图片处理」页点击「补全历史缩略图」（不改状态，图片始终可见）",
+                    : "{$noThumb} 张缺多尺寸缩略图 — 到「图片处理」页点击「补全历史缩略图」（不改状态，图片始终可见）",
                 'fixable' => true,
                 'extra' => ['missing' => $noThumb],
             ];

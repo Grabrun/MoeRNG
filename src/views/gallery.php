@@ -21,7 +21,10 @@
                     <?php foreach ($section['images'] as $img): ?>
                     <div class="gallery-card">
                         <a href="<?= h($img->url()) ?>" target="_blank" rel="noopener" class="gallery-thumb" aria-label="查看原图：<?= h($img->original_name) ?>">
-                            <img src="<?= h($img->url()) ?>" alt="<?= h($img->original_name) ?>" loading="lazy">
+                            <?php $ss = $img->srcset('sm,md'); ?>
+                            <img src="<?= h($img->displayUrl('sm')) ?>"
+                                 <?= $ss !== '' ? 'srcset="' . h($ss) . '" sizes="(max-width: 639px) 46vw, (max-width: 1023px) 30vw, 240px"' : '' ?>
+                                 alt="<?= h($img->original_name) ?>" loading="lazy" decoding="async">
                         </a>
                         <div class="gallery-meta">
                             <span class="gallery-name" title="<?= h($img->original_name) ?>"><?= h(mb_strlen($img->original_name) > 18 ? mb_substr($img->original_name, 0, 18) . '…' : $img->original_name) ?></span>

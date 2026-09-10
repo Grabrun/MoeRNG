@@ -248,7 +248,7 @@ class Application
         }
 
         foreach (['storage', 'storage_provider', 'file_hash', 'file_sha256',
-                  'process_status', 'thumb_path', 'process_error'] as $col) {
+                  'process_status', 'thumb_path', 'process_error', 'thumbs'] as $col) {
             if (!$this->columnExists($db, 'images', $col)) {
                 $needed[] = $col;
             }
@@ -271,6 +271,9 @@ class Application
             'process_status'   => "ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`",
             'thumb_path'       => "VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`",
             'process_error'    => "VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`",
+            // v1.3.2-beta.2 迭代: 多尺寸缩略图映射（JSON: 尺寸 => 存储 key）。
+            // md 仍写 thumb_path（兼容），本列存 sm/lg 等附加尺寸。
+            'thumbs'           => "VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`",
         ];
 
         $errors = [];

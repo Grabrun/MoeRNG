@@ -33,7 +33,10 @@
 <!-- Image Grid -->
 <div class="image-grid" id="sortable-container">
     <?php foreach ($images as $img): ?>
-    <div class="image-item" draggable="true" data-id="<?= $img->id ?>" data-url="<?= h($img->url()) ?>" data-name="<?= h($img->original_name) ?>">
+    <div class="image-item" draggable="true" data-id="<?= $img->id ?>" data-url="<?= h($img->url()) ?>"
+         data-name="<?= h($img->original_name) ?>"
+         data-thumb-src="<?= h($img->displayUrl('sm')) ?>"
+         data-thumb-lg="<?= h($img->displayUrl('lg')) ?>">
         <div class="checkbox"><?= icon('check', 16) ?></div>
         <div class="quick-actions">
             <button type="button" data-image-action="view" title="查看大图" aria-label="查看大图"><?= icon('eye', 16) ?></button>
@@ -44,7 +47,10 @@
         <span class="proc-badge <?= $ps === 'failed' ? 'proc-failed' : 'proc-pending' ?>"
               title="<?= h((string) ($img->process_error ?? '') ?: '等待异步处理（缩略图与最终存储）') ?>"><?= $ps === 'failed' ? '处理失败' : '处理中' ?></span>
         <?php endif; ?>
-        <img src="<?= h($img->url()) ?>" alt="<?= h($img->original_name) ?>" loading="lazy">
+        <?php $ss = $img->srcset('sm,md'); ?>
+        <img src="<?= h($img->displayUrl('sm')) ?>"
+             <?= $ss !== '' ? 'srcset="' . h($ss) . '" sizes="(max-width: 640px) 45vw, 200px"' : '' ?>
+             alt="<?= h($img->original_name) ?>" loading="lazy" decoding="async">
         <div class="overlay">
             <span><?= h(mb_strlen($img->original_name) > 20 ? mb_substr($img->original_name,0,20).'...' : $img->original_name) ?></span>
         </div>

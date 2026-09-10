@@ -367,6 +367,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 ['images', 'process_status',     "ADD COLUMN `process_status` ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`"],
                 ['images', 'thumb_path',         "ADD COLUMN `thumb_path` VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`"],
                 ['images', 'process_error',      "ADD COLUMN `process_error` VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`"],
+                ['images', 'thumbs',             "ADD COLUMN `thumbs` VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`"],
                 ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
                 ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
                 ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
@@ -425,12 +426,12 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
 
                 // v1.3.2-beta.2: 历史缩略图缺失（存量图）
                 try {
-                    $noThumb = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'done' AND (thumb_path IS NULL OR thumb_path = '')")->fetchColumn();
+                    $noThumb = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'done' AND (thumbs IS NULL OR thumbs = '')")->fetchColumn();
                     if ($noThumb === 0) {
-                        check('Image thumbnails', true, 'all images have thumbnails');
+                        check('Image thumbnails', true, 'all images have multi-size thumbnails (sm/md/lg)');
                     } else {
                         check('Image thumbnails', true,
-                            "{$noThumb} 张缺缩略图 — 后台「图片处理」页点击「补全历史缩略图」（不改状态，图片始终可见）",
+                            "{$noThumb} 张缺多尺寸缩略图 — 后台「图片处理」页点击「补全历史缩略图」（不改状态，图片始终可见）",
                             true);
                     }
                 } catch (Throwable $e) {

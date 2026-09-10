@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS `images` (
     `process_status` ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done',
     `thumb_path` VARCHAR(512) NULL DEFAULT NULL,
     `process_error` VARCHAR(500) NULL DEFAULT NULL,
+    `thumbs` VARCHAR(1200) NULL DEFAULT NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX `idx_category` (`category_id`),

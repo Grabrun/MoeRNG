@@ -98,7 +98,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
         <div class="recent-grid">
             <?php foreach ($recentImages as $img): ?>
             <a href="/admin/images" class="tile" title="<?= h($img->original_name ?? '') ?>">
-                <img src="<?= h($img->url()) ?>" alt="<?= h($img->original_name ?? '') ?>" loading="lazy" >
+                <img src="<?= h($img->displayUrl('sm')) ?>" alt="<?= h($img->original_name ?? '') ?>" loading="lazy" decoding="async">
             </a>
             <?php endforeach; ?>
         </div>

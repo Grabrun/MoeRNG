@@ -14,8 +14,78 @@ class Image extends Model
         'file_size', 'width', 'height', 'category_id', 'sort_order', 'status',
         'storage', 'storage_provider', 'storage_profile_id',
         'file_hash', 'file_sha256',
-        'process_status', 'thumb_path', 'process_error'
+        'process_status', 'thumb_path', 'process_error', 'thumbs'
     ];
+
+    /**
+     * v1.3.2-beta.2 迭代: 多尺寸缩略图 —— 尺寸名 => 最大边像素（单一事实来源）。
+     *
+     * 存储 key 约定（md 保持历史路径以复用已生成的缩略图，不产生孤儿文件）：
+     *   sm => thumbs/sm/{相对路径}.webp   （列表/网格用，320）
+     *   md => thumbs/{相对路径}.webp      （卡片/预览用，640；= thumb_path 列）
+     *   lg => thumbs/lg/{相对路径}.webp   （灯箱/大图用，1280）
+     */
+    public const THUMB_SIZES = ['sm' => 320, 'md' => 640, 'lg' => 1280];
+
+    /** 默认尺寸（无参数调用的回退）。 */
+    public const THUMB_DEFAULT = 'md';
+
+    /**
+     * 由原图相对路径推导某尺寸缩略图的存储 key（与生成端共用同一约定）。
+     */
+    public static function thumbKey(string $size, string $path): string
+    {
+        $rel = ltrim((string) preg_replace('/\.[a-z0-9]+$/i', '.webp', $path), '/');
+        if ($size === 'md') {
+            return 'thumbs/' . $rel;           // 历史路径，保持兼容
+        }
+        return 'thumbs/' . $size . '/' . $rel;
+    }
+
+    /** 解析 `thumbs` JSON 列为 尺寸 => key 映射（非法/空返回空数组）。 */
+    public function thumbMap(): array
+    {
+        $raw = (string) ($this->attributes['thumbs'] ?? '');
+        if ($raw === '') return [];
+        $map = json_decode($raw, true);
+        if (!is_array($map)) return [];
+        $out = [];
+        foreach (self::THUMB_SIZES as $size => $_) {
+            if (!empty($map[$size]) && is_string($map[$size])) {
+                $out[$size] = $map[$size];
+            }
+        }
+        // md 兼容：老数据只有 thumb_path、thumbs 列里没有 md
+        if (!isset($out['md'])) {
+            $legacy = (string) ($this->attributes['thumb_path'] ?? '');
+            if ($legacy !== '') $out['md'] = $legacy;
+        }
+        return $out;
+    }
+
+    /**
+     * 编码 尺寸 => key 映射为 `thumbs` 列值（JSON）。
+     *
+     * 始终写入 `ok:1` 标记 —— 这样「源图不可解码」或「源图小于所有档位」的
+     * 行也会得到非空 JSON，回填队列据 `thumbs IS NULL OR thumbs=''` 选行时
+     * 不会反复重选同一批行（否则前端进度循环永不收敛）。
+     */
+    public static function encodeThumbs(array $keys): string
+    {
+        $payload = ['ok' => 1];
+        foreach ($keys as $size => $key) {
+            if (isset(self::THUMB_SIZES[$size]) && is_string($key) && $key !== '') {
+                $payload[$size] = $key;
+            }
+        }
+        return (string) json_encode($payload, JSON_UNESCAPED_SLASHES);
+    }
+
+    /** 某尺寸缩略图的存储 key（不存在返回空串）。 */
+    public function thumbKeyFor(string $size): string
+    {
+        return $this->thumbMap()[$size] ?? '';
+    }
 
     public function category(): ?Category
     {
@@ -48,21 +118,70 @@ class Image extends Model
     }
 
     /**
-     * v1.3.2-beta.2 迭代: 缩略图对外 URL —— 与 url() 同机制（经存储 driver
-     * 动态生成，支持 CDN/预签名）。无缩略图（process_status 未完成或老图）
-     * 返回空串，调用方应回退原图 url()。
+     * v1.3.2-beta.2 迭代: 多尺寸缩略图对外 URL —— 与 url() 同机制（经存储
+     * driver 动态生成，支持 CDN/预签名）。
+     *
+     * 无该尺寸缩略图（老数据/未处理）返回空串；调用方用 displayUrl() 取
+     * 带回退链的可用地址。
      */
-    public function thumbUrl(): string
+    public function thumbUrl(string $size = self::THUMB_DEFAULT): string
     {
-        $thumb = (string) ($this->attributes['thumb_path'] ?? '');
-        if ($thumb === '') return '';
+        $key = $this->thumbKeyFor($size);
+        if ($key === '') return '';
         try {
-            $url = self::driverFor($this)->url($thumb);
+            $url = self::driverFor($this)->url($key);
             if ($url !== '') return $url;
         } catch (\Throwable) {
             // fall through
         }
         return '';
+    }
+
+    /**
+     * 展示用图片地址（带回退链，永不返回空——除非该行彻底无路径）：
+     *   请求尺寸缩略图 → md 缩略图 → 原图。
+     * 视图直接用它，避免每处都写 `?:` 三元。
+     */
+    public function displayUrl(string $size = self::THUMB_DEFAULT): string
+    {
+        $u = $this->thumbUrl($size);
+        if ($u !== '') return $u;
+        if ($size !== self::THUMB_DEFAULT) {
+            $u = $this->thumbUrl(self::THUMB_DEFAULT);
+            if ($u !== '') return $u;
+        }
+        return $this->url();
+    }
+
+    /**
+     * 各尺寸缩略图 URL 映射（仅含真实存在的尺寸；供 API / 前端按场景选用）。
+     * 例：{"sm":"https://.../thumbs/sm/2026/09/x.webp","md":"...","lg":"..."}
+     */
+    public function thumbUrls(): array
+    {
+        $out = [];
+        foreach (array_keys(self::THUMB_SIZES) as $size) {
+            $u = $this->thumbUrl($size);
+            if ($u !== '') $out[$size] = $u;
+        }
+        return $out;
+    }
+
+    /**
+     * 构建 <img srcset="..."> 候选串（仅包含真实存在的缩略图）。
+     * 少于两个候选时返回空串（无需 srcset）。
+     */
+    public function srcset(string $sizes = 'sm,md'): string
+    {
+        $parts = [];
+        foreach (explode(',', $sizes) as $size) {
+            $size = trim($size);
+            if ($size === '' || !isset(self::THUMB_SIZES[$size])) continue;
+            $u = $this->thumbUrl($size);
+            if ($u === '') continue;
+            $parts[] = $u . ' ' . self::THUMB_SIZES[$size] . 'w';
+        }
+        return count($parts) >= 2 ? implode(', ', $parts) : '';
     }
 
     /** Absolute-ish stored URL as persisted in the DB (diagnostics only). */

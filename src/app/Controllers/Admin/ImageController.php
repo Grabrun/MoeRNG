@@ -120,52 +120,109 @@ class ImageController extends Controller
      *
      * @return array{0: ?string, 1: ?string} [临时文件路径, 存储 key]，失败/降级为 [null, null]
      */
-    private function makeThumbnail(string $srcFile, string $mime, string $path): array
+    /**
+     * v1.3.2-beta.2 迭代: 生成**多尺寸**缩略图到系统临时文件（GD + WebP）。
+     *
+     * 源图只解码一次，按 Image::THUMB_SIZES 逐档缩放：
+     *   - sm 320 / md 640 / lg 1280（最大边）
+     *   - **不放大**：源图最大边小于某档时跳过该档（避免生成比原图还大的"缩略图"）
+     *   - 某档写盘失败只跳过该档，其余档继续（各档独立）
+     *
+     * 供新上传队列 Worker 与「补全历史缩略图」共用（单一实现，无重复 GD 逻辑）。
+     *
+     * @return array{readable: bool, thumbs: array<string, array{tmp: string, key: string}>}
+     *   readable=false → 源图无法解码（或 GD/WebP 不可用），调用方按降级处理；
+     *   readable=true 且 thumbs 为空 → 源图本身小于所有档位（合法空操作）。
+     */
+    private function makeThumbnails(string $srcFile, string $mime, string $path): array
     {
-        if (!function_exists('imagecreatetruecolor')) {
-            return [null, null];
+        if (!function_exists('imagecreatetruecolor') || !function_exists('imagewebp')) {
+            return ['readable' => false, 'thumbs' => []];
         }
-        $src = null;
-        if ($mime === 'image/jpeg') $src = @imagecreatefromjpeg($srcFile);
-        elseif ($mime === 'image/png') $src = @imagecreatefrompng($srcFile);
-        elseif ($mime === 'image/gif') $src = @imagecreatefromgif($srcFile);
-        elseif ($mime === 'image/webp' && function_exists('imagecreatefromwebp')) $src = @imagecreatefromwebp($srcFile);
-        // 扩展名兜底（mime 可能缺失/不准）
-        if (($src === null || $src === false) && function_exists('getimagesize')) {
-            $info = @getimagesize($srcFile);
-            $m2 = is_array($info) ? (string) ($info['mime'] ?? '') : '';
-            if ($m2 === 'image/jpeg') $src = @imagecreatefromjpeg($srcFile);
-            elseif ($m2 === 'image/png') $src = @imagecreatefrompng($srcFile);
-            elseif ($m2 === 'image/gif') $src = @imagecreatefromgif($srcFile);
-            elseif ($m2 === 'image/webp' && function_exists('imagecreatefromwebp')) $src = @imagecreatefromwebp($srcFile);
-        }
-        if ($src === null || $src === false) {
-            return [null, null];
+
+        $src = $this->decodeImage($srcFile, $mime);
+        if ($src === null) {
+            return ['readable' => false, 'thumbs' => []];
         }
 
         $w = imagesx($src);
         $h = imagesy($src);
-        $max = 480;
-        $scale = min(1, $max / max($w, $h));
-        $tw = max(1, (int) round($w * $scale));
-        $th = max(1, (int) round($h * $scale));
-        $dst = imagecreatetruecolor($tw, $th);
-        imagealphablending($dst, false);
-        imagesavealpha($dst, true);
-        $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
-        imagefill($dst, 0, 0, $transparent);
-        imagecopyresampled($dst, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
+        $maxEdge = max($w, $h);
+        $out = [];
 
-        $key = 'thumbs/' . ltrim((string) preg_replace('/\.[a-z0-9]+$/i', '.webp', $path), '/');
-        $tmp = tempnam(sys_get_temp_dir(), 'moerng-thumb-');
-        $ok = function_exists('imagewebp') && imagewebp($dst, $tmp, 82);
-        imagedestroy($dst);
-        imagedestroy($src);
-        if (!$ok) {
-            @unlink($tmp);
-            return [null, null];
+        foreach (\App\Models\Image::THUMB_SIZES as $size => $target) {
+            if ($maxEdge <= $target) {
+                continue; // 不放大
+            }
+            $scale = $target / $maxEdge;
+            $tw = max(1, (int) round($w * $scale));
+            $th = max(1, (int) round($h * $scale));
+
+            $dst = imagecreatetruecolor($tw, $th);
+            // 保留透明通道（PNG/WebP 带 alpha）
+            imagealphablending($dst, false);
+            imagesavealpha($dst, true);
+            $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+            imagefill($dst, 0, 0, $transparent);
+            imagecopyresampled($dst, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
+
+            $tmp = tempnam(sys_get_temp_dir(), 'moerng-thumb-' . $size . '-');
+            $ok = $tmp !== false && imagewebp($dst, $tmp, 82);
+            imagedestroy($dst);
+            if (!$ok) {
+                if ($tmp !== false) @unlink($tmp);
+                continue; // 该档失败，其余档继续
+            }
+            $out[$size] = [
+                'tmp' => $tmp,
+                'key' => \App\Models\Image::thumbKey($size, $path),
+            ];
         }
-        return [$tmp, $key];
+
+        imagedestroy($src);
+        return ['readable' => true, 'thumbs' => $out];
+    }
+
+    /** 解码图片为 GD 资源（mime 优先，失败按 getimagesize 兜底嗅探）。 */
+    private function decodeImage(string $file, string $mime)
+    {
+        $open = function (string $m) use ($file) {
+            if ($m === 'image/jpeg') return @imagecreatefromjpeg($file);
+            if ($m === 'image/png') return @imagecreatefrompng($file);
+            if ($m === 'image/gif') return @imagecreatefromgif($file);
+            if ($m === 'image/webp' && function_exists('imagecreatefromwebp')) return @imagecreatefromwebp($file);
+            return null;
+        };
+
+        $src = $open($mime);
+        if ($src === null || $src === false) {
+            // mime 缺失/不准时按文件头嗅探
+            $info = function_exists('getimagesize') ? @getimagesize($file) : false;
+            if (is_array($info) && !empty($info['mime'])) {
+                $src = $open((string) $info['mime']);
+            }
+        }
+        return ($src === null || $src === false) ? null : $src;
+    }
+
+    /**
+     * 把生成的各档缩略图上传到目标存储，返回 尺寸 => key（失败档自动跳过）。
+     * 无论成功与否都会删除临时文件。
+     */
+    private function uploadThumbs(\App\Storage\StorageInterface $driver, array $thumbs): array
+    {
+        $keys = [];
+        foreach ($thumbs as $size => $t) {
+            try {
+                $driver->upload($t['tmp'], $t['key'], 'image/webp');
+                $keys[$size] = $t['key'];
+            } catch (\Throwable) {
+                // 单档上传失败不影响其它档（该档缺失时前端回退到 md/原图）
+            } finally {
+                @unlink($t['tmp']);
+            }
+        }
+        return $keys;
     }
 
     /** v1.3.2-beta.2: 临时存放目录（站点根 storage/incoming，web 不可达）。 */
@@ -179,8 +236,8 @@ class ImageController extends Controller
      *
      * 每次调用处理一小批 pending 图片：
      *   1. 从 storage/incoming 取临时原图；
-     *   2. GD 生成缩略图（最大边 480px，webp，质量 82；无 GD/webp 时降级为
-     *      不生成缩略图，仅搬运原图）；
+     *   2. GD 一次解码生成**多尺寸**缩略图（sm 320 / md 640 / lg 1280 最大边，
+     *      webp q82，不放大；无 GD/webp 或源图不可解码时降级为无缩略图，仅搬运原图）；
      *   3. 原图 + 缩略图上传到该图所属的最终存储实例；
      *   4. 记录置 done（path/url/thumb_path 落库）；
      *   5. 删除临时文件（原图与缩略图临时副本）。
@@ -238,23 +295,22 @@ class ImageController extends Controller
                     }
                     $storage = $profile->driver();
 
-                    // —— 缩略图（共用 makeThumbnail；环境不支持则降级跳过）——
-                    [$thumbTmp, $thumbKey] = $this->makeThumbnail($incomingFile, (string) $row['mime_type'], $path);
+                    // —— 多尺寸缩略图（一次解码生成 sm/md/lg；GD 不可用或源图
+                    //    不可解码时降级为无缩略图，不阻断原图入库）——
+                    $gen = $this->makeThumbnails($incomingFile, (string) $row['mime_type'], $path);
 
-                    // —— 上传原图 + 缩略图到最终存储 ——
+                    // —— 上传原图到最终存储 ——
                     $url = $storage->upload($incomingFile, $path, $mime);
-                    $thumbPath = null;
-                    if ($thumbTmp !== null && $thumbKey !== null) {
-                        $thumbPath = $thumbKey;
-                        $storage->upload($thumbTmp, $thumbKey, 'image/webp');
-                        @unlink($thumbTmp);
-                    }
 
-                    // —— 记录置 done ——
+                    // —— 逐档上传缩略图（单档失败不影响其它档）——
+                    $thumbKeys = $this->uploadThumbs($storage, $gen['thumbs']);
+                    $thumbPath = $thumbKeys['md'] ?? null;
+
+                    // —— 记录置 done（thumbs 恒非空 → 回填队列不会重复选中该行）——
                     $upd = $pdo->prepare(
-                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ?"
+                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `thumbs` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ?"
                     );
-                    $upd->execute([$url, $thumbPath, $id]);
+                    $upd->execute([$url, $thumbPath, \App\Models\Image::encodeThumbs($thumbKeys), $id]);
 
                     // —— 成功后删除临时原图 ——
                     @unlink($incomingFile);
@@ -299,13 +355,15 @@ class ImageController extends Controller
     }
 
     /**
-     * POST /admin/images/backfill-thumbs —— 补全历史图片缩略图（分批，幂等）。
+     * POST /admin/images/backfill-thumbs —— 补全历史图片**多尺寸**缩略图（分批，幂等）。
      *
-     * 判据：process_status='done' AND (thumb_path IS NULL OR thumb_path='')
-     * —— 关键：**不改变 process_status**。存量图已在线上展示，若置回 pending
-     * 会因前台过滤条件而全部暂时下架；本流程改为从「最终存储」取回原图生成
-     * 缩略图、仅回填 thumb_path，图片始终可见。成功后 thumb_path 非空，天然
-     * 幂等（不会被重复选中）。
+     * 判据：process_status='done' AND (thumbs IS NULL OR thumbs='')
+     * —— 覆盖两类存量行：① 完全无缩略图；② 只有单档 md（本迭代前生成）。
+     *
+     * 关键：**不改变 process_status**。存量图已在线上展示，若置回 pending 会因
+     * 前台过滤条件（process_status='done'）而全部暂时下架 —— 等于自伤事故。
+     * 本流程从「最终存储」取回原图，一次解码生成 sm/md/lg 三档并回填
+     * thumb_path + thumbs，图片始终可见。回填后 thumbs 恒非空，天然幂等。
      */
     public function backfillThumbs(Request $request): void
     {
@@ -325,7 +383,9 @@ class ImageController extends Controller
             return;
         }
 
-        $missingCond = "(thumb_path IS NULL OR thumb_path = '')";
+        // 判据 = thumbs 列空（含"只有 md、缺 sm/lg"的存量行）。选中的行处理完
+        // 会写入非空 JSON（至少 {"ok":1}），因此天然幂等、不会被重复选中。
+        $missingCond = "(thumbs IS NULL OR thumbs = '')";
         $total = (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
         $remaining = (int) $pdo->query(
             "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$missingCond}"
@@ -371,20 +431,25 @@ class ImageController extends Controller
                         $isTemp = true;
                     }
 
-                    // —— 生成缩略图并上传（makeThumbnail 共用）——
-                    [$thumbTmp, $thumbKey] = $this->makeThumbnail($localFile, (string) $row['mime_type'], $path);
+                    // —— 多尺寸缩略图生成 + 逐档上传 ——
+                    $gen = $this->makeThumbnails($localFile, (string) $row['mime_type'], $path);
                     if ($isTemp) {
                         @unlink($localFile);
                     }
-                    if ($thumbTmp === null || $thumbKey === null) {
-                        throw new \RuntimeException('缩略图生成失败（源文件可能损坏或格式不支持）');
-                    }
-                    $driver->upload($thumbTmp, $thumbKey, 'image/webp');
-                    @unlink($thumbTmp);
+                    $thumbKeys = $this->uploadThumbs($driver, $gen['thumbs']);
 
-                    // —— 仅回填 thumb_path，状态保持 done ——
-                    $pdo->prepare("UPDATE `images` SET `thumb_path` = ? WHERE `id` = ?")
-                        ->execute([$thumbKey, $id]);
+                    // —— 仅回填缩略图（thumb_path 与 thumbs），**状态保持 done** ——
+                    // COALESCE 保证未重新生成 md 时不会把已有 thumb_path 抹掉。
+                    $pdo->prepare(
+                        "UPDATE `images` SET `thumb_path` = COALESCE(?, `thumb_path`), `thumbs` = ? WHERE `id` = ?"
+                    )->execute([$thumbKeys['md'] ?? null, \App\Models\Image::encodeThumbs($thumbKeys), $id]);
+
+                    if ($thumbKeys === []) {
+                        // 源图小于所有档位（合法空操作）或不可解码 —— 已打 ok 标记，不会重选
+                        $results[] = ['id' => $id, 'ok' => true, 'note' => '源图小于所有档位或不可解码，已标记跳过'];
+                        $done++;
+                        continue;
+                    }
 
                     $done++;
                     $results[] = ['id' => $id, 'ok' => true];
@@ -436,7 +501,7 @@ class ImageController extends Controller
             'processing' => $count("process_status = 'processing'"),
             'done'       => $count("process_status = 'done'"),
             'failed'     => $count("process_status = 'failed'"),
-            'no_thumb'   => $count("process_status = 'done' AND (thumb_path IS NULL OR thumb_path = '')"),
+            'no_thumb'   => $count("process_status = 'done' AND (thumbs IS NULL OR thumbs = '')"),
             'total'      => $count(''),
         ];
 
