@@ -245,22 +245,63 @@ class Image extends Model
 
     /**
      * v1.3.1 图库页: 取某分类（或未分类）下随机 N 张 active 图片。
-     * 单分类行数量级小，ORDER BY RAND() LIMIT n 的 filesort 开销可忽略
-     * （随机 API 的全表场景才值得用 COUNT+OFFSET 两步法）。
      * $categoryId === null 表示未分类（category_id IS NULL）。
+     *
+     * v1.4.0-beta.2 性能修复: 弃用 `ORDER BY RAND()`。原注释假设"单分类行量级小、
+     * filesort 可忽略"——但这正是图库页变慢的原因：图库页对**每个分类**调用一次，
+     * MySQL 每次都要把该分类下符合条件的**全部行**物化后随机排序（还带 SELECT * 回表），
+     * 10 个分类就是 10 次全量排序，图片量越大越慢。
+     *
+     * 改为与 random() 同源的「COUNT + 随机 OFFSET」两步法：
+     *   1) COUNT(*) 走覆盖索引，极快；
+     *   2) 随机取窗口起点后，按索引顺序一次取 N 行（无 ORDER BY → 无 filesort），
+     *      扫描量 ≈ offset + N。
+     * 取到的是"随机连续块"，用于图库展示与 ORDER BY RAND() 的观感等价，
+     * 且随机性均匀（窗口起点在 [0, total-limit] 上均匀分布）。
      */
     public static function randomBatch(?int $categoryId, int $limit = 12): array
     {
+        $limit = max(1, min(60, $limit));
+
+        $where  = "`status` = 'active' AND `process_status` = 'done'";
+        $params = [];
         if ($categoryId === null) {
-            $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IS NULL ORDER BY RAND() LIMIT {$limit}";
-            $stmt = Database::getInstance()->prepare($sql);
-            $stmt->execute();
+            $where .= " AND `category_id` IS NULL";
         } else {
-            $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' AND category_id = ? ORDER BY RAND() LIMIT {$limit}";
-            $stmt = Database::getInstance()->prepare($sql);
-            $stmt->execute([$categoryId]);
+            $where .= " AND `category_id` = ?";
+            $params[] = $categoryId;
         }
+
+        $pdo = Database::getInstance();
+
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM `images` WHERE {$where}");
+        $cnt->execute($params);
+        $total = (int) $cnt->fetchColumn();
+        if ($total === 0) {
+            return [];
+        }
+
+        // 总量不超过一屏：直接全取（此时"随机"无意义，也避免无谓的 OFFSET 扫描）
+        if ($total <= $limit) {
+            $stmt = $pdo->prepare("SELECT * FROM `images` WHERE {$where} LIMIT {$limit}");
+            $stmt->execute($params);
+            return array_map(fn($row) => self::hydrate($row), $stmt->fetchAll(\PDO::FETCH_ASSOC));
+        }
+
+        // 随机窗口起点（上限取 total - limit，保证窗口不越界、一定取满）
+        $offset = random_int(0, $total - $limit);
+        $stmt = $pdo->prepare("SELECT * FROM `images` WHERE {$where} LIMIT {$limit} OFFSET {$offset}");
+        $stmt->execute($params);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        // 防御：极端并发（COUNT 后行被删）导致取不满时，从头补齐
+        if (count($rows) < $limit) {
+            $fill = $limit - count($rows);
+            $st2 = $pdo->prepare("SELECT * FROM `images` WHERE {$where} LIMIT {$fill}");
+            $st2->execute($params);
+            $rows = array_merge($rows, $st2->fetchAll(\PDO::FETCH_ASSOC));
+        }
+
         return array_map(fn($row) => self::hydrate($row), $rows);
     }
 

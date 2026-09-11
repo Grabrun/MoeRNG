@@ -187,6 +187,32 @@ class ImageController extends Controller
         return $mb > 0 ? $mb * 1048576 : 0;
     }
 
+    /**
+     * v1.4.0-beta.2 性能修复: 请求内存储实例解析缓存。
+     *
+     * 处理队列 / 补全缩略图 / 哈希回填三个循环此前对**每一行**都查一次
+     * `StorageProfile::find()`（行里没记实例时还要再查一次默认实例）——这就是
+     * 典型的 N+1：同一批次里实例通常完全相同，却要被反复查询。
+     * 按 id 记忆化后，一次请求最多 1 次 find + 1 次 defaultProfile 查询。
+     *
+     * 实例属性即请求级缓存（控制器按请求实例化），无需外部传引用；
+     * 这些端点不会在本请求内修改存储实例，故不会读到脏数据。
+     */
+    private array $profileMemo = [];
+
+    private function resolveProfile(?int $profileId): ?StorageProfile
+    {
+        $key = $profileId ?? 0;
+        if (!array_key_exists($key, $this->profileMemo)) {
+            $p = $profileId !== null ? StorageProfile::find($profileId) : null;
+            if ($p === null) {
+                $p = StorageProfile::defaultProfile();
+            }
+            $this->profileMemo[$key] = $p;
+        }
+        return $this->profileMemo[$key];
+    }
+
     /** 解析 memory_limit（含 -1 = 无限制）为字节数。 */
     private static function memoryLimitBytes(): int
     {
@@ -519,12 +545,10 @@ class ImageController extends Controller
                     }
 
                     // —— 该图所属存储实例 ——
-                    $profile = $row['storage_profile_id'] !== null
-                        ? StorageProfile::find((int) $row['storage_profile_id'])
-                        : null;
-                    if ($profile === null) {
-                        $profile = StorageProfile::defaultProfile();
-                    }
+                    // v1.4.0-beta.2 性能: 走请求内缓存（原先每行查一次 → N+1）
+                    $profile = $this->resolveProfile(
+                        $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
+                    );
                     if ($profile === null) {
                         throw new \RuntimeException('无可用存储实例');
                     }
@@ -683,12 +707,10 @@ class ImageController extends Controller
                 $path = (string) $row['path'];
                 $gen = null; // v1.3.2-beta.2: catch 里用于清理未及上传的临时缩略图
                 try {
-                    $profile = $row['storage_profile_id'] !== null
-                        ? StorageProfile::find((int) $row['storage_profile_id'])
-                        : null;
-                    if ($profile === null) {
-                        $profile = StorageProfile::defaultProfile();
-                    }
+                    // v1.4.0-beta.2 性能: 走请求内缓存（原先每行查一次 → N+1）
+                    $profile = $this->resolveProfile(
+                        $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
+                    );
                     if ($profile === null) {
                         throw new \RuntimeException('无可用存储实例');
                     }
@@ -1042,12 +1064,10 @@ class ImageController extends Controller
 
                 try {
                     // 该图所属存储实例 —— storage_profile_id 精确优先，缺省回退默认实例
-                    $profile = $row['storage_profile_id'] !== null
-                        ? StorageProfile::find((int) $row['storage_profile_id'])
-                        : null;
-                    if ($profile === null) {
-                        $profile = StorageProfile::defaultProfile();
-                    }
+                    // v1.4.0-beta.2 性能: 走请求内缓存（原先每行查一次 → N+1）
+                    $profile = $this->resolveProfile(
+                        $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
+                    );
                     if ($profile === null) {
                         $failed++;
                         $results[] = ['id' => $id, 'error' => '无可用存储实例'];

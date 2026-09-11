@@ -5,6 +5,14 @@ namespace App\Core;
 
 class Application
 {
+    /**
+     * v1.4.0-beta.2: 自迁移版本戳 —— settings 表里的 schema_version 与它一致时
+     * 完全跳过 runStorageMigration()（每请求几十条 SHOW COLUMNS + 2 次写入）。
+     *
+     * **新增迁移时务必递增此值**，否则老站点不会执行新迁移。
+     */
+    private const SCHEMA_VERSION = '2026-09-11';
+
     private static ?self $instance = null;
     private Router $router;
     private bool $installed = false;
@@ -69,8 +77,18 @@ class Application
             // Load settings into config
             $this->loadSettings();
 
-            // Backfill per-image storage columns (see Image::driverFor).
-            $this->runStorageMigration();
+            // v1.4.0-beta.2 性能修复: 自迁移只在 schema 版本落后时执行。
+            //
+            // 此前 runStorageMigration() 每请求无条件执行 —— 9 个 ensure* 里各自
+            // 做 SHOW COLUMNS / SHOW TABLES 探测（合计几十条查询），成功路径还会
+            // 无条件写 2 条 settings（每次请求 2 次写入！）。这是全站服务端延迟的
+            // 主要来源，也白白消耗写入配额。
+            //
+            // 门禁语义：版本一致 → 完全跳过（零查询零写入）；不一致/缺失（老站点、
+            // 升级后首次请求、settings 表刚建）→ 照常执行迁移并补写新版本号。
+            if ((string) Config::get('settings.schema_version', '') !== self::SCHEMA_VERSION) {
+                $this->runStorageMigration();
+            }
 
             // v1.2.1: storage profiles are loaded — re-send CSP with the
             // CDN/bucket hosts so cross-origin object-stored images load.
@@ -197,15 +215,19 @@ class Application
 
         try {
             if ($migrationError === '') {
+                // v1.4.0-beta.2 性能: 只写"版本戳"（下一次请求即整体跳过迁移）。
+                // 原先成功路径要无条件写 2 条 settings —— 那是每请求 2 次写入。
+                \App\Models\Setting::set('schema_version', self::SCHEMA_VERSION);
                 \App\Models\Setting::set('migration_images_storage', '1');
-                // Clear any stale error from a previous failed run so doctor.php
-                // does not keep showing a TypeError that has since been fixed.
-                \App\Models\Setting::set('migration_last_error', '');
-            } else {
+                // 仅在值真的变化时清一次历史错误（避免每次迁移都白写一条）
+                if (Config::get('settings.migration_last_error', '') !== '') {
+                    \App\Models\Setting::set('migration_last_error', '');
+                }
+            } elseif (Config::get('settings.migration_last_error', '') !== $migrationError) {
                 // Expose the failure so doctor.php can tell the user exactly
                 // what to fix (e.g. run the ALTER manually with a privileged
-                // account). A missing flag would otherwise retry forever and a
-                // stored flag would hide the breakage.
+                // account). 只在错误内容变化时写入，避免失败状态下每请求都写库。
+                // 注意：失败时不写 schema_version → 下次请求仍会重试迁移。
                 \App\Models\Setting::set('migration_last_error', $migrationError);
             }
         } catch (\Throwable) {
