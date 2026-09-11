@@ -13,6 +13,13 @@ admin_header('图片处理', 'page-queue');
         <button class="btn btn-primary btn-sm" id="queue-start" <?= $stats['pending'] === 0 ? 'disabled' : '' ?>><?= icon('loader', 16) ?> 开始处理</button>
         <button class="btn btn-outline btn-sm" id="queue-requeue" <?= $stats['failed'] === 0 ? 'disabled' : '' ?>><?= icon('refresh', 16) ?> 重试失败项</button>
         <button class="btn btn-outline btn-sm" id="queue-backfill-thumbs" <?= $stats['no_thumb'] === 0 ? 'disabled' : '' ?>><?= icon('image', 16) ?> 补全历史缩略图</button>
+        <select class="form-control w-auto" id="queue-clear-scope" aria-label="清空队列的范围"
+                title="选择要清空的范围：待处理行的原图只在服务器临时目录里；失败项的原图可能已上传到存储（删除记录后该文件会成为孤立对象，需自行清理）">
+            <option value="pending">待处理（<?= number_format($stats['pending']) ?>）</option>
+            <option value="failed">失败项（<?= number_format($stats['failed']) ?>）</option>
+            <option value="all">待处理 + 失败项</option>
+        </select>
+        <button class="btn btn-danger btn-sm" id="queue-clear" <?= ($stats['pending'] + $stats['failed']) === 0 ? 'disabled' : '' ?>><?= icon('trash', 16) ?> 清空队列</button>
     </div>
 </div>
 

@@ -64,8 +64,27 @@ class SettingController extends Controller
         ],
         'media' => [
             'label' => '图片与存储',
-            'desc' => '图片处理、缩略图与存储优化设置（后续版本提供）；CDN 加速请到「存储管理」配置',
+            'desc' => '图片处理与缩略图设置；对象存储 / CDN 请到「存储管理」配置',
             'fields' => [
+                'thumbs_enabled' => [
+                    'type' => 'toggle', 'label' => '生成缩略图', 'default' => '1', 'rules' => ['in:0,1'],
+                    'help' => '关闭后新上传图片只保留原图（不生成 320/640/1280 三档 WebP），后台与前台均直接展示原图；'
+                        . '重新开启后可用「图片处理」页的「补全历史缩略图」为存量图补齐',
+                ],
+                'thumb_quality' => [
+                    'type' => 'number', 'label' => '缩略图质量', 'default' => '82', 'rules' => ['numeric' => true, 'min' => 40, 'max' => 100],
+                    'help' => 'WebP 编码质量 40-100；越高越清晰、体积越大（默认 82）',
+                ],
+                'thumb_max_pixels' => [
+                    'type' => 'number', 'label' => '缩略图像素上限（万像素，0=自动）', 'default' => '0', 'rules' => ['numeric' => true, 'min' => 0, 'max' => 500],
+                    'help' => '超过该像素数的原图跳过缩略图生成（仅存原图，避免服务器内存耗尽）；'
+                        . '0 = 按当前可用内存自动判断。例：填 80 表示 8000 万像素以内才生成',
+                ],
+                'upload_max_mb' => [
+                    'type' => 'number', 'label' => '单图大小上限（MB，0=不限制）', 'default' => '0', 'rules' => ['numeric' => true, 'min' => 0, 'max' => 200],
+                    'help' => '应用层校验，超限直接拒绝并提示；0 = 只受 PHP 的 upload_max_filesize 限制。'
+                        . '若填的值大于 PHP 配置则不会生效（上传会被 PHP 提前截断）',
+                ],
             ],
         ],
         'maintenance' => [

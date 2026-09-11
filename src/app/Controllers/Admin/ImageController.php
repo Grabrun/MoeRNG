@@ -157,6 +157,36 @@ class ImageController extends Controller
      *   reason: ok | too-large | undecodable | gd-unavailable
      *   readable=true 且 thumbs 为空 → 源图本身小于所有档位（合法空操作）。
      */
+    // ── v1.4.0-beta.2: 系统设置「图片与存储」分组读取（单一来源）────────────
+    // 设置可能从未保存过（Config 里没有该键）→ 一律带默认值兜底。
+
+    /** 是否生成缩略图（总开关，默认开）。 */
+    private static function thumbsEnabled(): bool
+    {
+        return (string) Config::get('settings.thumbs_enabled', '1') !== '0';
+    }
+
+    /** 缩略图 WebP 编码质量（40-100，默认 82）。 */
+    private static function thumbQuality(): int
+    {
+        $q = (int) Config::get('settings.thumb_quality', '82');
+        return max(40, min(100, $q > 0 ? $q : 82));
+    }
+
+    /** 缩略图像素上限（像素数；0 = 不设上限，仅按可用内存判断）。 */
+    private static function thumbMaxPixels(): int
+    {
+        $wan = (int) Config::get('settings.thumb_max_pixels', '0');   // 单位：万像素
+        return $wan > 0 ? $wan * 10000 : 0;
+    }
+
+    /** 单图大小上限（字节；0 = 不限制，只受 PHP 配置约束）。 */
+    private static function uploadMaxBytes(): int
+    {
+        $mb = (int) Config::get('settings.upload_max_mb', '0');
+        return $mb > 0 ? $mb * 1048576 : 0;
+    }
+
     /** 解析 memory_limit（含 -1 = 无限制）为字节数。 */
     private static function memoryLimitBytes(): int
     {
@@ -199,6 +229,14 @@ class ImageController extends Controller
         if ($w <= 0 || $h <= 0) {
             return '图像尺寸无效（' . $w . '×' . $h . '）';
         }
+
+        // v1.4.0-beta.2: 系统设置里可显式设一个像素上限（0 = 不设，仅按内存判断）
+        $pixels = $w * $h;
+        $cap = self::thumbMaxPixels();
+        if ($cap > 0 && $pixels > $cap) {
+            return sprintf('图像超出设置上限（%d×%d = %.1f 万像素，上限 %.0f 万像素）', $w, $h, $pixels / 10000, $cap / 10000);
+        }
+
         $need = (int) ((float) $w * $h * 4 * self::DECODE_MEMORY_FACTOR) + self::DECODE_MEMORY_HEADROOM;
         $limit = self::memoryLimitBytes();
         if ($limit === PHP_INT_MAX) {
@@ -219,11 +257,17 @@ class ImageController extends Controller
 
     private function makeThumbnails(string $srcFile, string $mime, string $path): array
     {
+        // v1.4.0-beta.2: 系统设置「图片与存储」的总开关 —— 关闭时完全不生成缩略图
+        // （只存原图）。调用方据此把 thumbs 留空，重新开启后仍可被「补全缩略图」收录。
+        if (!self::thumbsEnabled()) {
+            return ['readable' => false, 'thumbs' => [], 'reason' => 'disabled'];
+        }
+
         if (!function_exists('imagecreatetruecolor') || !function_exists('imagewebp')) {
             return ['readable' => false, 'thumbs' => [], 'reason' => 'gd-unavailable'];
         }
 
-        // —— 解码前预检：内存放不下就不解码（避免不可捕获的 OOM 致命错误）——
+        // —— 解码前预检：内存放不下（或超过设置上限）就不解码（避免不可捕获的 OOM）——
         $tooBig = $this->decodeWouldExceedMemory($srcFile);
         if ($tooBig !== null) {
             error_log('[MoeRNG] 跳过缩略图生成：' . $tooBig . ' — 路径 ' . $path . '（原图已入库，仅无缩略图）');
@@ -238,6 +282,7 @@ class ImageController extends Controller
         $w = imagesx($src);
         $h = imagesy($src);
         $maxEdge = max($w, $h);
+        $quality = self::thumbQuality();   // v1.4.0-beta.2: 来自系统设置（默认 82）
         $out = [];
 
         foreach (\App\Models\Image::THUMB_SIZES as $size => $target) {
@@ -257,7 +302,7 @@ class ImageController extends Controller
             imagecopyresampled($dst, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
 
             $tmp = tempnam(sys_get_temp_dir(), 'moerng-thumb-' . $size . '-');
-            $ok = $tmp !== false && imagewebp($dst, $tmp, 82);
+            $ok = $tmp !== false && imagewebp($dst, $tmp, $quality);
             imagedestroy($dst);
             if (!$ok) {
                 if ($tmp !== false) @unlink($tmp);
@@ -509,10 +554,14 @@ class ImageController extends Controller
                     $thumbPath = $thumbKeys['md'] ?? null;
 
                     // —— 记录置 done（thumbs 恒非空 → 回填队列不会重复选中该行）——
+                    // v1.4.0-beta.2: 例外 —— 当「生成缩略图」总开关关闭时**故意留空**，
+                    // 使这些行仍属于"缺少缩略图"集合，重新开启后可用「补全历史缩略图」
+                    // 一键补齐（否则会被 {"ok":1} 标记永久排除在补全之外）。
+                    $thumbsValue = $genReason === 'disabled' ? '' : \App\Models\Image::encodeThumbs($thumbKeys);
                     $upd = $pdo->prepare(
                         "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `thumbs` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ?"
                     );
-                    $upd->execute([$url, $thumbPath, \App\Models\Image::encodeThumbs($thumbKeys), $id]);
+                    $upd->execute([$url, $thumbPath, $thumbsValue, $id]);
 
                     // —— 成功后删除临时原图 ——
                     @unlink($incomingFile);
@@ -595,6 +644,13 @@ class ImageController extends Controller
         // 环境守卫：无 GD/webp 时直接返回错误（避免逐张失败与前端空转）
         if (!function_exists('imagecreatetruecolor') || !function_exists('imagewebp')) {
             $this->json(['success' => false, 'error' => 'PHP GD 或 WebP 支持不可用，无法生成缩略图（请安装/启用 gd 扩展的 webp 支持）'], 500);
+            return;
+        }
+
+        // v1.4.0-beta.2: 总开关关闭时拒绝补全 —— 否则会把所有行标记为"已处理"，
+        // 重新开启后需要人工重置才能再补，得不偿失。
+        if (!self::thumbsEnabled()) {
+            $this->json(['success' => false, 'error' => '缩略图生成已在「系统设置 → 图片与存储」中关闭，请先开启后再补全'], 400);
             return;
         }
 
@@ -856,6 +912,93 @@ class ImageController extends Controller
     }
 
     /**
+     * v1.4.0-beta.2 增强: POST /admin/images/queue-clear —— 清空处理队列。
+     *
+     * scope：pending（仅待处理，默认）| failed（仅失败项）| all（两者）
+     *
+     * 语义是**删除数据库记录**（不是标记状态）。待处理行的原图只存在于服务器
+     * 临时目录（storage/incoming），删除记录后一并清理；**失败行要特别注意**：
+     * 原图在失败前**可能已经上传到最终存储**（上传失败只可能发生在缩略图阶段），
+     * 删除记录会让那份文件成为存储侧的孤立对象，需操作员自行清理 —— 响应里以
+     * orphan_risk 如实报告，前端确认文案也会提示。
+     */
+    public function queueClear(Request $request): void
+    {
+        $this->validateCsrf();
+        $scope = (string) $request->input('scope', 'pending');
+        if (!in_array($scope, ['pending', 'failed', 'all'], true)) {
+            $this->json(['success' => false, 'error' => '无效的清理范围'], 400);
+            return;
+        }
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        $cond = match ($scope) {
+            'pending' => "`process_status` = 'pending'",
+            'failed'  => "`process_status` = 'failed'",
+            default   => "`process_status` IN ('pending','failed')",
+        };
+
+        $rows = $pdo->query(
+            "SELECT `id`, `path`, `process_status` FROM `images` WHERE {$cond}"
+        )->fetchAll(\PDO::FETCH_ASSOC);
+        if ($rows === []) {
+            $this->json(['success' => true, 'scope' => $scope, 'deleted' => 0, 'temp_removed' => 0, 'orphan_risk' => 0]);
+            return;
+        }
+
+        $ids = array_map(static fn($r) => (int) $r['id'], $rows);
+        try {
+            $pdo->beginTransaction();
+            $st = $pdo->prepare(
+                "DELETE FROM `images` WHERE `id` IN (" . implode(',', array_fill(0, count($ids), '?')) . ")"
+            );
+            $st->execute($ids);
+            $deleted = $st->rowCount();
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $this->json(['success' => false, 'error' => '删除失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        // 清理临时原图（本地 incoming 目录）。失败忽略：文件可能已被前次运行清掉，
+        // 或对象存储场景下本就不存在于本地。
+        $incomingDir = self::incomingDir();
+        $tempRemoved = 0;
+        foreach ($rows as $r) {
+            $file = $incomingDir . '/' . ltrim((string) $r['path'], '/');
+            if (is_file($file)) {
+                if (@unlink($file)) {
+                    $tempRemoved++;
+                }
+                @rmdir(dirname($file));   // 顺手清空的日期目录
+            }
+        }
+
+        $orphanRisk = 0;
+        foreach ($rows as $r) {
+            if ((string) $r['process_status'] === 'failed') {
+                $orphanRisk++;   // 失败行的原图可能已进最终存储 → 删除记录会留下孤立文件
+            }
+        }
+
+        $this->json([
+            'success' => true,
+            'scope' => $scope,
+            'deleted' => $deleted,
+            'temp_removed' => $tempRemoved,
+            'orphan_risk' => $orphanRisk,
+        ]);
+    }
+
+    /**
      * v1.3.2 迭代: 历史图片哈希回填 —— Web 分批端点（管理员，POST + CSRF）。
      *
      * 每次 POST 处理一小批（默认 5 张）缺哈希的图片：定位其存储实例、把字节
@@ -1034,6 +1177,18 @@ class ImageController extends Controller
                 continue;
             }
 
+            // v1.4.0-beta.2: 系统设置「单图大小上限」应用层校验（0 = 不限制，只受 PHP 约束）
+            $maxBytes = self::uploadMaxBytes();
+            if ($maxBytes > 0 && (int) $fileSize > $maxBytes) {
+                $errors[] = sprintf(
+                    '%s: 超过单图大小上限（%.1f MB > %d MB），请在「系统设置 → 图片与存储」调整',
+                    $originalName,
+                    (int) $fileSize / 1048576,
+                    intdiv($maxBytes, 1048576)
+                );
+                continue;
+            }
+
             // Validate MIME
             $finfo = finfo_open(FILEINFO_MIME_TYPE);
             $detectedMime = finfo_file($finfo, $tmpName);
@@ -1186,7 +1341,12 @@ class ImageController extends Controller
             Session::flash('success', $msg);
         }
         if (!empty($errors)) {
-            Session::flash('error', implode('<br>', $errors));
+            // v1.4.0-beta.2 修复（XSS）: flash 在 layout 里是**原样输出 HTML**（为支持
+            // <br>），而错误信息里嵌了原始文件名 → 形如 `<img src=x onerror=…>.png`
+            // 的文件名会被当作 HTML 执行（管理员会话内的注入）。这里在拼装 HTML 时
+            // 逐条转义（implode 的 <br> 在转义之后加入，不受影响）；JSON 路径保持原文
+            //（前端用 textContent 渲染，无需转义）。
+            Session::flash('error', implode('<br>', array_map('h', $errors)));
         }
 
         $this->redirect('/admin/images');

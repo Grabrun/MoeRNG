@@ -1613,6 +1613,10 @@ function initQueuePage() {
     const startBtn = document.getElementById('queue-start');
     const requeueBtn = document.getElementById('queue-requeue');
     if (!startBtn && !requeueBtn) return;
+    // v1.4.0-beta.2: 清空队列按钮（声明提前到作用域顶部，供 refreshButtons 引用，
+    // 避免 const 的 TDZ 在极端时序下抛错）
+    const clearBtn = document.getElementById('queue-clear');
+    const clearScope = document.getElementById('queue-clear-scope');
 
     const box = document.getElementById('queue-progress');
     const fill = document.getElementById('queue-fill');
@@ -1679,7 +1683,13 @@ function initQueuePage() {
         } finally {
             uploading = false;
             if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+            // v1.4.0-beta.2 修复: 失败/异常后必须重新取一次快照 —— 否则统计停在处理前
+            // 的旧值（或为空），按钮按旧值判定会呈现「点一次就disabled 到底」。取完按
+            // 真实状态刷新按钮；队列仍有积压则继续轮询。
+            await refreshStats();
             refreshButtons();
+            const sAfter = last.stats;
+            if (sAfter && (Number(sAfter.pending) > 0 || Number(sAfter.processing) > 0)) startPolling();
         }
     }
 
@@ -1702,6 +1712,8 @@ function initQueuePage() {
             uploading = false;
             if (thumbBtn) thumbBtn.disabled = false;
             if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+            // v1.4.0-beta.2: 同上 —— 重新取快照后按真实状态刷新按钮
+            await refreshStats();
             refreshButtons();
         }
     });
@@ -1776,10 +1788,20 @@ function initQueuePage() {
     // 按当前统计同步三个按钮的可用性
     function refreshButtons() {
         const s = last.stats;
-        if (!s) return;
+        if (!s) {
+            // v1.4.0-beta.2 修复: 统计未知时（首轮请求就失败 / 尚未取到快照）此前直接
+            // return → 按钮保持处理开始时的 disabled，表现为「点一次就再也点不动」。
+            // 现在回落到"无任务即恢复可点"，绝不把按钮永久锁死。
+            if (startBtn) startBtn.disabled = uploading;
+            if (requeueBtn) requeueBtn.disabled = uploading;
+            if (thumbBtn) thumbBtn.disabled = uploading;
+            if (clearBtn) clearBtn.disabled = uploading;
+            return;
+        }
         if (startBtn) startBtn.disabled = uploading || Number(s.pending) === 0;
         if (requeueBtn) requeueBtn.disabled = uploading || Number(s.failed) === 0;
         if (thumbBtn) thumbBtn.disabled = uploading || Number(s.no_thumb) === 0;
+        if (clearBtn) clearBtn.disabled = uploading || (Number(s.pending) + Number(s.failed) === 0);
     }
 
     function startPolling() {
@@ -1828,6 +1850,54 @@ function initQueuePage() {
         }
         uploading = false;
         runQueue('重试处理中…');
+    });
+
+    // 清空队列（v1.4.0-beta.2）：两段式内联确认（首次点击进入"武装态"，
+    // 5 秒内再次点击才真正执行）—— 不用 window.confirm，浏览器可能静默吞掉它。
+    let clearArmed = false, clearTimer = null;
+    clearBtn?.addEventListener('click', async function() {
+        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
+        const scope = clearScope ? clearScope.value : 'pending';
+        const scopeText = scope === 'failed' ? '失败项' : (scope === 'all' ? '待处理+失败项' : '待处理');
+        if (!clearArmed) {
+            clearArmed = true;
+            clearBtn.textContent = '再次点击确认清空' + scopeText;
+            clearTimer = setTimeout(function() {
+                clearArmed = false;
+                clearBtn.textContent = '清空队列';
+            }, 5000);
+            return;
+        }
+        clearTimeout(clearTimer);
+        clearArmed = false;
+        clearBtn.textContent = '清空队列';
+
+        uploading = true;
+        clearBtn.disabled = true;
+        try {
+            const fd = new FormData();
+            fd.append('_csrf_token', getCsrfToken());
+            fd.append('scope', scope);
+            const r = await fetch('/admin/images/queue-clear', {
+                method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const j = await parseJsonResponse(r, '清空队列');
+            if (!j || !j.success) {
+                showToast('清空失败: ' + ((j && j.error) || '未知错误'), 'error', 6000);
+                return;
+            }
+            let msg = '已清空 ' + Number(j.deleted) + ' 条记录';
+            if (Number(j.temp_removed) > 0) msg += '，清理临时文件 ' + Number(j.temp_removed) + ' 个';
+            if (Number(j.orphan_risk) > 0) msg += '；其中 ' + Number(j.orphan_risk) + ' 张失败项的原图可能已在存储中，需自行清理';
+            showToast(msg, 'success', 9000);
+            setTimeout(() => window.location.reload(), 1800);
+        } catch (e) {
+            showToast('清空请求异常: ' + e.message, 'error', 8000);
+        } finally {
+            uploading = false;
+            await refreshStats();
+            refreshButtons();
+        }
     });
 
     // 初始化：先拉一次快照（填充失败面板/按钮状态），队列非空则开始轮询

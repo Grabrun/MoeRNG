@@ -50,6 +50,8 @@ $router->group('/admin', function ($router) {
     // v1.3.3-beta.2 增强: 队列实时统计（只读快照，供前端轮询）+ 单张失败重试
     $router->get('/images/queue-stats', [$images, 'queueStats']);
     $router->post('/images/requeue-one', [$images, 'requeueOne']);
+    // v1.4.0-beta.2 增强: 清空处理队列（按范围删除未完成记录 + 清理临时原图）
+    $router->post('/images/queue-clear', [$images, 'queueClear']);
     $router->post('/images/update', [$images, 'update']);
     $router->post('/images/delete', [$images, 'delete']);
     $router->post('/images/batch-delete', [$images, 'batchDelete']);
