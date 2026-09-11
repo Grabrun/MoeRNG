@@ -16,6 +16,28 @@ class ImageController extends Controller
 {
     private const PAGE = '/admin/images';
 
+    /**
+     * v1.3.3-beta.1: 重型端点（GD 解码 + 对象存储上传）的内存上限。
+     *
+     * 注意：**不要靠调大这个值来解决大图问题** —— PHP 致命错误（OOM）不可捕获，
+     * 一旦发生整批请求都会死掉。真正的防线是 decodeWouldExceedMemory() 的
+     * 解码前像素预检（超限则跳过缩略图，原图不受影响）。
+     */
+    private const HEAVY_MEMORY_LIMIT = '512M';
+
+    /** GD 解码内存系数：位图为 w×h×4 字节，libwebp/重采样还需额外缓冲。 */
+    private const DECODE_MEMORY_FACTOR = 1.25;
+
+    /** 解码额外余量（目标画布 sm/md/lg + 编码缓冲 + 基线开销）。 */
+    private const DECODE_MEMORY_HEADROOM = 33554432; // 32 MiB
+
+    /**
+     * 本请求正在处理的行 id —— jsonFatalGuard 的 shutdown 钩子用它把"因致命错误
+     * 而中断"的行标记为 failed，避免它们留在 processing 被下轮复位后无限重试
+     * （线上曾表现为整个队列永久卡住、进度数字不动）。
+     */
+    private static array $inflightIds = [];
+
     private array $allowedMimeTypes = [
         'image/jpeg', 'image/png', 'image/gif', 'image/webp',
         'image/bmp',
@@ -130,19 +152,87 @@ class ImageController extends Controller
      *
      * 供新上传队列 Worker 与「补全历史缩略图」共用（单一实现，无重复 GD 逻辑）。
      *
-     * @return array{readable: bool, thumbs: array<string, array{tmp: string, key: string}>}
-     *   readable=false → 源图无法解码（或 GD/WebP 不可用），调用方按降级处理；
+     * @return array{readable: bool, thumbs: array<string, array{tmp: string, key: string}>, reason: string}
+     *   readable=false → 源图无法解码 / 过大（内存预检拒绝）/ GD 不可用，调用方按降级处理；
+     *   reason: ok | too-large | undecodable | gd-unavailable
      *   readable=true 且 thumbs 为空 → 源图本身小于所有档位（合法空操作）。
      */
+    /** 解析 memory_limit（含 -1 = 无限制）为字节数。 */
+    private static function memoryLimitBytes(): int
+    {
+        $raw = trim((string) ini_get('memory_limit'));
+        if ($raw === '' || $raw === '-1') {
+            return PHP_INT_MAX;
+        }
+        $unit = strtolower(substr($raw, -1));
+        $value = (int) $raw;
+        return match ($unit) {
+            'g' => $value * 1024 * 1024 * 1024,
+            'm' => $value * 1024 * 1024,
+            'k' => $value * 1024,
+            default => $value,
+        };
+    }
+
+    /**
+     * v1.3.3-beta.1 修复（生产 P0）: 解码前的**像素规模预检**。
+     *
+     * 背景：GD 解码需在内存中展开整幅位图（约 w×h×4 字节，libwebp 还需额外缓冲）。
+     * 一张超大 WebP/JPEG 会直接打爆 memory_limit → PHP 致命错误（**不可捕获**）→
+     * 整批请求死掉、DB 不更新、该行留在 processing 被下轮复位重试 →
+     * 队列永久卡住、进度数字不动（线上现象根因）。
+     *
+     * getimagesize() 只读文件头、成本极低，因此先算清"解码这张图要多少内存"，
+     * 放不下就**跳过缩略图生成**（readable=false 降级）——原图此时已上传入库，
+     * 不受影响，只是该行没有缩略图（会计入 no_thumb 统计并写 error_log）。
+     *
+     * @return ?string null = 可以解码；字符串 = 不能解码的原因
+     */
+    private function decodeWouldExceedMemory(string $file): ?string
+    {
+        $info = function_exists('getimagesize') ? @getimagesize($file) : false;
+        if (!is_array($info) || empty($info[0]) || empty($info[1])) {
+            return '无法读取图像尺寸（文件损坏或格式不受支持）';
+        }
+        $w = (int) $info[0];
+        $h = (int) $info[1];
+        if ($w <= 0 || $h <= 0) {
+            return '图像尺寸无效（' . $w . '×' . $h . '）';
+        }
+        $need = (int) ((float) $w * $h * 4 * self::DECODE_MEMORY_FACTOR) + self::DECODE_MEMORY_HEADROOM;
+        $limit = self::memoryLimitBytes();
+        if ($limit === PHP_INT_MAX) {
+            return null;   // 无内存限制 → 交给解码器
+        }
+        $available = $limit - memory_get_usage(true) - 16777216;   // 再留 16 MiB 基线余量
+        if ($need > $available) {
+            return sprintf(
+                '图像过大（%d×%d，解码约需 %.0f MiB，当前可用 %.0f MiB）',
+                $w,
+                $h,
+                $need / 1048576,
+                max(0, $available) / 1048576
+            );
+        }
+        return null;
+    }
+
     private function makeThumbnails(string $srcFile, string $mime, string $path): array
     {
         if (!function_exists('imagecreatetruecolor') || !function_exists('imagewebp')) {
-            return ['readable' => false, 'thumbs' => []];
+            return ['readable' => false, 'thumbs' => [], 'reason' => 'gd-unavailable'];
+        }
+
+        // —— 解码前预检：内存放不下就不解码（避免不可捕获的 OOM 致命错误）——
+        $tooBig = $this->decodeWouldExceedMemory($srcFile);
+        if ($tooBig !== null) {
+            error_log('[MoeRNG] 跳过缩略图生成：' . $tooBig . ' — 路径 ' . $path . '（原图已入库，仅无缩略图）');
+            return ['readable' => false, 'thumbs' => [], 'reason' => 'too-large'];
         }
 
         $src = $this->decodeImage($srcFile, $mime);
         if ($src === null) {
-            return ['readable' => false, 'thumbs' => []];
+            return ['readable' => false, 'thumbs' => [], 'reason' => 'undecodable'];
         }
 
         $w = imagesx($src);
@@ -180,7 +270,7 @@ class ImageController extends Controller
         }
 
         imagedestroy($src);
-        return ['readable' => true, 'thumbs' => $out];
+        return ['readable' => true, 'thumbs' => $out, 'reason' => 'ok'];
     }
 
     /** 解码图片为 GD 资源（mime 优先，失败按 getimagesize 兜底嗅探）。 */
@@ -244,12 +334,15 @@ class ImageController extends Controller
      * 背景：PHP 致命错误（内存耗尽 / 执行超时 / 未捕获 Error）会让响应体**为空**，
      * 前端只能报 "Unexpected end of JSON input"，完全看不到真实原因。
      *
-     * 同时提升资源上限：单张 4000×6000 的 JPEG 解码就需约 96MB（w×h×4 字节），
-     * 默认 memory_limit=128M 下批量处理必然 OOM。
+     * 同时提升资源上限（见 HEAVY_MEMORY_LIMIT 常量）：单张 4000×6000 的 JPEG 解码
+     * 就需约 96MB（w×h×4 字节），默认 memory_limit=128M 下批量处理必然 OOM。
+     * 但**调大上限不是解法** —— 真正的防线是 decodeWouldExceedMemory() 的预检；
+     * 本保险的作用是：万一仍发生致命错误，①返回可读 JSON，②把中断的行标记为
+     * failed 而不是让队列永久卡住。
      */
     private function jsonFatalGuard(string $label): void
     {
-        @ini_set('memory_limit', '512M');
+        @ini_set('memory_limit', self::HEAVY_MEMORY_LIMIT);
         @set_time_limit(120);
 
         register_shutdown_function(static function () use ($label): void {
@@ -258,6 +351,32 @@ class ImageController extends Controller
             if (!$e || !in_array($e['type'], $fatalTypes, true)) {
                 return; // 正常结束（或仅有 warning/notice）→ 不干预
             }
+            $detail = $e['message'] . ' @ ' . basename((string) $e['file']) . ':' . $e['line'];
+
+            // v1.3.3-beta.1: 把"因致命错误而中断"的行标记为 failed。
+            // 否则它们会留在 processing → 下轮开头被复位为 pending → 再次触发同一个
+            // 致命错误 → **队列永久卡住、进度数字不动**（线上现象）。标记为 failed 后
+            // 队列可继续推进（不再卡死），这些行由操作员在「重新处理失败项」显式重试。
+            // 只更新仍为 processing 的行 —— 已完成的行不受影响。
+            $marked = 0;
+            if (self::$inflightIds !== []) {
+                try {
+                    $pdo = \App\Core\Database::getInstance();
+                    $ids = array_map('intval', self::$inflightIds);
+                    $pdo->prepare(
+                        "UPDATE `images` SET `process_status` = 'failed', `process_error` = ?"
+                        . " WHERE `process_status` = 'processing' AND `id` IN ("
+                        . implode(',', array_fill(0, count($ids), '?')) . ")"
+                    )->execute(array_merge(
+                        [mb_substr('处理中断（' . $label . ' 致命错误）: ' . $detail, 0, 480)],
+                        $ids
+                    ));
+                    $marked = count($ids);
+                } catch (\Throwable) {
+                    // 数据库不可用等情况：忽略（下次运行开头仍会复位 processing 行）
+                }
+            }
+
             if (!headers_sent()) {
                 http_response_code(500);
                 header('Content-Type: application/json; charset=utf-8');
@@ -265,8 +384,8 @@ class ImageController extends Controller
             echo json_encode([
                 'success' => false,
                 'fatal'   => true,
-                'error'   => 'PHP 致命错误（' . $label . '）: ' . $e['message']
-                             . ' @ ' . basename((string) $e['file']) . ':' . $e['line'],
+                'error'   => 'PHP 致命错误（' . $label . '）: ' . $detail,
+                'marked_failed' => $marked,
             ], JSON_INVALID_UTF8_SUBSTITUTE);
         });
     }
@@ -319,6 +438,7 @@ class ImageController extends Controller
 
         $done = 0;
         $failed = 0;
+        $skipped = 0;   // v1.3.3-beta.1: 原图过大而跳过缩略图生成的数量（原图仍正常入库）
         $results = [];
 
         if ($pendingBefore > 0) {
@@ -335,6 +455,9 @@ class ImageController extends Controller
             if ($rows !== []) {
                 $ids = array_map(static fn($r) => (int) $r['id'], $rows);
                 $pdo->exec("UPDATE `images` SET `process_status` = 'processing' WHERE `id` IN (" . implode(',', $ids) . ")");
+                // 交给 jsonFatalGuard 的 shutdown 钩子：万一本批中途致命错误，
+                // 它会把这几行标记为 failed（否则队列会永久卡在同一批上）。
+                self::$inflightIds = $ids;
             }
 
             foreach ($rows as $row) {
@@ -373,6 +496,13 @@ class ImageController extends Controller
                     // —— 多尺寸缩略图（一次解码生成 sm/md/lg；GD 不可用或源图
                     //    不可解码时降级为无缩略图，不阻断原图入库）——
                     $gen = $this->makeThumbnails($incomingFile, $mime, $path);
+                    $genReason = (string) ($gen['reason'] ?? '');
+                    if ($genReason === 'too-large') {
+                        // v1.3.3-beta.1: 原图过大 → 内存预检拦下，跳过缩略图（原图已入库）。
+                        // 计入 skipped，前端据此提示操作员；该行仍按 done 收尾（thumbs='{"ok":1}'），
+                        // 因此不会反复重试、也不会卡住队列。
+                        $skipped++;
+                    }
 
                     // —— 逐档上传缩略图（单档失败不影响其它档）——
                     $thumbKeys = $this->uploadThumbs($storage, $gen['thumbs']);
@@ -390,7 +520,11 @@ class ImageController extends Controller
                     @rmdir(dirname($incomingFile));
 
                     $done++;
-                    $results[] = ['id' => $id, 'ok' => true];
+                    $entry = ['id' => $id, 'ok' => true];
+                    if ($genReason === 'too-large') {
+                        $entry['note'] = '原图过大，已跳过缩略图（原图正常入库）';
+                    }
+                    $results[] = $entry;
                 } catch (\Throwable $e) {
                     $this->discardThumbs($gen); // 防临时缩略图泄漏
                     $failed++;
@@ -435,6 +569,7 @@ class ImageController extends Controller
             'failed_left' => $failedLeft,
             'done' => $done,
             'failed' => $failed,
+            'skipped' => $skipped,
             'stats' => $stats,
             'results' => $results,
         ]);
@@ -533,8 +668,15 @@ class ImageController extends Controller
                     )->execute([$thumbKeys['md'] ?? null, \App\Models\Image::encodeThumbs($thumbKeys), $id]);
 
                     if ($thumbKeys === []) {
-                        // 源图小于所有档位（合法空操作）或不可解码 —— 已打 ok 标记，不会重选
-                        $results[] = ['id' => $id, 'ok' => true, 'note' => '源图小于所有档位或不可解码，已标记跳过'];
+                        // 源图小于所有档位（合法空操作）/ 过大（内存预检）/ 不可解码
+                        // —— 均已打 ok 标记写入 thumbs，因此不会被重选（幂等）
+                        $note = match ((string) ($gen['reason'] ?? '')) {
+                            'too-large'      => '原图过大，已跳过缩略图（原图不受影响）',
+                            'undecodable'    => '源图不可解码，已标记跳过',
+                            'gd-unavailable' => 'GD/WebP 不可用，已标记跳过',
+                            default          => '源图小于所有档位，已标记跳过',
+                        };
+                        $results[] = ['id' => $id, 'ok' => true, 'note' => $note];
                         $done++;
                         continue;
                     }

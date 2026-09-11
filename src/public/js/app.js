@@ -999,7 +999,10 @@ function initDropZone() {
                     if (qbox) { qbox.classList.remove('hidden'); setUI(0, '图片处理中…', ''); }
                     try {
                         const qres = await runProcessQueue(setUI);
-                        showToast('图片处理完成：已入库 ' + qres.done + ' 张' + (qres.failed ? '，失败 ' + qres.failed + ' 张（可在「图片处理」页重试）' : ''), qres.failed ? 'error' : 'success', 7000);
+                        showToast('图片处理完成：已入库 ' + qres.done + ' 张'
+                            + (qres.failed ? '，失败 ' + qres.failed + ' 张（可在「图片处理」页重试）' : '')
+                            + (qres.skipped ? '，' + qres.skipped + ' 张过大仅存原图（无缩略图）' : ''),
+                            qres.failed ? 'error' : 'success', 7000);
                     } catch (qe) {
                         showToast('队列处理异常：' + qe.message + '（可到「图片处理」页重试）', 'error', 9000);
                     } finally {
@@ -1362,7 +1365,7 @@ async function postJson(url, fd, label) {
 // 状态卡片（phase: start | inflight | batch | done）。
 async function runProcessQueue(setUI, onTick) {
     const BATCH = 3;
-    let totalDone = 0, totalFailed = 0;
+    let totalDone = 0, totalFailed = 0, totalSkipped = 0;
     let scopeTotal = null;   // 本轮范围（开始时的待处理数），progress 以它为分母
     let lastStats = null;
 
@@ -1387,6 +1390,9 @@ async function runProcessQueue(setUI, onTick) {
 
         const nDone = Number(j.done) || 0;
         const nFailed = Number(j.failed) || 0;
+        // v1.3.3-beta.1: 服务端因"原图过大（内存预检拦下）"跳过缩略图的数量 ——
+        // 这些行按 done 收尾（原图正常入库），但需要让操作员知道没有缩略图。
+        const nSkipped = Number(j.skipped) || 0;
         const remaining = Number(j.remaining) || 0;
 
         // v1.3.3-beta.1 修复: 进度分母改为「本轮范围」。
@@ -1399,10 +1405,13 @@ async function runProcessQueue(setUI, onTick) {
 
         totalDone += nDone;
         totalFailed += nFailed;
+        totalSkipped += nSkipped;
 
         setUI(scopeTotal > 0 ? processed / scopeTotal : 1,
             '处理中… ' + processed + '/' + scopeTotal,
-            '已完成 ' + totalDone + ' 张' + (totalFailed ? '，失败 ' + totalFailed + ' 张' : ''));
+            '已完成 ' + totalDone + ' 张'
+                + (totalFailed ? '，失败 ' + totalFailed + ' 张' : '')
+                + (totalSkipped ? '，' + totalSkipped + ' 张过大仅存原图（无缩略图）' : ''));
 
         lastStats = j.stats || null;
         if (onTick) onTick({ phase: 'batch', stats: lastStats });
@@ -1416,7 +1425,7 @@ async function runProcessQueue(setUI, onTick) {
     }
 
     if (onTick) onTick({ phase: 'done', stats: lastStats });
-    return { done: totalDone, failed: totalFailed, total: scopeTotal || 0 };
+    return { done: totalDone, failed: totalFailed, total: scopeTotal || 0, skipped: totalSkipped };
 }
 
 async function runBackfillThumbs(setUI) {
@@ -1653,7 +1662,10 @@ function initQueuePage() {
         if (box) { box.classList.remove('hidden'); setUI(0, label || '处理中…', ''); }
         try {
             const res = await runProcessQueue(setUI, onTick);
-            showToast('处理完成：成功 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 6000);
+            showToast('处理完成：成功 ' + res.done + ' 张'
+                + (res.failed ? '，失败 ' + res.failed + ' 张' : '')
+                + (res.skipped ? '，' + res.skipped + ' 张过大仅存原图（无缩略图）' : ''),
+                res.failed ? 'error' : 'success', 6000);
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {
             showToast('处理异常: ' + e.message, 'error', 8000);
