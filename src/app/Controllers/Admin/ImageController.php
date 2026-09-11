@@ -776,6 +776,86 @@ class ImageController extends Controller
     }
 
     /**
+     * v1.3.3-beta.2 增强: GET /admin/images/queue-stats —— 队列实时统计快照（只读）。
+     *
+     * 供队列页轮询（pending/processing > 0 时每 5 秒刷新一次）与「失败明细」面板。
+     * 轻量端点：不挑选、不处理任何行，无副作用。
+     *
+     * 返回：stats（与 processQueue 的 stats 同形状）+ failed_rows（最近 20 条失败明细）
+     */
+    public function queueStats(Request $request): void
+    {
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        $count = static function (string $where) use ($pdo): int {
+            return (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE {$where}")->fetchColumn();
+        };
+        $stats = [
+            'pending'    => $count("process_status = 'pending'"),
+            'processing' => $count("process_status = 'processing'"),
+            'done'       => $count("process_status = 'done'"),
+            'failed'     => $count("process_status = 'failed'"),
+            'no_thumb'   => $count("process_status = 'done' AND (thumbs IS NULL OR thumbs = '')"),
+            'total'      => (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn(),
+        ];
+
+        // 失败明细（最近 20 条）：给「失败明细」面板逐张展示与重试用
+        $failedRows = [];
+        $st = $pdo->query(
+            "SELECT `id`, `path`, `process_error`, `created_at` FROM `images`"
+            . " WHERE `process_status` = 'failed' ORDER BY `id` DESC LIMIT 20"
+        );
+        foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+            $failedRows[] = [
+                'id'    => (int) $r['id'],
+                'path'  => (string) $r['path'],
+                'error' => (string) ($r['process_error'] ?? ''),
+                'at'    => (string) ($r['created_at'] ?? ''),
+            ];
+        }
+
+        $this->json(['success' => true, 'stats' => $stats, 'failed_rows' => $failedRows]);
+    }
+
+    /**
+     * v1.3.3-beta.2 增强: POST /admin/images/requeue-one —— 重试**单张**失败的图片。
+     *
+     * 与 requeueFailed（全部失败项）互补：失败明细面板里逐张操作。
+     * 安全边界：只允许把 failed 行重置回 pending —— done/processing 行打不回去，
+     * 防误触或恶意把已发布图片打回隐藏态。
+     */
+    public function requeueOne(Request $request): void
+    {
+        $this->validateCsrf();
+        $id = (int) $request->input('id', '0');
+        if ($id <= 0) {
+            $this->json(['success' => false, 'error' => '缺少有效的图片 id'], 400);
+            return;
+        }
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            return;
+        }
+        $st = $pdo->prepare(
+            "UPDATE `images` SET `process_status` = 'pending', `process_error` = NULL"
+            . " WHERE `id` = ? AND `process_status` = 'failed'"
+        );
+        $st->execute([$id]);
+        if ($st->rowCount() === 0) {
+            $this->json(['success' => false, 'error' => '该图片不是失败状态（可能已处理完成或不存在）'], 409);
+            return;
+        }
+        $this->json(['success' => true, 'requeued' => 1, 'id' => $id]);
+    }
+
+    /**
      * v1.3.2 迭代: 历史图片哈希回填 —— Web 分批端点（管理员，POST + CSRF）。
      *
      * 每次 POST 处理一小批（默认 5 张）缺哈希的图片：定位其存储实例、把字节

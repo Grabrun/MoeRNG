@@ -1679,6 +1679,7 @@ function initQueuePage() {
         } finally {
             uploading = false;
             if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+            refreshButtons();
         }
     }
 
@@ -1701,8 +1702,141 @@ function initQueuePage() {
             uploading = false;
             if (thumbBtn) thumbBtn.disabled = false;
             if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+            refreshButtons();
         }
     });
+
+    // ── v1.3.3-beta.2 增强: 失败明细面板 + 实时统计轮询 ────────────────
+    // 此前统计只在"本页发起处理"时更新；其它页面/上次中断遗留的处理进度完全
+    // 看不见。现在：页面加载拉一次快照；有待处理/处理中行时每 5 秒轮询一次。
+    const failedPanel = document.getElementById('failed-panel');
+    const failedList = document.getElementById('failed-list');
+    const failedRefresh = document.getElementById('failed-refresh');
+    let pollTimer = null;
+    let statsInFlight = false;
+
+    function renderFailed(rows) {
+        if (!failedPanel || !failedList) return;
+        rows = Array.isArray(rows) ? rows : [];
+        if (rows.length === 0) {
+            failedPanel.classList.add('hidden');
+            failedList.textContent = '';
+            return;
+        }
+        failedPanel.classList.remove('hidden');
+        failedList.textContent = '';
+        for (const row of rows) {
+            const item = document.createElement('div');
+            item.className = 'failed-row';
+            const info = document.createElement('div');
+            info.className = 'failed-info';
+            const p = document.createElement('div');
+            p.className = 'failed-path';
+            p.textContent = '#' + row.id + ' ' + (row.path || '');
+            const err = document.createElement('div');
+            err.className = 'failed-err';
+            err.textContent = (row.error || '未知错误') + (row.at ? '（' + row.at + '）' : '');
+            info.appendChild(p);
+            info.appendChild(err);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn';
+            btn.dataset.retryId = String(row.id);
+            btn.textContent = '重试';
+            item.appendChild(info);
+            item.appendChild(btn);
+            failedList.appendChild(item);
+        }
+    }
+
+    // 拉取队列统计快照（GET /admin/images/queue-stats，只读无副作用）
+    async function refreshStats() {
+        if (statsInFlight) return null;
+        statsInFlight = true;
+        try {
+            const r = await fetch('/admin/images/queue-stats', {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const j = await parseJsonResponse(r, '队列统计');
+            if (j && j.success) {
+                last.stats = j.stats || last.stats;
+                paint(last.stats);
+                renderFailed(j.failed_rows);
+            }
+            return j || null;
+        } catch (e) {
+            // 轮询类失败不打扰用户（保持卡片原值），仅留可观测痕迹
+            if (window.console) console.warn('queue-stats 刷新失败:', e && e.message ? e.message : e);
+            return null;
+        } finally {
+            statsInFlight = false;
+        }
+    }
+
+    // 按当前统计同步三个按钮的可用性
+    function refreshButtons() {
+        const s = last.stats;
+        if (!s) return;
+        if (startBtn) startBtn.disabled = uploading || Number(s.pending) === 0;
+        if (requeueBtn) requeueBtn.disabled = uploading || Number(s.failed) === 0;
+        if (thumbBtn) thumbBtn.disabled = uploading || Number(s.no_thumb) === 0;
+    }
+
+    function startPolling() {
+        if (pollTimer !== null) return;
+        pollTimer = setInterval(async function() {
+            if (uploading) return;   // 处理中由批次响应驱动，避免重复请求
+            const j = await refreshStats();
+            refreshButtons();
+            const s = j && j.stats;
+            // 队列清空（无 pending/processing）后停止轮询，回到静默状态
+            if (!s || (Number(s.pending) === 0 && Number(s.processing) === 0)) stopPolling();
+        }, 5000);
+    }
+    function stopPolling() {
+        if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    failedRefresh?.addEventListener('click', async function() {
+        await refreshStats();
+        refreshButtons();
+    });
+
+    // 单张重试：失败明细里的「重试」按钮（事件委托，行由 JS 动态创建）
+    failedList?.addEventListener('click', async function(ev) {
+        const btn = ev.target && ev.target.closest ? ev.target.closest('[data-retry-id]') : null;
+        if (!btn) return;
+        const id = btn.getAttribute('data-retry-id');
+        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
+        uploading = true;
+        btn.disabled = true;
+        try {
+            const fd = new FormData();
+            fd.append('_csrf_token', getCsrfToken());
+            fd.append('id', id);
+            const r = await fetch('/admin/images/requeue-one', {
+                method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const j = await parseJsonResponse(r, '单张重试');
+            if (!j || !j.success) { showToast('重试失败: ' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
+            showToast('已重新入队 #' + id + '，开始处理…', 'success', 4000);
+        } catch (e) {
+            showToast('重试请求异常: ' + e.message, 'error', 8000);
+            uploading = false;
+            btn.disabled = false;
+            return;
+        }
+        uploading = false;
+        runQueue('重试处理中…');
+    });
+
+    // 初始化：先拉一次快照（填充失败面板/按钮状态），队列非空则开始轮询
+    (async function() {
+        const j = await refreshStats();
+        refreshButtons();
+        const s = j && j.stats;
+        if (s && (Number(s.pending) > 0 || Number(s.processing) > 0)) startPolling();
+    })();
 
     requeueBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
@@ -1715,7 +1849,7 @@ function initQueuePage() {
             });
             const j = await parseJsonResponse(r);
             if (!j || !j.success) { showToast('重试失败: ' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
-            if (j.requeued === 0) { showToast('没有可重试的失败项（临时文件已丢失的项无法重试）', 'success', 5000); return; }
+            if (j.requeued === 0) { showToast('没有可重试的失败项', 'success', 5000); return; }
             showToast('已重新入队 ' + j.requeued + ' 张，开始处理…', 'success', 4000);
         } catch (e) {
             showToast('重试请求异常: ' + e.message, 'error', 8000);

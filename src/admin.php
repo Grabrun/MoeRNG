@@ -47,6 +47,9 @@ $router->group('/admin', function ($router) {
     $router->get('/images/queue', [$images, 'queue']);
     $router->post('/images/process-queue', [$images, 'processQueue']);
     $router->post('/images/requeue-failed', [$images, 'requeueFailed']);
+    // v1.3.3-beta.2 增强: 队列实时统计（只读快照，供前端轮询）+ 单张失败重试
+    $router->get('/images/queue-stats', [$images, 'queueStats']);
+    $router->post('/images/requeue-one', [$images, 'requeueOne']);
     $router->post('/images/update', [$images, 'update']);
     $router->post('/images/delete', [$images, 'delete']);
     $router->post('/images/batch-delete', [$images, 'batchDelete']);

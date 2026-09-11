@@ -47,6 +47,15 @@ admin_header('图片处理', 'page-queue');
 </div>
 <?php endif; ?>
 
+<!-- v1.3.3-beta.2 增强: 失败明细面板（JS 按队列统计动态填充；failed=0 时隐藏） -->
+<div class="card mb-3 hidden" id="failed-panel">
+    <div class="flex-between">
+        <h3 class="mb-0">失败明细</h3>
+        <button type="button" class="btn" id="failed-refresh">刷新</button>
+    </div>
+    <div id="failed-list" class="mt-2"></div>
+</div>
+
 <!-- 处理进度浮层（处理/重试时显示） -->
 <div id="queue-progress" class="hidden backfill-float">
     <div class="health-progress-text" id="queue-text">准备处理…</div>

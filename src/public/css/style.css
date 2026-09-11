@@ -1671,3 +1671,13 @@ body.modal-open { overflow: hidden; }
 
 /* ── v1.3.2-beta.2: 图片处理管理页 ── */
 .queue-steps { margin: 0; padding-left: 20px; line-height: 1.9; }
+
+/* ── v1.3.3-beta.2 增强: 队列页失败明细面板 ── */
+.failed-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 10px; margin-bottom: 6px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.failed-info { min-width: 0; }
+.failed-path { font-weight: 600; overflow-wrap: anywhere; }
+.failed-err { color: var(--danger); font-size: 0.85rem; overflow-wrap: anywhere; }
