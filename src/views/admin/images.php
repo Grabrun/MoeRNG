@@ -146,7 +146,8 @@
             </div>
             <div class="drop-zone" id="drop-zone"
                  data-post-max="<?= h(ini_get('post_max_size')) ?>"
-                 data-upload-max="<?= h(ini_get('upload_max_filesize')) ?>">
+                 data-upload-max="<?= h(ini_get('upload_max_filesize')) ?>"
+                 data-max-files="<?= h(ini_get('max_file_uploads')) ?>">
                 <div class="icon"><?= icon('upload', 40) ?></div>
                 <p>拖拽图片到此处或点击上传</p>
                 <p class="text-muted"><small>支持 JPG, PNG, GIF, WebP, BMP · 单文件 ≤ <?= h(ini_get('upload_max_filesize')) ?> · 单次请求 ≤ <?= h(ini_get('post_max_size')) ?></small></p>

@@ -921,11 +921,18 @@ function initDropZone() {
         var capacity = postMax > 0 ? Math.floor(postMax * 0.9) - 8192 : 0;
         if (capacity < 0) capacity = 0;
 
+        // v1.3.3-beta.1: PHP 的 max_file_uploads 超限会**静默丢弃**多余文件（不报错），
+        // 前端会误以为全部上传成功 —— 批次必须同时受"字节数"与"文件数"两重约束。
+        // 属性缺失或非法时按 PHP 默认值 20 兜底。
+        var maxFiles = parseInt(zone.dataset.maxFiles || '', 10);
+        if (!isFinite(maxFiles) || maxFiles <= 0) maxFiles = 20;
+
         var batches = [], current = [], currentBytes = 0, oversized = [];
         for (var fi = 0; fi < files.length; fi++) {
             var f = files[fi];
             if (capacity > 0 && f.size > capacity) { oversized.push(f); continue; }
-            if (capacity > 0 && current.length && currentBytes + f.size > capacity) {
+            if ((capacity > 0 && current.length && currentBytes + f.size > capacity)
+                || current.length >= maxFiles) {
                 batches.push(current); current = []; currentBytes = 0;
             }
             current.push(f); currentBytes += f.size;
