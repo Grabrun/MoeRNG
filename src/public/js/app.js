@@ -1814,25 +1814,27 @@ function initQueuePage() {
         runQueue('重试处理中…');
     });
 
-    // 清空队列（v1.4.0-beta.2）：两段式内联确认（首次点击进入"武装态"，
-    // 5 秒内再次点击才真正执行）—— 不用 window.confirm，浏览器可能静默吞掉它。
+    // 清空队列（v1.4.0-beta.2）：触发器在队列卡片右上角，展开为浮层；
+    // 确认按钮仍是两段式（首次点击进入"武装态"，5 秒内再次点击才真正执行）
+    // —— 不用 window.confirm，浏览器可能静默吞掉它。
+    const dangerBox = document.getElementById('queue-danger');
+    const clearLabel = clearBtn ? (clearBtn.textContent || '').trim() : '确认清空';
     let clearArmed = false, clearTimer = null;
     clearBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
         const scope = clearScope ? clearScope.value : 'pending';
-        const scopeText = scope === 'failed' ? '失败项' : (scope === 'all' ? '待处理+失败项' : '待处理');
         if (!clearArmed) {
             clearArmed = true;
-            clearBtn.textContent = '再次点击确认清空' + scopeText;
+            clearBtn.textContent = '再次点击确认';
             clearTimer = setTimeout(function() {
                 clearArmed = false;
-                clearBtn.textContent = '清空队列';
+                clearBtn.textContent = clearLabel;
             }, 5000);
             return;
         }
         clearTimeout(clearTimer);
         clearArmed = false;
-        clearBtn.textContent = '清空队列';
+        clearBtn.textContent = clearLabel;
 
         uploading = true;
         clearBtn.disabled = true;
@@ -1862,7 +1864,20 @@ function initQueuePage() {
         }
     });
 
-    // 初始化：先拉一次快照（填充失败面板/按钮状态），队列非空则开始轮询
+    // 点击浮层外部 / 按 Esc 关闭（触发器在卡片右上角，浮层不遮挡表格）
+    document.addEventListener('click', function(ev) {
+        if (dangerBox && dangerBox.open && !dangerBox.contains(ev.target)) {
+            dangerBox.open = false;
+        }
+    });
+    document.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Escape' && dangerBox && dangerBox.open) {
+            dangerBox.open = false;
+            dangerBox.querySelector('summary')?.focus();
+        }
+    });
+
+    // 初始化：先拉一次快照（填充统计卡与按钮状态），队列非空则开始轮询
     (async function() {
         const j = await refreshStats();
         refreshButtons();

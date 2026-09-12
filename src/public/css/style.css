@@ -1704,31 +1704,26 @@ body.modal-open { overflow: hidden; }
 .queue-count { font-weight: 400; font-size: 0.85rem; color: var(--text-secondary); }
 .queue-empty { margin: 0; font-size: 0.9rem; color: var(--text-secondary); }
 
-/* 折叠区（说明 / 危险操作）：summary 保持轻量，展开后才占空间 */
-.queue-help summary,
-.queue-danger summary {
-    cursor: pointer; font-size: 0.9rem; color: var(--text-secondary);
-    list-style: none;
+/* v1.4.0-beta.2: 危险操作移到队列卡片右上角（触发器 + 下拉浮层）
+   —— .card 没有 overflow:hidden，浮层不会被裁剪 */
+.queue-head-right {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-weight: 400; text-transform: none; letter-spacing: 0;
 }
-.queue-help summary::-webkit-details-marker,
-.queue-danger summary::-webkit-details-marker { display: none; }
-.queue-help summary::before,
-.queue-danger summary::before {
-    content: '▸'; display: inline-block; margin-right: 8px;
-    transition: transform var(--transition);
+.queue-danger { position: relative; }
+.queue-danger-toggle { cursor: pointer; user-select: none; }
+.queue-danger-toggle::-webkit-details-marker { display: none; }
+.queue-danger-pop {
+    position: absolute; right: 0; top: calc(100% + 8px); z-index: 30;
+    width: 340px; max-width: min(340px, calc(100vw - 48px));
+    padding: 14px; text-align: left;
+    background: var(--bg-card); border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow);
 }
-.queue-help[open] summary::before,
-.queue-danger[open] summary::before { transform: rotate(90deg); }
-.queue-help summary:hover,
-.queue-danger summary:hover { color: var(--text); }
-.queue-help[open] summary,
-.queue-danger[open] summary { margin-bottom: 10px; }
-
-.queue-danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
-.queue-danger-warn { font-size: 0.85rem; line-height: 1.7; color: var(--text-secondary); }
+.queue-danger-warn { font-size: 0.82rem; line-height: 1.7; color: var(--text-secondary); margin: 0; }
 .queue-danger-body {
     display: flex; align-items: center; gap: 8px;
     flex-wrap: wrap; margin-top: 12px;
 }
-.queue-danger-scope { width: auto; min-width: 168px; }
+.queue-danger-scope { width: auto; min-width: 150px; }
 

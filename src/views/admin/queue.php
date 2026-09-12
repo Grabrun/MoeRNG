@@ -68,7 +68,24 @@ $queryBase = 'status=' . urlencode($status) . '&q=' . urlencode($search);
 <div class="card mb-3">
     <h3 class="queue-section-head">
         <span>队列</span>
-        <small class="queue-count"><?= number_format($total) ?> 条<?= $total > $perPage ? '（第 ' . $page . '/' . $pageCount . ' 页）' : '' ?></small>
+        <span class="queue-head-right">
+            <small class="queue-count"><?= number_format($total) ?> 条<?= $total > $perPage ? '（第 ' . $page . '/' . $pageCount . ' 页）' : '' ?></small>
+            <!-- 危险操作移到卡片右上角：默认收起，展开为浮层（.card 无 overflow:hidden，不会被裁剪） -->
+            <details class="queue-danger" id="queue-danger">
+                <summary class="btn btn-outline btn-sm queue-danger-toggle"><?= icon('trash', 16) ?> 清空队列</summary>
+                <div class="queue-danger-pop">
+                    <p class="queue-danger-warn">清空会<strong>删除数据库记录</strong>：待处理项的原图在临时目录中会一并清理；失败项的原图可能已上传到存储，删除后该文件会成为孤立对象，需自行清理。</p>
+                    <div class="queue-danger-body">
+                        <select class="form-control queue-danger-scope" id="queue-clear-scope" aria-label="清空队列的范围">
+                            <option value="pending">待处理（<?= number_format($stats['pending']) ?>）</option>
+                            <option value="failed">失败项（<?= number_format($stats['failed']) ?>）</option>
+                            <option value="all">待处理 + 失败项</option>
+                        </select>
+                        <button class="btn btn-danger btn-sm" id="queue-clear" <?= $queueTotal === 0 ? 'disabled' : '' ?>>确认清空</button>
+                    </div>
+                </div>
+            </details>
+        </span>
     </h3>
 
     <form method="GET" action="/admin/images/queue" class="queue-filter" id="queue-filter">
@@ -163,19 +180,5 @@ $queryBase = 'status=' . urlencode($status) . '&q=' . urlencode($search);
     <?php endif; ?>
     <?php endif; ?>
 </div>
-
-<!-- 危险操作（默认折叠：破坏性且低频，避免常驻头部造成误触与视觉噪声） -->
-<details class="card queue-danger">
-    <summary>危险操作：清空队列</summary>
-    <p class="queue-danger-warn mb-0">清空会<strong>删除数据库记录</strong>：待处理项的原图只在临时目录中会一并清理；失败项的原图可能已上传到存储，删除记录后该文件会成为孤立对象，需自行清理。</p>
-    <div class="queue-danger-body">
-        <select class="form-control queue-danger-scope" id="queue-clear-scope" aria-label="清空队列的范围">
-            <option value="pending">待处理（<?= number_format($stats['pending']) ?>）</option>
-            <option value="failed">失败项（<?= number_format($stats['failed']) ?>）</option>
-            <option value="all">待处理 + 失败项</option>
-        </select>
-        <button class="btn btn-danger btn-sm" id="queue-clear" <?= $queueTotal === 0 ? 'disabled' : '' ?>><?= icon('trash', 16) ?> 清空队列</button>
-    </div>
-</details>
 
 <?php admin_footer(); ?>
