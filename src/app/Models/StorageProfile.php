@@ -110,7 +110,7 @@ class StorageProfile extends Model
     {
         $cfg = $this->config();
         if (!$this->isS3()) {
-            return (string) ($cfg['path'] ?? 'public/uploads');
+            return (string) ($cfg['path'] ?? \App\Storage\LocalDriver::defaultRelDir());
         }
         return (string) ($cfg['bucket'] ?? '') . ($cfg['region'] !== '' ? " ({$cfg['region']})" : '');
     }

@@ -36,13 +36,13 @@
                         <option value="local">本地存储（推荐）</option>
                         <option value="s3">对象存储 (S3/OSS/COS)</option>
                     </select>
-                    <small>本地存储将图片保存在服务器 public/uploads/ 目录。对象存储使用云端服务，需配置 Access Key。</small>
+                    <small>本地存储将图片保存在服务器 storage/uploads/ 目录（web 根之外，通过签名链接读取）。对象存储使用云端服务，需配置 Access Key。</small>
                 </div>
 
                 <div id="local-fields">
                     <div class="form-group">
                         <label>本地存储路径</label>
-                        <input type="text" name="storage_local_path" class="form-control" value="public/uploads" placeholder="public/uploads">
+                        <input type="text" name="storage_local_path" class="form-control" value="<?= h(\App\Storage\LocalDriver::defaultRelDir()) ?>" placeholder="<?= h(\App\Storage\LocalDriver::defaultRelDir()) ?>">
                     </div>
                 </div>
 

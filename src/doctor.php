@@ -123,11 +123,26 @@ foreach ($mustExist as $rel) {
     check("File: {$rel}", is_file(__DIR__ . '/' . $rel));
 }
 
-$writable = ['config', 'public/uploads'];
-foreach ($writable as $rel) {
+// v1.5.0-beta.1: 媒体根已迁到 web 根之外（storage/uploads）；public/uploads 仅
+// 保留品牌 logo。目录尚未创建时以「父目录可写」为通过判据（否则新装站点会
+// 因为还没上传过东西就报 FAIL）。字面量在此处故意不引用 App 类 —— 本区块在
+// 自动加载器注册之前执行，常量一致性由后面「Storage layout」一节显式校验。
+$writable = [
+    'config' => 'config',
+    'storage/uploads (媒体根)' => 'storage/uploads',
+    'storage/incoming (上传中转)' => 'storage/incoming',
+    'public/uploads (品牌 logo)' => 'public/uploads',
+];
+foreach ($writable as $label => $rel) {
     $p = __DIR__ . '/' . $rel;
-    $ok = is_dir($p) && is_writable($p);
-    check("Writable: {$rel}/", $ok, is_dir($p) ? (is_writable($p) ? 'rw' : 'NOT WRITABLE') : 'MISSING DIR');
+    if (is_dir($p)) {
+        $ok = is_writable($p);
+        $detail = $ok ? 'rw' : 'NOT WRITABLE';
+    } else {
+        $ok = is_writable(dirname($p));
+        $detail = $ok ? 'not created yet (parent rw)' : 'MISSING and parent not writable';
+    }
+    check("Writable: {$label}/", $ok, $detail);
 }
 
 /* ------------------------------------------------------------------ */
@@ -142,6 +157,15 @@ if (!is_file($autoloaderFile)) {
 
     $prefixes = \App\Autoloader::registeredPrefixes();
     check('Root namespace registered', isset($prefixes['App\\']), 'App\\ => ' . implode(', ', $prefixes['App\\'] ?? ['(none)']));
+
+    // v1.5.0-beta.1: 上面的可写性检查用的是字面量路径，这里校验它与代码里的唯一
+    // 来源一致 —— 常量漂移会让 doctor 的报告与实际行为对不上（比不检查更危险）。
+    if (class_exists(\App\Storage\LocalDriver::class)) {
+        $relDir = \App\Storage\LocalDriver::defaultRelDir();
+        check('Storage layout constant', $relDir === 'storage/uploads',
+            'LocalDriver::defaultRelDir() = ' . $relDir
+            . ($relDir === 'storage/uploads' ? ' ✓' : ' ← 与 doctor 预期不一致，请核对'));
+    }
 
     // Every class declared under app/ must be autoloadable.
     $declared = [];
@@ -337,11 +361,47 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             $url = $driver->baseUrl();
             $dirOk = is_dir($dir) && is_writable($dir);
             check('Local upload dir', $dirOk, $dirOk ? $dir : ($dir . ' (missing or not writable)'));
+
+            // v1.5.0-beta.1: 本地文件始终经签名端点读取（url() → /files），
+            // 因此 baseUrl 只回答一个问题 —— 该目录能否被静态直读。
+            $mode = method_exists($driver, 'servingMode') ? $driver->servingMode() : 'signed';
+            check('Local serving mode', true, $mode === 'cdn'
+                ? 'cdn — ' . $driver->baseUrl() . '（CDN 需回源到 ' . $dir . '）'
+                : 'signed — /files?p=…&e=…&s=…（短时签名，无固定直链）');
+
+            $docRoot = (string) (realpath((string) ($_SERVER['DOCUMENT_ROOT'] ?? '')) ?: '');
+            $realDir = (string) (realpath($dir) ?: '');
+            $inWebRoot = $docRoot !== '' && $realDir !== ''
+                && str_starts_with($realDir . DIRECTORY_SEPARATOR, $docRoot . DIRECTORY_SEPARATOR);
+            check('媒体根不在 web 根之内', !$inWebRoot, $inWebRoot
+                ? $dir . ' ← 位于 web 根 ' . $docRoot . ' 之内：文件可被静态直读，签名机制形同虚设，建议迁到 storage/uploads'
+                : ($realDir !== '' ? $realDir . '（web 根之外 ✓）' : $dir . '（目录尚未创建）'), true);
+
             $urlOk = $url !== '' && str_starts_with($url, '/');
             check('Public URL prefix', $urlOk, $urlOk ? $url : 'EMPTY - image URLs would 404');
         } else {
             check('Local upload dir', true, 's3-only install — no local profile to inspect', true);
+            check('Local serving mode', true, 's3-only install — skipped', true);
+            check('媒体根不在 web 根之内', true, 's3-only install — skipped', true);
             check('Public URL prefix', true, 's3-only install — skipped', true);
+        }
+
+        // 迁根收尾检查：历史根里若仍有媒体（迁移未执行 / 失败），文件仍可读（不影响
+        // 站点），所以只做提示；首个请求会自动迁移，失败原因见「本地媒体根迁移」。
+        if (class_exists(\App\Storage\LocalDriver::class)) {
+            $legacyDir = \App\Storage\LocalDriver::legacyUploadDir();
+            if (is_dir($legacyDir)) {
+                $brandingName = basename(\App\Storage\LocalDriver::BRANDING_REL_DIR);
+                $leftover = 0;
+                foreach (scandir($legacyDir) ?: [] as $entry) {
+                    if ($entry !== '.' && $entry !== '..' && $entry !== $brandingName) {
+                        $leftover++;
+                    }
+                }
+                check('历史媒体根已清空', $leftover === 0, $leftover === 0
+                    ? $legacyDir . '（仅品牌 logo，符合预期）'
+                    : $legacyDir . ' 仍有 ' . $leftover . ' 个顶层条目（会自动迁移；若反复出现请看下一节的迁移错误）', true);
+            }
         }
     } catch (Throwable $e) {
         check('LocalDriver init', false, $e->getMessage());
@@ -518,6 +578,15 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             if ($merr !== false && $merr !== null && $merr !== '') {
                 check('Storage migration', false, 'last error: ' . $merr);
             }
+            // v1.5.0-beta.1: 本地媒体根迁移是独立门禁（文件操作），单独上报。
+            $lre = $pdo->query("SELECT `value` FROM `settings` WHERE `key` = 'local_root_error'")->fetchColumn();
+            if ($lre !== false && $lre !== null && $lre !== '') {
+                check('本地媒体根迁移', false, 'last error: ' . $lre);
+            }
+            $lrLayout = $pdo->query("SELECT `value` FROM `settings` WHERE `key` = 'local_root_layout'")->fetchColumn();
+            check('本地媒体根布局', true, ($lrLayout === '2' || $lrLayout === 2)
+                ? 'storage/uploads（已迁出 web 根）'
+                : '仍为历史布局 —— 首个请求会自动迁移；若长期不变请看上面的迁移错误', true);
         } catch (Throwable) {
             // settings table shape differs / unavailable — ignore
         }

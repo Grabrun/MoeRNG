@@ -5,7 +5,20 @@ namespace App\Storage;
 
 class LocalDriver implements StorageInterface
 {
-    private const DEFAULT_REL_DIR = 'public/uploads';
+    /**
+     * v1.5.0-beta.1: 本地媒体根默认在 **web 根之外**（`storage/uploads`）。
+     *
+     * 此前默认是 `public/uploads`（web 根之下）：即便 MoeRNG 自己的 URL 早已
+     * 走短时签名端点（见 url()），文件仍能被 Web 服务器按静态路径直接读到，
+     * 签名机制形同虚设；同时 `public/` 目录语义被媒体文件污染。
+     */
+    private const DEFAULT_REL_DIR = 'storage/uploads';
+
+    /** 历史默认根（v1.5.0-beta.1 之前）——仅用于一次性迁移与读取回退。 */
+    public const LEGACY_REL_DIR = 'public/uploads';
+
+    /** 品牌 logo 目录：站点静态资源（非用户媒体），**不参与**迁根。 */
+    public const BRANDING_REL_DIR = 'public/uploads/logo';
 
     private string $uploadDir;
     private string $baseUrl;
@@ -25,22 +38,12 @@ class LocalDriver implements StorageInterface
      */
     public function __construct(string $path = '', string $cdn = '', int $signedTtl = 300)
     {
-        $root = dirname(__DIR__, 2);
         $this->cdnOverride = $cdn;
         $this->signedTtl = max(1, $signedTtl);
 
-        $configuredDir = trim($path);
-        if ($configuredDir === '') {
-            $configuredDir = self::DEFAULT_REL_DIR;
-        }
-
-        // A relative path from the settings form must be anchored to the project
-        // root, never to the FPM worker's current working directory.
-        $this->uploadDir = self::isAbsolutePath($configuredDir)
-            ? rtrim($configuredDir, '/\\')
-            : $root . '/' . trim(str_replace('\\', '/', $configuredDir), '/');
-
-        $this->baseUrl = $this->resolveBaseUrl($root);
+        // 相对路径锚定项目根（见 resolveDir）；空值即默认布局 storage/uploads。
+        $this->uploadDir = self::resolveDir($path);
+        $this->baseUrl = $this->resolveBaseUrl();
 
         if (!is_dir($this->uploadDir)) {
             @mkdir($this->uploadDir, 0755, true);
@@ -48,24 +51,25 @@ class LocalDriver implements StorageInterface
     }
 
     /**
-     * Public URL prefix for locally stored files.
+     * Informational prefix for locally stored files (displayed by doctor.php).
      *
-     * Priority (v1.0.35 — no settings reads):
-     *   1. CDN domain from the profile (only when actually configured)
-     *   2. derive from the SERVER document root + real upload dir, so the URL
-     *      is correct whether the web root is the project root or a sub-dir
-     *      such as public/  (the common case where a host points the site at
-     *      public/ for security) — previously the URL was derived from the
-     *      project root only, which 404'd every local image under that layout.
-     *   3. hard default /public/uploads
+     * v1.5.0-beta.1: 本地文件的**实际**读取路径始终是签名端点（见 url()），
+     * 所以这里只回答一个问题 —— 这个目录**能不能被 Web 服务器静态直读**：
+     *   1. 配了 CDN 域名         → 该域名（文件由 CDN 回源，仍需回源映射）
+     *   2. 目录位于 web 根之下    → 该静态路径（可直读 —— 签名形同虚设，建议迁出）
+     *   3. 目录在 web 根之外      → '/files'（只能走短时签名，默认布局即此）
+     *
+     * 历史实现在拿不到 doc root 时会用「相对项目根」猜一个静态路径，并硬回退到
+     * `/public/uploads`；迁根后这两个值都会误导（`storage/` 在 Nginx 里是 deny 的），
+     * 因此这里改为只返回真实可用的形态。
      */
-    private function resolveBaseUrl(string $root): string
+    private function resolveBaseUrl(): string
     {
         if ($this->cdnOverride !== '') {
             return rtrim($this->cdnOverride, '/');
         }
 
-        // Derive from the actual web document root so the URL always resolves.
+        // 只有「确实位于 web 文档根之下」才谈得上静态直读。
         $docRoot = trim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
         $docRoot = $docRoot !== '' ? realpath($docRoot) : '';
         $realUpload = realpath($this->uploadDir);
@@ -76,17 +80,43 @@ class LocalDriver implements StorageInterface
             }
         }
 
-        // Fallback: relative to the project root (works when doc root == root).
-        $normalizedRoot = rtrim(str_replace('\\', '/', $root), '/');
-        $normalizedDir = rtrim(str_replace('\\', '/', $this->uploadDir), '/');
-        if ($normalizedDir !== $normalizedRoot && str_starts_with($normalizedDir . '/', $normalizedRoot . '/')) {
-            $relative = ltrim(substr($normalizedDir, strlen($normalizedRoot)), '/');
-            if ($relative !== '') {
-                return '/' . $relative;
-            }
-        }
+        return '/files';
+    }
 
-        return '/' . self::DEFAULT_REL_DIR;
+    /**
+     * 把配置里的（相对/绝对）目录解析为绝对路径。
+     *
+     * 相对路径一律锚定**项目根**，绝不跟随 PHP-FPM 的工作目录 —— 否则同一个
+     * 配置在不同上下文下会指向不同目录（历史 bug 源头）。
+     */
+    public static function resolveDir(string $path = ''): string
+    {
+        $dir = trim($path);
+        if ($dir === '') {
+            $dir = self::DEFAULT_REL_DIR;
+        }
+        if (self::isAbsolutePath($dir)) {
+            return rtrim($dir, '/\\');
+        }
+        return dirname(__DIR__, 2) . '/' . trim(str_replace('\\', '/', $dir), '/');
+    }
+
+    /** 默认媒体根（绝对路径）—— 单测/迁移/备份共用同一来源。 */
+    public static function defaultUploadDir(): string
+    {
+        return self::resolveDir('');
+    }
+
+    /** 默认媒体根的**相对**形态（存储实例 config.path 里记录的形式）。 */
+    public static function defaultRelDir(): string
+    {
+        return self::DEFAULT_REL_DIR;
+    }
+
+    /** 历史媒体根（绝对路径 v1.5.0-beta.1 之前），仅迁移与回退用。 */
+    public static function legacyUploadDir(): string
+    {
+        return self::resolveDir(self::LEGACY_REL_DIR);
     }
 
     private static function isAbsolutePath(string $path): bool
@@ -179,10 +209,22 @@ class LocalDriver implements StorageInterface
         return $this->baseUrl;
     }
 
+    /** 读取方式：'cdn'（配了 CDN 域名）或 'signed'（/files 短时签名）。 */
+    public function servingMode(): string
+    {
+        return $this->cdnOverride !== '' ? 'cdn' : 'signed';
+    }
+
+    /** 该实例配置的 CDN 域名（空 = 未配置）。 */
+    public function cdnUrl(): string
+    {
+        return $this->cdnOverride;
+    }
+
     public static function configFields(): array
     {
         return [
-            'storage_local_path' => ['label' => '本地存储路径', 'type' => 'text', 'default' => 'public/uploads', 'placeholder' => '相对于项目根目录'],
+            'storage_local_path' => ['label' => '本地存储路径', 'type' => 'text', 'default' => self::DEFAULT_REL_DIR, 'placeholder' => '相对于项目根目录；默认 storage/uploads（web 根之外，走签名端点）'],
         ];
     }
 

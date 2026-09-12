@@ -22,7 +22,7 @@ define('MOERNG_ROOT', __DIR__);
 
 // Release version — surfaced in the footer and the /api/v1/stats endpoint.
 if (!defined('APP_VERSION')) {
-    define('APP_VERSION', '1.4.0');
+    define('APP_VERSION', '1.5.0-beta.1');
 }
 
 // v1.3.1 修复: 资源缓存戳 = APP_VERSION + 静态资源 mtime。此前 ?v= 只跟版本号，

@@ -69,7 +69,7 @@ class InstallController extends Controller
     {
         $this->guardNotInstalled();
         $this->render('install/step4', [
-            'storage' => ['driver' => 'local', 'local_path' => 'public/uploads'],
+            'storage' => ['driver' => 'local', 'local_path' => \App\Storage\LocalDriver::defaultRelDir()],
         ]);
     }
 
@@ -154,7 +154,7 @@ class InstallController extends Controller
         $this->render('install/step4', [
             'storage' => [
                 'driver' => 'local',
-                'local_path' => 'public/uploads',
+                'local_path' => \App\Storage\LocalDriver::defaultRelDir(),
             ],
         ]);
     }
@@ -275,7 +275,7 @@ class InstallController extends Controller
                     'local',
                     '',
                     json_encode(
-                        ['path' => $request->input('storage_local_path', 'public/uploads')],
+                        ['path' => $request->input('storage_local_path', \App\Storage\LocalDriver::defaultRelDir())],
                         JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
                     ),
                     1,
@@ -342,7 +342,7 @@ class InstallController extends Controller
         // Directories writable
         $dirs = [
             'config/' => dirname(__DIR__, 2) . '/config',
-            'public/uploads/' => dirname(__DIR__, 2) . '/public/uploads',
+            \App\Storage\LocalDriver::defaultRelDir() . '/' => \App\Storage\LocalDriver::defaultUploadDir(),
         ];
         foreach ($dirs as $label => $dir) {
             $writable = is_dir($dir) ? is_writable($dir) : is_writable(dirname($dir));

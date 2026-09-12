@@ -13,6 +13,12 @@ class Application
      */
     private const SCHEMA_VERSION = '2026-09-11';
 
+    /**
+     * v1.5.0-beta.1: 本地媒体根布局版本。站点迁到 `storage/uploads`（web 根之外）
+     * 后写入该值 —— 与 SCHEMA_VERSION 分开，避免文件迁移的失败连累 DB 迁移重跑。
+     */
+    private const LOCAL_ROOT_LAYOUT = '2';
+
     private static ?self $instance = null;
     private Router $router;
     private bool $installed = false;
@@ -88,6 +94,13 @@ class Application
             // 升级后首次请求、settings 表刚建）→ 照常执行迁移并补写新版本号。
             if ((string) Config::get('settings.schema_version', '') !== self::SCHEMA_VERSION) {
                 $this->runStorageMigration();
+            }
+
+            // v1.5.0-beta.1: 本地媒体根迁出 web 根。独立门禁 —— 文件操作与 DB
+            // 迁移互不影响：成功即打标（此后零开销），失败不打标 → 下个请求
+            // 重试，错误经 doctor.php 可见（settings.local_root_error）。
+            if ((string) Config::get('settings.local_root_layout', '') !== self::LOCAL_ROOT_LAYOUT) {
+                $this->runLocalRootMigration();
             }
 
             // v1.2.1: storage profiles are loaded — re-send CSP with the
@@ -232,6 +245,225 @@ class Application
             }
         } catch (\Throwable) {
             // settings table unavailable — nothing more we can record.
+        }
+    }
+
+    /**
+     * v1.5.0-beta.1: 本地媒体根从 web 根之下（public/uploads）迁到 web 根之外
+     * （storage/uploads），并同步存储实例里记录的路径。
+     *
+     * 为什么必须迁：本地文件的读取早已走短时签名端点（LocalDriver::url() →
+     * /files?p=…&e=…&s=…），但目录留在 public/ 下时，文件仍能被 Web 服务器按
+     * 静态路径直接读到 —— 签名机制形同虚设；public/ 的语义也被媒体文件污染。
+     *
+     * 安全设计（匹配「覆盖部署、原库不重建」的形态）：
+     *  1. 只动**顶层条目**并逐个 rename（同盘时原子、瞬间完成）；跨盘退化为
+     *     递归 copy + 删源。
+     *  2. 品牌 logo（public/uploads/logo）**不迁** —— 它是站点静态资源而非
+     *     用户媒体，URL 直接对外（见 SettingController），搬迁只会弄坏它。
+     *  3. **先搬文件、再改实例路径**；任一步失败就把已搬的条目全部搬回 ——
+     *     两个根都不会留下"少了一半"的中间态，最坏情况是"什么都没变"。
+     *  4. 目标已存在同名文件时：尺寸一致视为已迁移（清掉旧副本），尺寸不同
+     *     则报冲突并整体回滚 —— 绝不静默覆盖用户文件。
+     *  5. 幂等 + 独立门禁：完成写 settings.local_root_layout；失败不写标记，
+     *     下个请求重试（退化为几次 stat/scandir，代价可忽略）。
+     */
+    private function runLocalRootMigration(): void
+    {
+        $err = '';
+        try {
+            $err = $this->migrateLocalMediaRoot();
+        } catch (\Throwable $e) {
+            $err = $e->getMessage();
+        }
+
+        try {
+            if ($err === '') {
+                \App\Models\Setting::set('local_root_layout', self::LOCAL_ROOT_LAYOUT);
+                if (Config::get('settings.local_root_error', '') !== '') {
+                    \App\Models\Setting::set('local_root_error', '');
+                }
+            } elseif (Config::get('settings.local_root_error', '') !== $err) {
+                \App\Models\Setting::set('local_root_error', $err);
+            }
+        } catch (\Throwable) {
+            // settings 不可用 → 下个请求重试一次（迁移本身幂等，无副作用）
+        }
+    }
+
+    /** 迁根主体：返回 '' 表示成功，否则返回人类可读的失败原因。 */
+    private function migrateLocalMediaRoot(): string
+    {
+        $legacy = \App\Storage\LocalDriver::legacyUploadDir();
+        $target = \App\Storage\LocalDriver::defaultUploadDir();
+        $branding = basename(\App\Storage\LocalDriver::BRANDING_REL_DIR);
+
+        if ($legacy === $target) {
+            return ''; // 配置异常（同一个目录）→ 无从迁移
+        }
+
+        // 没有历史目录（新装 / 已迁过 / 本地从未使用）→ 只对齐实例路径。
+        if (!is_dir($legacy)) {
+            $only = [];
+            $err = $this->rewriteLocalProfilePaths($only);
+            if ($err !== '') {
+                $this->revertLocalProfilePaths($only);
+            }
+            return $err;
+        }
+
+        $entries = [];
+        foreach (scandir($legacy) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..' || $entry === $branding) {
+                continue; // 品牌 logo 留在 public/uploads（静态资源，不参与迁根）
+            }
+            $entries[] = $entry;
+        }
+
+        if ($entries === []) {
+            $only = [];
+            $err = $this->rewriteLocalProfilePaths($only);
+            if ($err !== '') {
+                $this->revertLocalProfilePaths($only);
+            }
+            return $err;
+        }
+
+        if (!is_dir($target) && !@mkdir($target, 0755, true) && !is_dir($target)) {
+            return '本地媒体根迁移失败：无法创建 ' . $target . '（检查目录权限）';
+        }
+        if (!is_writable($target)) {
+            return '本地媒体根迁移失败：' . $target . ' 不可写（检查目录权限）';
+        }
+
+        // 阶段 1：搬迁媒体条目（任一失败 → 把已搬的搬回旧根，保持原状）
+        $moved = [];
+        foreach ($entries as $entry) {
+            try {
+                $this->moveMediaEntry($legacy . '/' . $entry, $target . '/' . $entry);
+                $moved[] = $entry;
+            } catch (\Throwable $e) {
+                $this->rollbackMedia($moved, $target, $legacy);
+                return '本地媒体根迁移失败（已回滚，原文件未受影响）：' . $e->getMessage();
+            }
+        }
+
+        // 阶段 2：改实例路径（失败同样搬回 —— 不允许"配置指向新根、文件在旧根"）
+        $changed = [];
+        $cfgErr = $this->rewriteLocalProfilePaths($changed);
+        if ($cfgErr !== '') {
+            $this->revertLocalProfilePaths($changed);
+            $this->rollbackMedia($moved, $target, $legacy);
+            return '本地媒体根迁移失败（已回滚）：' . $cfgErr;
+        }
+
+        // 阶段 3：旧根若已空则删除（logo 仍在时 rmdir 自然失败，无害）
+        @rmdir($legacy);
+        return '';
+    }
+
+    /** 把已迁移的顶层条目搬回旧根（尽力而为）。 */
+    private function rollbackMedia(array $moved, string $target, string $legacy): void
+    {
+        foreach (array_reverse($moved) as $entry) {
+            @rename($target . '/' . $entry, $legacy . '/' . $entry);
+        }
+    }
+
+    /**
+     * 搬一个条目（文件或目录树）到目标位置。
+     *
+     * - 同盘 rename（原子）；跨盘退化为 copy + 删源。
+     * - 目标已有同名文件：尺寸一致 → 视为已迁移，清掉旧副本；尺寸不同 → 抛错
+     *   （由调用方整体回滚），绝不静默覆盖。
+     */
+    private function moveMediaEntry(string $from, string $to): void
+    {
+        if (is_file($from) || is_link($from)) {
+            if (file_exists($to)) {
+                if ((int) filesize($from) !== (int) filesize($to)) {
+                    throw new \RuntimeException('目标已存在同名但内容不同的文件，需人工核对：' . basename($from));
+                }
+                @unlink($from);
+                return;
+            }
+            if (!@rename($from, $to)) {
+                if (!@copy($from, $to)) {
+                    throw new \RuntimeException('文件搬迁失败：' . basename($from));
+                }
+                @unlink($from);
+            }
+            return;
+        }
+
+        if (!is_dir($from)) {
+            return;
+        }
+
+        if (!is_dir($to) && !@mkdir($to, 0755, true) && !is_dir($to)) {
+            throw new \RuntimeException('无法创建目标目录：' . basename($to));
+        }
+        foreach (scandir($from) ?: [] as $child) {
+            if ($child === '.' || $child === '..') {
+                continue;
+            }
+            $this->moveMediaEntry($from . '/' . $child, $to . '/' . $child);
+        }
+        @rmdir($from);
+    }
+
+    /**
+     * 把本地存储实例里记录的路径对齐到新默认值（仅当它原本就是旧默认值或空）。
+     *
+     * 显式配置了自定义路径的实例**不动** —— 那是运维的选择。
+     * $changed 收集改动前的原值，供调用方在后续失败时回退。
+     */
+    private function rewriteLocalProfilePaths(array &$changed = []): string
+    {
+        $legacyRel = \App\Storage\LocalDriver::LEGACY_REL_DIR;
+        $targetRel = \App\Storage\LocalDriver::defaultRelDir();
+
+        try {
+            foreach (\App\Models\StorageProfile::all('sort_order ASC, id ASC') as $profile) {
+                if ($profile->isS3()) {
+                    continue; // 对象存储实例与本地目录无关
+                }
+                $cfg = $profile->config();
+                $path = trim((string) ($cfg['path'] ?? ''));
+                if ($path !== '' && $path !== $legacyRel) {
+                    continue; // 自定义路径 → 尊重运维配置
+                }
+                if ($path === $targetRel) {
+                    continue; // 已经是新值（幂等）
+                }
+
+                $cfg['path'] = $targetRel;
+                $profile->config = json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                if (!$profile->save()) {
+                    return '存储实例「' . (string) $profile->name . '」的路径更新失败';
+                }
+                $changed[] = ['profile' => $profile, 'old' => $path];
+            }
+        } catch (\Throwable $e) {
+            return '存储实例路径更新异常：' . $e->getMessage();
+        }
+
+        return '';
+    }
+
+    /** 回退实例路径改动（尽力而为）。 */
+    private function revertLocalProfilePaths(array $changed): void
+    {
+        foreach (array_reverse($changed) as $item) {
+            try {
+                $profile = $item['profile'];
+                $cfg = $profile->config();
+                $cfg['path'] = (string) $item['old'];
+                $profile->config = json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $profile->save();
+            } catch (\Throwable) {
+                // 回退失败也只能到此为止：错误已上报，文件已搬回旧根
+            }
         }
     }
 

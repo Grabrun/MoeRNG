@@ -7,8 +7,10 @@
 **宝塔面板 → 网站（你的域名）→ 设置 → 伪静态**，整段替换为：
 
 ```nginx
-location ~ ^/(config|app|views|releases|backups|var)/ { deny all; return 404; }
+location ~ ^/(config|app|views|releases|backups|var|storage)/ { deny all; return 404; }
 location ~* \.(sql|zip|md|log|ini|lock|yml|yaml)$ { deny all; return 404; }
+# v1.5.0-beta.1: 媒体根已迁到 storage/uploads（上面已整体 deny，只能走 /files 签名）；
+# 这里仅剩品牌 logo（站点静态资源），保留该 location 供其直读与长缓存。
 location ^~ /public/uploads/ {
     expires 30d;
     add_header Cache-Control "public, immutable";
@@ -41,15 +43,17 @@ location /       { try_files $uri /index.php$is_args$args; }
 
 | 行 | 防护对象 |
 |----|---------|
-| 第 1 行 deny 路径 | `config/`（数据库配置）、`app/`（源码）、`views/`（模板）、`releases/`（发布包）、**`backups/`（备份目录，含 DB + 上传 zip，v1.2.1-beta.2 新增）**、**`var/`（限流计数/锁文件，v1.2.1-beta.2 新增）** |
+| 第 1 行 deny 路径 | `config/`（数据库配置）、`app/`（源码）、`views/`（模板）、`releases/`（发布包）、**`backups/`（备份目录，含 DB + 上传 zip，v1.2.1-beta.2 新增）**、**`var/`（限流计数/锁文件，v1.2.1-beta.2 新增）**、**`storage/`（媒体根与上传中转，v1.5.0-beta.1 新增 —— 媒体迁出 web 根后这条是签名机制的兜底）** |
 | 第 2 行 deny 后缀 | `.sql`（备份/迁移 SQL）、**`.zip`（备份压缩包，v1.2.1-beta.2 新增）**、`.md`/`.log`/`.ini`/`.lock`/`.yml`/`.yaml` |
-| 第 3 行 | 上传目录：绝不执行 PHP（防上传 webshell）+ 30d 缓存 + nosniff（v1.3.1 补齐） |
+| 第 3 行 | `public/uploads/`：**v1.5.0-beta.1 起只剩品牌 logo**（媒体已迁到 `storage/uploads`）。保留静态服务 + 30d 缓存 + 绝不执行 PHP + nosniff |
 | `/public/` `/assets/` | 静态资源长缓存：`/public/` 365d + immutable（资源带 `?v=ASSET_VER` 版本戳，v1.3.1 新增）；`/assets/` 30d |
 | 入口 rewrite 行 | 前端控制器 rewrite（/api → api.php 等） |
 
 ### ⚠️ 升级提醒
 
-每次升级对照 `CHANGELOG.md` 检查伪静态是否有新增 deny 路径/后缀/缓存规则。v1.3.1 相比 v1.2.1-beta.2 新增：
+每次升级对照 `CHANGELOG.md` 检查伪静态是否有新增 deny 路径/后缀/缓存规则。**v1.5.0-beta.1 的关键一条：第 1 行必须包含 `storage`** —— 媒体根迁到 `storage/uploads` 后，若缺这条，文件会被 web 服务器按静态路径直接读到，`/files` 的短时签名形同虚设（旧版伪静态没有 `storage`，**务必按上面整段替换**）。
+
+v1.3.1 相比 v1.2.1-beta.2 新增：
 
 - 上传目录补齐 `expires 30d` + `Cache-Control` + `nosniff`
 - 新增 `/public/`（365d + immutable）与 `/assets/`（30d）静态缓存 location

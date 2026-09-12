@@ -138,9 +138,12 @@ class BackupService
             $zip = new \ZipArchive();
             if ($zip->open($zipFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true) {
                 $zip->addFile($sqlFile, 'moe-rng-' . $stamp . '.sql');
-                $uploads = dirname(__DIR__, 2) . '/public/uploads';
-                if (is_dir($uploads)) {
-                    self::zipDir($zip, $uploads, 'uploads');
+                // v1.5.0-beta.1: 媒体根已迁到 storage/uploads（web 根之外）；同时
+                // 收拢历史根里可能仍存在的媒体与品牌 logo，保证备份“能原样恢复”。
+                foreach (self::mediaRoots() as $spec) {
+                    if (is_dir($spec['dir']) && self::hasFiles($spec['dir'], $spec['exclude'])) {
+                        self::zipDir($zip, $spec['dir'], $spec['label'], $spec['exclude']);
+                    }
                 }
                 $zip->close();
                 @unlink($sqlFile);
@@ -154,10 +157,64 @@ class BackupService
         return [true, '备份完成: ' . basename($finalFile) . ' (' . self::humanSize($size) . ')', basename($finalFile)];
     }
 
-    private static function zipDir(\ZipArchive $zip, string $src, string $prefix): void
+    /**
+     * v1.5.0-beta.1: 备份要收拢的媒体目录。
+     *
+     *  - `uploads/`        当前媒体根（storage/uploads，web 根之外）
+     *  - `uploads-legacy/` 历史根 public/uploads —— 仅在仍有媒体时收集（迁根
+     *                      未执行或失败），并跳过品牌 logo（避免与下一条重复）
+     *  - `branding/`       站点 logo（public/uploads/logo）—— 站点资源，恢复要用
+     *
+     * @return list<array{label: string, dir: string, exclude: list<string>}>
+     */
+    private static function mediaRoots(): array
+    {
+        $legacy = \App\Storage\LocalDriver::legacyUploadDir();
+        $branding = \App\Storage\LocalDriver::BRANDING_REL_DIR;
+        $brandingName = basename($branding);
+
+        return [
+            ['label' => 'uploads', 'dir' => \App\Storage\LocalDriver::defaultUploadDir(), 'exclude' => []],
+            ['label' => 'uploads-legacy', 'dir' => $legacy, 'exclude' => [$brandingName]],
+            ['label' => 'branding', 'dir' => \App\Storage\LocalDriver::resolveDir($branding), 'exclude' => []],
+        ];
+    }
+
+    /** 目录内是否存在文件（跳过指定的顶层目录名；找到第一个即返回，代价极低）。 */
+    private static function hasFiles(string $dir, array $exclude = []): bool
     {
         $it = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($src, \FilesystemIterator::SKIP_DOTS)
+            new \RecursiveCallbackFilterIterator(
+                new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+                static function (\SplFileInfo $current) use ($exclude): bool {
+                    // 顶层被排除的目录整体跳过（子目录一律保留）
+                    if ($current->isDir() && in_array($current->getFilename(), $exclude, true)) {
+                        return false;
+                    }
+                    return true;
+                }
+            )
+        );
+        foreach ($it as $f) {
+            if ($f->isFile()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function zipDir(\ZipArchive $zip, string $src, string $prefix, array $exclude = []): void
+    {
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveCallbackFilterIterator(
+                new \RecursiveDirectoryIterator($src, \FilesystemIterator::SKIP_DOTS),
+                static function (\SplFileInfo $current) use ($exclude): bool {
+                    if ($current->isDir() && in_array($current->getFilename(), $exclude, true)) {
+                        return false;
+                    }
+                    return true;
+                }
+            )
         );
         foreach ($it as $f) {
             if (!$f->isFile()) {

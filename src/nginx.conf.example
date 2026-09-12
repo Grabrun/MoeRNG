@@ -64,6 +64,9 @@ server {
     # -------------------------------------------------------------------------
     # Uploaded files: serve statically, never execute as PHP.
     # "^~" stops regex evaluation so an uploaded shell.php can't be run.
+    # v1.5.0-beta.1: the media root moved OUT of the web root (storage/uploads,
+    # already denied above) and is read through the signed /files endpoint.
+    # What remains here is the branding logo only.
     # -------------------------------------------------------------------------
     location ^~ /public/uploads/ {
         expires 30d;
