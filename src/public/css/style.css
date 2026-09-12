@@ -101,6 +101,9 @@ small { font-size: 0.85rem; color: var(--text-secondary); }
     padding: 12px 24px; border: none; border-radius: var(--radius-pill);
     font-size: 0.95rem; font-weight: 500; cursor: pointer;
     transition: all var(--transition); text-decoration: none;
+    /* v1.4.0-beta.2 UI 打磨: 按钮文字永不折行 —— 此前窄容器（如页面头部的多按钮
+       操作区）会把按钮压到换行，出现「开始处/理」这类断字。 */
+    white-space: nowrap;
 }
 .btn-primary { background: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(195,137,232,.35); }
@@ -1681,3 +1684,49 @@ body.modal-open { overflow: hidden; }
 .failed-info { min-width: 0; }
 .failed-path { font-weight: 600; overflow-wrap: anywhere; }
 .failed-err { color: var(--danger); font-size: 0.85rem; overflow-wrap: anywhere; }
+
+/* ── v1.4.0-beta.2 UI 打磨: 图片处理页信息层次 ──
+   设计目标：头部只放"队列操作"（3 个按钮，不折行）；破坏性操作与说明改为折叠，
+   统计卡压缩高度；列表计数只在有内容时出现（不再与统计卡重复）。 */
+.page-actions {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap; justify-content: flex-end;
+}
+.stat-card-sm { padding: 14px 16px; }
+.stat-card-sm .stat-value { font-size: 1.6rem; }
+.queue-note { font-size: 0.9rem; color: var(--text-secondary); }
+.queue-section-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin: 0 0 10px;
+}
+.queue-count { font-weight: 400; font-size: 0.85rem; color: var(--text-secondary); }
+.queue-empty { margin: 0; font-size: 0.9rem; color: var(--text-secondary); }
+
+/* 折叠区（说明 / 危险操作）：summary 保持轻量，展开后才占空间 */
+.queue-help summary,
+.queue-danger summary {
+    cursor: pointer; font-size: 0.9rem; color: var(--text-secondary);
+    list-style: none;
+}
+.queue-help summary::-webkit-details-marker,
+.queue-danger summary::-webkit-details-marker { display: none; }
+.queue-help summary::before,
+.queue-danger summary::before {
+    content: '▸'; display: inline-block; margin-right: 8px;
+    transition: transform var(--transition);
+}
+.queue-help[open] summary::before,
+.queue-danger[open] summary::before { transform: rotate(90deg); }
+.queue-help summary:hover,
+.queue-danger summary:hover { color: var(--text); }
+.queue-help[open] summary,
+.queue-danger[open] summary { margin-bottom: 10px; }
+
+.queue-danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.queue-danger-warn { font-size: 0.85rem; line-height: 1.7; color: var(--text-secondary); }
+.queue-danger-body {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap; margin-top: 12px;
+}
+.queue-danger-scope { width: auto; min-width: 168px; }
+
