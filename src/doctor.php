@@ -386,6 +386,21 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             check('Public URL prefix', true, 's3-only install — skipped', true);
         }
 
+        // v1.5.0-beta.1 性能: 云端图片若走**预签名直链**，URL 每次渲染都不同
+        // （签名里含签发时间），浏览器把每次浏览都当成新资源 → 缓存必然 miss，
+        // 图片每次全量重下。绑定 CDN / 自定义源站域名后 URL 才是稳定地址，
+        // 浏览器与边缘缓存才生效。只提示、不判失败（取决于运维的接入方式）。
+        if ($defaultProfile !== null && $defaultProfile->isS3()) {
+            $s3cfg = $defaultProfile->config();
+            $domain = trim((string) ($s3cfg['cdn'] ?? ''));
+            check('云端图片 URL 稳定性', $domain !== '', $domain !== ''
+                ? 'stable — ' . $domain . '（浏览器/CDN 可缓存）'
+                : '预签名直链每次渲染都会变 → 浏览器缓存必然 miss，每次浏览都重新下载；'
+                  . '建议给该存储实例绑定 CDN / 自定义源站域名（存储管理 → 该实例的「CDN 域名」）', true);
+        } else if ($localProfile !== null) {
+            check('本地图片 URL 稳定性', true, '稳定 —— 签名按 60s 窗口对齐，同一窗口内 URL 完全一致，可命中浏览器缓存', true);
+        }
+
         // 迁根收尾检查：历史根里若仍有媒体（迁移未执行 / 失败），文件仍可读（不影响
         // 站点），所以只做提示；首个请求会自动迁移，失败原因见「本地媒体根迁移」。
         if (class_exists(\App\Storage\LocalDriver::class)) {

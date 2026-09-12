@@ -31,26 +31,16 @@ class FileController extends Controller
             $this->abort(410); // Gone / expired link
         }
 
-        // v1.5.0-beta.1: 本地媒体根可能同时存在于多处（迁根前/后、多实例、自定义
-        // 路径），因此按优先级逐个候选根尝试解析，任一命中即可 —— 迁根期间与迁移
-        // 失败时图片都不会 404。每个候选根都做 realpath 越权校验。
+        // v1.5.0-beta.1: 按优先级在候选根中解析，任一命中即可 —— 迁根期间、多实例
+        // 或自定义路径都不会 404。**先试零查询的默认根/历史根**（覆盖绝大多数
+        // 请求），只有都没命中才去查存储实例表；此前每张图都要查 2 条实例查询。
         $relative = ltrim(str_replace('\\', '/', $path), '/');
-        $real = false;
-        foreach (self::candidateRoots() as $root) {
-            $base = realpath($root);
-            if ($base === false || !is_dir($base)) {
-                continue;
-            }
-            $candidate = realpath($base . DIRECTORY_SEPARATOR . $relative);
-            if ($candidate === false || !is_file($candidate)) {
-                continue;
-            }
-            // 必须确实落在本根之内（带分隔符比较，"uploads-evil" 之类不被误放行）
-            if (strncmp($candidate, $base . DIRECTORY_SEPARATOR, strlen($base) + 1) !== 0) {
-                continue;
-            }
-            $real = $candidate;
-            break;
+        $real = self::locateIn(
+            [LocalDriver::defaultUploadDir(), LocalDriver::legacyUploadDir()],
+            $relative
+        );
+        if ($real === false) {
+            $real = self::locateIn(self::profileRoots(), $relative);
         }
 
         if ($real === false) {
@@ -72,16 +62,40 @@ class FileController extends Controller
     }
 
     /**
-     * 可供读取的本地根（绝对路径），顺序即优先级：
-     *   1. 启用的本地存储实例所配置的目录（URL 就是按各自实例生成的）
-     *   2. 驱动默认根 storage/uploads
-     *   3. 历史根 public/uploads（迁根未执行/失败时的回退）
+     * 在候选根中解析出真实文件路径（不命中返回 false）。
      *
-     * 实例表读不到时退回默认根 —— 文件服务不该因一次 DB 抖动而整片 500。
+     * 每个候选根都做 realpath 越权校验：解析结果必须**确实落在该根之内**
+     * （带分隔符比较，"uploads-evil" 之类不会被误放行）。
+     */
+    private static function locateIn(array $roots, string $relative): string|false
+    {
+        foreach ($roots as $root) {
+            $base = realpath($root);
+            if ($base === false || !is_dir($base)) {
+                continue;
+            }
+            $candidate = realpath($base . DIRECTORY_SEPARATOR . $relative);
+            if ($candidate === false || !is_file($candidate)) {
+                continue;
+            }
+            if (strncmp($candidate, $base . DIRECTORY_SEPARATOR, strlen($base) + 1) !== 0) {
+                continue;
+            }
+            return $candidate;
+        }
+        return false;
+    }
+
+    /**
+     * 存储实例所配置的本地根（需要查库，故只在默认根未命中时才调用）：
+     * 默认实例优先，其次其余启用的本地实例。
+     *
+     * 实例表读不到时返回空数组 —— 文件服务不该因一次 DB 抖动而整片 500
+     * （调用方此时已试过默认根与历史根）。
      *
      * @return list<string>
      */
-    private static function candidateRoots(): array
+    private static function profileRoots(): array
     {
         $roots = [];
         try {
@@ -98,11 +112,8 @@ class FileController extends Controller
                 $roots[] = LocalDriver::resolveDir((string) ($cfg['path'] ?? ''));
             }
         } catch (\Throwable) {
-            // fall through to the default roots
+            // 默认根/历史根已试过，这里失败只意味着自定义路径不可用
         }
-
-        $roots[] = LocalDriver::defaultUploadDir();
-        $roots[] = LocalDriver::legacyUploadDir();
 
         return array_values(array_unique($roots));
     }

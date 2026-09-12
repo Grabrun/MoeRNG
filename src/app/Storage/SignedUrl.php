@@ -71,10 +71,29 @@ class SignedUrl
         return hash_equals(self::sign($path, $expires), (string) $sig);
     }
 
+    /**
+     * v1.5.0-beta.1 性能修复: 签名有效期按**时间窗口对齐**。
+     *
+     * 此前 `expires = time() + ttl` —— 同一张图每秒都产生一个不同的 URL，
+     * 浏览器把每次渲染都当作新资源，于是 `Cache-Control` 完全失效、每个页面
+     * 浏览都要把图片全部重新下载一遍（"图片加载慢"的隐藏根因）。
+     *
+     * 现在把**签发时间**对齐到窗口起点，过期时间 = 窗口起点 + ttl：
+     *   - 同一窗口内（默认 60s）对同一路径生成的 URL **完全一致** → 浏览器命中缓存
+     *   - 剩余有效期恒在 [ttl - 窗口, ttl] 之间（默认 240~300s），不会瞬过期
+     *   - 窗口 ≤ ttl；ttl 很短时窗口自动收缩，保证仍然可用
+     *
+     * 与响应头 `Cache-Control: private, max-age=60` 配套：缓存窗口 ≈ URL 轮换周期。
+     */
+    private const URL_WINDOW = 60;
+
     /** Build the signed local download URL (relative — resolves on the host). */
     public static function url(string $path, int $ttl): string
     {
-        $expires = time() + max(1, $ttl);
+        $ttl = max(1, $ttl);
+        $window = min(self::URL_WINDOW, $ttl);
+        $issued = intdiv(time(), $window) * $window;
+        $expires = $issued + $ttl;
         $p = rtrim(strtr(base64_encode($path), '+/', '-_'), '=');
         return '/files?p=' . $p . '&e=' . $expires . '&s=' . self::sign($path, $expires);
     }

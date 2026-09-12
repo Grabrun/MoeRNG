@@ -25,6 +25,65 @@ class StorageProfile extends Model
         'name', 'driver', 'provider', 'config', 'is_default', 'enabled', 'sort_order',
     ];
 
+    /**
+     * v1.5.0-beta.1 性能: 请求内实例行 / 驱动对象缓存。
+     *
+     * 读取路径（图库、API、srcset）为**每张图、每个尺寸**调用 driverForImage()，
+     * 而它原先每次都 `find()` 查库并 `driver()` 新建驱动 —— 云端驱动构造要重建
+     * SDK 客户端、并逐条解密凭据（AES-GCM），本地驱动也要做 realpath/mkdir 探测。
+     * 一页 60 张图 × 2~3 个 URL ≈ 120~180 次查询 + 客户端构造，这是图库页慢的主因。
+     *
+     * 缓存是**请求级**的（PHP 每请求独立进程/清理），并在 save() 后清空 ——
+     * 后台改完实例立刻回显新值，不会读到自己的旧数据。
+     *
+     * @var array<int, self|null>
+     */
+    private static array $rowCache = [];
+
+    /** @var array<int, \App\Storage\StorageInterface> */
+    private static array $driverCache = [];
+
+    /** 无实例的裸本地驱动（legacy 行回退用）；构造需探测目录，故复用。 */
+    private static ?\App\Storage\StorageInterface $localDriverCache = null;
+
+    /** 默认实例解析结果（null 表示"解析过但没有"）。 */
+    private static ?self $defaultCache = null;
+    private static bool $defaultResolved = false;
+
+    /** 清空请求内缓存（save() 后自动调用；测试亦可用）。 */
+    public static function flushCache(): void
+    {
+        self::$rowCache = [];
+        self::$driverCache = [];
+        self::$localDriverCache = null;
+        self::$defaultCache = null;
+        self::$defaultResolved = false;
+    }
+
+    /** 带请求内缓存的实例查找。 */
+    public static function find(int|string $id): ?static
+    {
+        $key = (int) $id;
+        if (array_key_exists($key, self::$rowCache)) {
+            return self::$rowCache[$key];
+        }
+        return self::$rowCache[$key] = parent::find($id);
+    }
+
+    /** 取（并缓存）实例的驱动对象 —— 构造代价高，同一请求内复用。 */
+    private static function cachedDriver(self $profile): StorageInterface
+    {
+        $key = (int) ($profile->attributes['id'] ?? 0);
+        if ($key > 0 && isset(self::$driverCache[$key])) {
+            return self::$driverCache[$key];
+        }
+        $driver = $profile->driver();
+        if ($key > 0) {
+            self::$driverCache[$key] = $driver;
+        }
+        return $driver;
+    }
+
     /** Decoded config array (never null). Secret fields are transparently decrypted. */
     public function config(): array
     {
@@ -64,7 +123,11 @@ class StorageProfile extends Model
                 // leave the raw value untouched — save() must stay best-effort
             }
         }
-        return parent::save();
+        $saved = parent::save();
+        // v1.5.0-beta.1: 写入后清空请求内缓存 —— 后台改完实例立刻回显新值，
+        // 而读取路径（图库/API）照旧享受请求内缓存。
+        self::flushCache();
+        return $saved;
     }
 
     public function isS3(): bool
@@ -160,17 +223,23 @@ class StorageProfile extends Model
     /** The default profile (is_default=1); falls back to the first usable one. */
     public static function defaultProfile(): ?self
     {
+        // v1.5.0-beta.1 性能: 一次请求内只解析一次（原先每个调用点各查一次库）。
+        if (self::$defaultResolved) {
+            return self::$defaultCache;
+        }
+        self::$defaultResolved = true;
+
         $p = self::firstWhere('is_default', 1);
         if ($p !== null && $p->isEnabled()) {
-            return $p;
+            return self::$defaultCache = $p;
         }
         // No default (or it is disabled) — fall back to the first enabled one.
         foreach (self::all('sort_order ASC, id ASC') as $candidate) {
             if ($candidate->isEnabled()) {
-                return $candidate;
+                return self::$defaultCache = $candidate;
             }
         }
-        return null;
+        return self::$defaultCache = null;
     }
 
     /** The default upload driver (used by Image::getStorageDriver). */
@@ -194,13 +263,14 @@ class StorageProfile extends Model
         if ($profileId > 0) {
             $profile = self::find($profileId);
             if ($profile !== null) {
-                return $profile->driver();
+                return self::cachedDriver($profile);
             }
         }
 
         $type = (string) ($row['storage'] ?? 'local');
         if ($type !== 's3') {
-            return new \App\Storage\LocalDriver();
+            // 本地驱动构造也要做 realpath/目录探测；同一请求内复用一个实例。
+            return self::$localDriverCache ??= new \App\Storage\LocalDriver();
         }
 
         // Legacy rows (pre-profile): match the remembered provider to an
@@ -209,12 +279,12 @@ class StorageProfile extends Model
         foreach (self::all('sort_order ASC, id ASC') as $candidate) {
             if ($candidate->isS3() && $candidate->isEnabled()
                 && ($candidate->attributes['provider'] ?? '') === $provider) {
-                return $candidate->driver();
+                return self::cachedDriver($candidate);
             }
         }
         $default = self::defaultProfile();
         if ($default !== null && $default->isS3()) {
-            return $default->driver();
+            return self::cachedDriver($default);
         }
         // v1.0.35: no settings fallback — profiles are the source of truth.
         throw new \RuntimeException(

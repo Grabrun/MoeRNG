@@ -195,14 +195,42 @@ class Image extends Model
     {
         $path = (string) ($this->attributes['path'] ?? '');
         if ($path !== '') {
-            try {
-                $url = self::driverFor($this)->url($path);
-                if ($url !== '') return $url;
-            } catch (\Throwable) {
-                // fall through to the stored value
-            }
+            $url = $this->driverUrlFor($path);
+            if ($url !== '') return $url;
         }
         return (string) ($this->attributes['url'] ?? '');
+    }
+
+    /**
+     * v1.5.0-beta.1 性能: 请求内 URL 记忆化。
+     *
+     * 同一张图同一个键常在一页里被多次请求（`src` 取 sm，`srcset` 又含 sm；
+     * displayUrl 先试请求尺寸再回退 md）—— 每调用一次就要重新签名/预签名。
+     * 云端预签名是 HMAC + 客户端调用，重复计算纯属浪费，故按 (实例, 键) 记忆。
+     * 失败结果（空串）同样记忆：调用方会回退到库里的 url 列，不必反复重试。
+     *
+     * @var array<string, string>
+     */
+    private static array $urlMemo = [];
+
+    /** 经存储驱动生成某键的 URL（请求内记忆化）。 */
+    private function driverUrlFor(string $key): string
+    {
+        if ($key === '') {
+            return '';
+        }
+        $memoKey = (int) ($this->attributes['storage_profile_id'] ?? 0)
+            . '|' . (string) ($this->attributes['storage'] ?? '')
+            . '|' . $key;
+        if (isset(self::$urlMemo[$memoKey])) {
+            return self::$urlMemo[$memoKey];
+        }
+        try {
+            $url = (string) self::driverFor($this)->url($key);
+        } catch (\Throwable) {
+            $url = '';
+        }
+        return self::$urlMemo[$memoKey] = $url;
     }
 
     /**
@@ -214,15 +242,7 @@ class Image extends Model
      */
     public function thumbUrl(string $size = self::THUMB_DEFAULT): string
     {
-        $key = $this->thumbKeyFor($size);
-        if ($key === '') return '';
-        try {
-            $url = self::driverFor($this)->url($key);
-            if ($url !== '') return $url;
-        } catch (\Throwable) {
-            // fall through
-        }
-        return '';
+        return $this->driverUrlFor($this->thumbKeyFor($size));
     }
 
     /**
