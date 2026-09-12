@@ -1675,15 +1675,17 @@ body.modal-open { overflow: hidden; }
 /* ── v1.3.2-beta.2: 图片处理管理页 ── */
 .queue-steps { margin: 0; padding-left: 20px; line-height: 1.9; }
 
-/* ── v1.3.3-beta.2 增强: 队列页失败明细面板 ── */
-.failed-row {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 8px 10px; margin-bottom: 6px;
-    border: 1px solid var(--border); border-radius: var(--radius-sm);
+/* ── v1.4.0-beta.2: 合并队列的筛选栏与行内错误（原失败明细面板已并入单一列表）── */
+.queue-filter {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap; margin: 0 0 12px;
 }
-.failed-info { min-width: 0; }
-.failed-path { font-weight: 600; overflow-wrap: anywhere; }
-.failed-err { color: var(--danger); font-size: 0.85rem; overflow-wrap: anywhere; }
+.queue-filter-status { width: auto; min-width: 176px; }
+.queue-filter-search { flex: 1 1 220px; min-width: 180px; }
+.queue-row-err {
+    margin-top: 4px; font-size: 0.82rem; color: var(--danger);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px;
+}
 
 /* ── v1.4.0-beta.2 UI 打磨: 图片处理页信息层次 ──
    设计目标：头部只放"队列操作"（3 个按钮，不折行）；破坏性操作与说明改为折叠，

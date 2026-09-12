@@ -1718,48 +1718,15 @@ function initQueuePage() {
         }
     });
 
-    // ── v1.3.3-beta.2 增强: 失败明细面板 + 实时统计轮询 ────────────────
+    // ── 实时统计轮询 ──────────────────────────────────────────────
     // 此前统计只在"本页发起处理"时更新；其它页面/上次中断遗留的处理进度完全
     // 看不见。现在：页面加载拉一次快照；有待处理/处理中行时每 5 秒轮询一次。
-    const failedPanel = document.getElementById('failed-panel');
-    const failedList = document.getElementById('failed-list');
-    const failedRefresh = document.getElementById('failed-refresh');
+    //
+    // v1.4.0-beta.2: 原先由 JS 单独渲染的「失败明细面板」已随队列合并取消 ——
+    // 待处理与失败现在是同一张服务端渲染的表（带状态筛选/搜索/分页），
+    // 轮询只负责状态卡片与按钮可用性，列表不再有两份数据源。
     let pollTimer = null;
     let statsInFlight = false;
-
-    function renderFailed(rows) {
-        if (!failedPanel || !failedList) return;
-        rows = Array.isArray(rows) ? rows : [];
-        if (rows.length === 0) {
-            failedPanel.classList.add('hidden');
-            failedList.textContent = '';
-            return;
-        }
-        failedPanel.classList.remove('hidden');
-        failedList.textContent = '';
-        for (const row of rows) {
-            const item = document.createElement('div');
-            item.className = 'failed-row';
-            const info = document.createElement('div');
-            info.className = 'failed-info';
-            const p = document.createElement('div');
-            p.className = 'failed-path';
-            p.textContent = '#' + row.id + ' ' + (row.path || '');
-            const err = document.createElement('div');
-            err.className = 'failed-err';
-            err.textContent = (row.error || '未知错误') + (row.at ? '（' + row.at + '）' : '');
-            info.appendChild(p);
-            info.appendChild(err);
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'btn';
-            btn.dataset.retryId = String(row.id);
-            btn.textContent = '重试';
-            item.appendChild(info);
-            item.appendChild(btn);
-            failedList.appendChild(item);
-        }
-    }
 
     // 拉取队列统计快照（GET /admin/images/queue-stats，只读无副作用）
     async function refreshStats() {
@@ -1773,7 +1740,6 @@ function initQueuePage() {
             if (j && j.success) {
                 last.stats = j.stats || last.stats;
                 paint(last.stats);
-                renderFailed(j.failed_rows);
             }
             return j || null;
         } catch (e) {
@@ -1819,13 +1785,9 @@ function initQueuePage() {
         if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null; }
     }
 
-    failedRefresh?.addEventListener('click', async function() {
-        await refreshStats();
-        refreshButtons();
-    });
-
-    // 单张重试：失败明细里的「重试」按钮（事件委托，行由 JS 动态创建）
-    failedList?.addEventListener('click', async function(ev) {
+    // 单张重试：合并队列表格里每个失败行的「重试」按钮（事件委托）
+    const queueList = document.getElementById('queue-list');
+    queueList?.addEventListener('click', async function(ev) {
         const btn = ev.target && ev.target.closest ? ev.target.closest('[data-retry-id]') : null;
         if (!btn) return;
         const id = btn.getAttribute('data-retry-id');

@@ -788,14 +788,34 @@ class ImageController extends Controller
      */
     public function queue(Request $request): void
     {
+        // v1.4.0-beta.2 增强: 待处理与失败**合并为单一队列**，支持状态筛选 +
+        // 文件名/ID 搜索 + 分页。此前是两张各限 50 条的固定表，且失败表为了拿
+        // `path` 又逐行查了一次库（50 条 → 50 次查询的 N+1）。
+        $status = (string) $request->input('status', 'all');
+        if (!in_array($status, ['all', 'pending', 'failed'], true)) {
+            $status = 'all';   // 白名单：非法值回落到"全部"
+        }
+        $search  = trim((string) $request->input('q', ''));
+        $page    = max(1, (int) $request->input('page', '1'));
+        $perPage = 50;
+
+        $filterVars = [
+            'rows' => [],
+            'total' => 0,
+            'page' => 1,
+            'pageCount' => 1,
+            'perPage' => $perPage,
+            'status' => $status,
+            'search' => $search,
+            'queueTotal' => 0,
+        ];
+
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->render('admin/queue', [
+            $this->render('admin/queue', $filterVars + [
                 'error' => '数据库连接失败: ' . $e->getMessage(),
                 'stats' => ['pending' => 0, 'processing' => 0, 'done' => 0, 'failed' => 0, 'no_thumb' => 0, 'total' => 0],
-                'pendingRows' => [],
-                'failedRows' => [],
                 'incomingDir' => self::incomingDir(),
             ]);
             return;
@@ -814,28 +834,62 @@ class ImageController extends Controller
             'total'      => $count(''),
         ];
 
-        $pendingRows = $pdo->query(
-            "SELECT id, original_name, file_size, created_at FROM `images` WHERE process_status = 'pending' ORDER BY id ASC LIMIT 50"
-        )->fetchAll(\PDO::FETCH_ASSOC);
+        // —— 过滤条件：全部走白名单 + 参数绑定（无拼接注入面）——
+        $conds  = ["`process_status` IN ('pending','failed')"];
+        $params = [];
+        if ($status !== 'all') {
+            $conds[]  = "`process_status` = ?";
+            $params[] = $status;
+        }
+        if ($search !== '') {
+            // % _ \ 必须转义，否则用户输入的 % 会变成通配符（搜"全部"）
+            $like = '%' . addcslashes($search, '%_\\') . '%';
+            if (ctype_digit($search)) {
+                $conds[]  = "(`id` = ? OR `original_name` LIKE ?)";
+                $params[] = (int) $search;
+                $params[] = $like;
+            } else {
+                $conds[]  = "`original_name` LIKE ?";
+                $params[] = $like;
+            }
+        }
+        $where = implode(' AND ', $conds);
 
-        $failedRows = $pdo->query(
-            "SELECT id, original_name, process_error, file_size, created_at FROM `images` WHERE process_status = 'failed' ORDER BY id DESC LIMIT 50"
-        )->fetchAll(\PDO::FETCH_ASSOC);
+        $cntSt = $pdo->prepare("SELECT COUNT(*) FROM `images` WHERE {$where}");
+        $cntSt->execute($params);
+        $total = (int) $cntSt->fetchColumn();
+        $pageCount = max(1, (int) ceil($total / $perPage));
+        if ($page > $pageCount) {
+            $page = $pageCount;
+        }
+        $offset = ($page - 1) * $perPage;
+
+        $st = $pdo->prepare(
+            "SELECT `id`, `path`, `original_name`, `file_size`, `process_status`, `process_error`, `created_at`"
+            . " FROM `images` WHERE {$where} ORDER BY `id` DESC LIMIT {$perPage} OFFSET {$offset}"
+        );
+        $st->execute($params);
+        $rows = $st->fetchAll(\PDO::FETCH_ASSOC);
 
         $incomingDir = self::incomingDir();
-        // 失败项的临时文件是否仍在（决定能否直接重试）
-        foreach ($failedRows as &$fr) {
-            $row = $pdo->query("SELECT `path` FROM `images` WHERE id = " . (int) $fr['id'])->fetch(\PDO::FETCH_ASSOC);
-            $p = (string) ($row['path'] ?? '');
-            $fr['temp_exists'] = $p !== '' && is_file($incomingDir . '/' . ltrim($p, '/'));
+        foreach ($rows as &$r) {
+            // path 已在同一查询中取出 —— 无需为每行再查一次库
+            $p = (string) ($r['path'] ?? '');
+            $r['temp_exists'] = $p !== '' && is_file($incomingDir . '/' . ltrim($p, '/'));
         }
-        unset($fr);
+        unset($r);
 
         $this->render('admin/queue', [
             'error' => '',
             'stats' => $stats,
-            'pendingRows' => $pendingRows,
-            'failedRows' => $failedRows,
+            'rows' => $rows,
+            'total' => $total,
+            'page' => $page,
+            'pageCount' => $pageCount,
+            'perPage' => $perPage,
+            'status' => $status,
+            'search' => $search,
+            'queueTotal' => $stats['pending'] + $stats['failed'],
             'incomingDir' => $incomingDir,
         ]);
     }
@@ -856,10 +910,12 @@ class ImageController extends Controller
     /**
      * v1.3.3-beta.2 增强: GET /admin/images/queue-stats —— 队列实时统计快照（只读）。
      *
-     * 供队列页轮询（pending/processing > 0 时每 5 秒刷新一次）与「失败明细」面板。
+     * 供队列页轮询（pending/processing > 0 时每 5 秒刷新一次）更新状态卡片。
      * 轻量端点：不挑选、不处理任何行，无副作用。
      *
-     * 返回：stats（与 processQueue 的 stats 同形状）+ failed_rows（最近 20 条失败明细）
+     * v1.4.0-beta.2: 不再返回 failed_rows —— 队列已合并为服务端渲染的单一列表
+     * （带筛选/搜索/分页），前端不再消费该字段。它此前每 5 秒都要多跑一次
+     * 20 行的 SELECT 并传输，属纯冗余。
      */
     public function queueStats(Request $request): void
     {
@@ -882,22 +938,7 @@ class ImageController extends Controller
             'total'      => (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn(),
         ];
 
-        // 失败明细（最近 20 条）：给「失败明细」面板逐张展示与重试用
-        $failedRows = [];
-        $st = $pdo->query(
-            "SELECT `id`, `path`, `process_error`, `created_at` FROM `images`"
-            . " WHERE `process_status` = 'failed' ORDER BY `id` DESC LIMIT 20"
-        );
-        foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $r) {
-            $failedRows[] = [
-                'id'    => (int) $r['id'],
-                'path'  => (string) $r['path'],
-                'error' => (string) ($r['process_error'] ?? ''),
-                'at'    => (string) ($r['created_at'] ?? ''),
-            ];
-        }
-
-        $this->json(['success' => true, 'stats' => $stats, 'failed_rows' => $failedRows]);
+        $this->json(['success' => true, 'stats' => $stats]);
     }
 
     /**
