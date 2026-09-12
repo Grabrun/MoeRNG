@@ -1,8 +1,21 @@
 # 存储目录结构统一方案（提案 v1）
 
-> 状态：**待评审**（未实施）。评审通过后按 SemVer 作为 1.4.0 线内的兼容功能实施。
-> 关联代码：`Image::thumbKey()`、`ImageController::upload()`、`ImageController::makeThumbnails()`、
-> `LocalDriver`、`SignedUrl`、`FileController`。
+> **状态：已实施（v1.5.0-beta.1 / 2026-09-12）**
+>
+> - **已采用（方案 A 资产为中心）**：
+>   - 新上传/新生成走 `{yyyy}/{mm}/{uuid}/original.{ext}` + `{dir}/thumb-{sm|md|lg}.webp`
+>   - 布局按 `images.path` 的**形态**判定（`Image::assetParts()`），因此**读取端零改动**（DB 里已存具体键），新旧布局可长期并存
+>   - 键生成收归单一来源（`Image::assetParts/thumbKey/newAssetPath`），`md` 特例只保留在旧布局分支
+>   - 存量迁移工具：`POST /admin/images/migrate-layout`（默认 `dry-run`；`apply` 逐资产原子，三阶段**复制校验 → 改库 → 删旧**），入口在「系统设置 → 图片与存储」
+> - **暂缓（各自独立小步，不影响本方案）**：
+>   - 公共前缀 `{prefix}`：需触及全部 7 个驱动与 `/files` 读取路径，风险与收益需单独评估
+>   - 本地默认根迁出 `public/`：涉及宝塔伪静态、`BT-DEPLOY.md`、`nginx.conf.example`、`doctor.php` 的同步
+> - **未启用但已留位**：世代目录 `v{n}/`（键生成函数预留参数位）
+>
+> 关联代码：`Image::assetParts()/thumbKey()/newAssetPath()/decodeThumbMap()`、
+> `ImageController::upload()/migrateLayout()/copyObjectWithinDriver()`、
+> `settings.php` 迁移面板、`app.js::runLayoutMigration()`。
+> 契约测试：`.dsh/layout_contract_test.js`（70 项，含三向故障注入验证）。
 
 ## 1. 现状
 
@@ -147,9 +160,11 @@ Image::objectKey(version: 'original'|'thumb':string, size: ?string, path: string
 | `public/uploads` 迁移影响既有链接 | 老对象保留在原根；仅**新**对象落新根 |
 | 键解析假设 `Y/m/uuid` 形态 | 解析失败的行**不迁移**并标记，人工处理；读路径不受影响 |
 
-## 9. 需要你确认的决策点
+## 9. 决策点与结论（2026-09-12）
 
-1. **前缀**：是否引入 `prefix`（默认空）？——建议引入（配置项，默认空）
-2. **本地默认根**：是否迁到 `storage/uploads`？——建议迁（web 根外更干净），同步改文档/伪静态
-3. **世代目录 `v{n}/`**：是否现在就留？——建议**先不启用**，键生成函数预留参数位
-4. **是否迁移存量**：不迁移也完全可用（新旧并存）——建议先不迁，等结构稳定后再决定
+| # | 决策点 | 结论 | 说明 |
+|---|---|---|---|
+| 1 | 公共前缀 `{prefix}` | **暂缓** | 落在驱动层最自然（装饰器），但要同时改 7 个驱动与 `/files` 读取路径；建议作为独立小步单独评估 |
+| 2 | 本地默认根迁出 `public/` | **暂缓** | 需同步宝塔伪静态、`BT-DEPLOY.md`、`nginx.conf.example`、`doctor.php`；与布局解耦，可后置 |
+| 3 | 世代目录 `v{n}/` | **不启用，留扩展位** | `objectKey` 侧预留形参；将来改缩略图参数需要并存时再启用 |
+| 4 | 是否迁移存量 | **已实现迁移工具（可选执行）** | `dry-run` 先看计划再 `apply`；逐资产原子，可随时中断；不迁移也完全可用 |

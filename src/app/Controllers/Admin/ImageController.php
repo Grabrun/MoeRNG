@@ -942,6 +942,256 @@ class ImageController extends Controller
     }
 
     /**
+     * v1.5.0-beta.1 存储结构统一（方案 A）: POST /admin/images/migrate-layout
+     *
+     * 把旧布局对象迁移到统一布局：
+     *   旧  {yyyy}/{mm}/{uuid}.{ext}                     + thumbs/…（md 无尺寸段）
+     *   新  {yyyy}/{mm}/{uuid}/original.{ext}            + {dir}/thumb-{size}.webp
+     *
+     * 逐资产原子 + 三阶段（顺序是关键）：
+     *   1. **复制**：每个对象取回字节 → 写入新键 → 校验新键存在（此时旧对象未删、DB 未改）
+     *   2. **改库**：DB 指向新键（此刻新键已全部校验存在 → 不存在"DB 指向缺失对象"的窗口）
+     *   3. **删旧**：尽力删除旧键；失败只留下无害孤立对象，不影响任何可用性
+     *   任一阶段失败 → 回滚本次已上传的新对象，旧对象与 DB 均保持原样，该行仍完全可用。
+     *
+     * 其他要点：
+     *   - mode=dry-run（默认）只返回迁移计划，不写对象、不改 DB
+     *   - 幂等：判据是 path 形态，已迁移的行不会被再次选中
+     *   - 未处理的行（pending/failed）原图只在本地临时目录 → 同盘 rename 即可，无需上传
+     */
+    public function migrateLayout(Request $request): void
+    {
+        $this->validateCsrf();
+        $mode = (string) $request->input('mode', 'dry-run');
+        if (!in_array($mode, ['dry-run', 'apply'], true)) {
+            $this->json(['success' => false, 'error' => '无效的迁移模式'], 400);
+            return;
+        }
+        $batch = max(1, min(20, (int) $request->input('batch', '3')));
+
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        $legacyWhere = "`path` IS NOT NULL AND `path` <> '' AND `path` NOT LIKE '%/original.%'";
+        $legacyTotal = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE {$legacyWhere}")->fetchColumn();
+        $newTotal    = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE `path` LIKE '%/original.%'")->fetchColumn();
+
+        $rows = $pdo->query(
+            "SELECT `id`, `path`, `thumbs`, `thumb_path`, `mime_type`, `storage_profile_id`, `process_status`"
+            . " FROM `images` WHERE {$legacyWhere} ORDER BY `id` ASC LIMIT {$batch}"
+        )->fetchAll(\PDO::FETCH_ASSOC);
+
+        $processed = 0;
+        $migrated = 0;
+        $failed = 0;
+        $skipped = 0;
+        $plan = [];
+        $results = [];
+
+        foreach ($rows as $row) {
+            $id      = (int) $row['id'];
+            $oldPath = (string) $row['path'];
+            $parts   = \App\Models\Image::assetParts($oldPath);
+            $newPath = $parts['dir'] . '/original.' . ($parts['ext'] !== '' ? $parts['ext'] : 'bin');
+
+            $thumbMap = \App\Models\Image::decodeThumbMap(
+                (string) ($row['thumbs'] ?? ''),
+                (string) ($row['thumb_path'] ?? '')
+            );
+            $newThumbs = [];
+            $moves = [['old' => $oldPath, 'new' => $newPath, 'required' => true, 'mime' => (string) ($row['mime_type'] ?? '')]];
+            foreach ($thumbMap as $size => $oldKey) {
+                $newKey = \App\Models\Image::thumbKey($size, $newPath);   // 新布局规则
+                $newThumbs[$size] = $newKey;
+                if ($oldKey !== $newKey) {
+                    $moves[] = ['old' => $oldKey, 'new' => $newKey, 'required' => false, 'mime' => 'image/webp'];
+                }
+            }
+
+            $processed++;
+
+            if ($mode === 'dry-run') {
+                $plan[] = [
+                    'id'   => $id,
+                    'from' => array_column($moves, 'old'),
+                    'to'   => array_column($moves, 'new'),
+                ];
+                continue;
+            }
+
+            $driver = null;
+            $created = [];
+            try {
+                $profile = $this->resolveProfile($row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null);
+                $driver = $profile?->driver();
+                if ($driver === null) {
+                    throw new \RuntimeException('无可用存储实例');
+                }
+
+                // 未处理完成的行：原图仍只在本地临时目录（云端尚未上传）。
+                // 本地存储可直接把临时文件改名到新键；云端则**跳过**（等处理完成后再迁移），
+                // 计为 skipped 而非失败，避免把"还没轮到它"误报成错误。
+                if ((string) $row['process_status'] !== 'done' && !($driver instanceof \App\Storage\LocalDriver)) {
+                    $skipped++;
+                    $results[] = ['id' => $id, 'skipped' => true, 'note' => '尚未处理完成（对象未上传到存储），处理完成后可再次迁移'];
+                    continue;
+                }
+
+                // 阶段 1：复制 + 校验（旧对象不删、DB 不改）
+                foreach ($moves as $mv) {
+                    $newKey = $this->copyObjectWithinDriver(
+                        $driver,
+                        $mv['old'],
+                        $mv['new'],
+                        $mv['mime'],
+                        (bool) $mv['required']
+                    );
+                    if ($newKey !== null) {
+                        $created[] = $newKey;
+                    }
+                }
+
+                // 阶段 2：DB 指向新键
+                $pdo->prepare(
+                    "UPDATE `images` SET `path` = ?, `thumbs` = ?, `thumb_path` = ? WHERE `id` = ?"
+                )->execute([
+                    $newPath,
+                    \App\Models\Image::encodeThumbs($newThumbs),
+                    $newThumbs['md'] ?? null,
+                    $id,
+                ]);
+
+                // 阶段 3：删旧（尽力而为）
+                $orphans = [];
+                foreach ($moves as $mv) {
+                    if ($mv['old'] === $mv['new']) {
+                        continue;
+                    }
+                    if (!$driver->delete($mv['old'])) {
+                        $orphans[] = $mv['old'];
+                    }
+                }
+
+                $migrated++;
+                $results[] = [
+                    'id' => $id,
+                    'ok' => true,
+                    'moved' => count($moves),
+                    'orphans' => $orphans,   // 非空表示旧对象删除失败（孤立但无害）
+                ];
+            } catch (\Throwable $e) {
+                // 回滚阶段 1 已创建的新对象；旧对象与 DB 均未改动 → 该行仍可用
+                foreach ($created as $key) {
+                    if ($driver !== null) {
+                        $driver->delete($key);
+                    }
+                }
+                $failed++;
+                $results[] = ['id' => $id, 'error' => mb_substr($e->getMessage(), 0, 300)];
+            }
+        }
+
+        $remaining = max(0, $legacyTotal - $migrated);
+
+        $this->json([
+            'success' => true,
+            'mode' => $mode,
+            'legacy_total' => $legacyTotal,
+            'new_total' => $newTotal,
+            'processed' => $processed,
+            'migrated' => $migrated,
+            'failed' => $failed,
+            'skipped' => $skipped,
+            'remaining' => $mode === 'apply' ? $remaining : $legacyTotal,
+            'plan' => $plan,
+            'results' => $results,
+        ]);
+    }
+
+    /**
+     * 在**同一驱动内**把对象从 $oldKey 复制/移动到 $newKey，复制后校验新键存在。
+     *
+     * - 本地存储：最终存储里有文件 → 直接上传（同盘复制）；否则看临时目录
+     *   （未处理的行）→ 同盘 rename 即可，无需上传
+     * - 云端：$required=false 时先用 exists() 判存在（避免无谓下载）；取回字节后上传
+     *
+     * @param bool $required 源对象缺失时是否视为致命
+     * @return ?string 新创建的对象键（无对象创建时为 null，例如临时文件直接改名）
+     */
+    private function copyObjectWithinDriver(
+        \App\Storage\StorageInterface $driver,
+        string $oldKey,
+        string $newKey,
+        string $mime,
+        bool $required
+    ): ?string {
+        if ($oldKey === '' || $oldKey === $newKey) {
+            return null;
+        }
+
+        $src = null;
+        $isTemp = false;
+
+        if ($driver instanceof \App\Storage\LocalDriver) {
+            $finalFile = $driver->uploadDir() . '/' . ltrim($oldKey, '/');
+            if (is_file($finalFile)) {
+                $src = $finalFile;
+            } else {
+                // 未处理的行：原图只在 storage/incoming，同盘 rename（无需上传）
+                $tempFile = self::incomingDir() . '/' . ltrim($oldKey, '/');
+                if (!is_file($tempFile)) {
+                    if (!$required) {
+                        return null;
+                    }
+                    throw new \RuntimeException('对象不存在: ' . $oldKey);
+                }
+                $dst = self::incomingDir() . '/' . ltrim($newKey, '/');
+                if (!is_dir(dirname($dst))) {
+                    @mkdir(dirname($dst), 0755, true);
+                }
+                if (!@rename($tempFile, $dst)) {
+                    throw new \RuntimeException('临时文件移动失败: ' . $oldKey);
+                }
+                @rmdir(dirname($tempFile));
+                return null;   // 只是改名，没有"新对象"需要回滚
+            }
+        } else {
+            if (!$driver->exists($oldKey)) {
+                if (!$required) {
+                    return null;   // 该档缩略图缺失 → 后续可重新生成
+                }
+                throw new \RuntimeException('对象不存在: ' . $oldKey);
+            }
+            $src = \App\Storage\S3Driver::downloadUrl($driver->url($oldKey));
+            $isTemp = true;
+        }
+
+        if ($src === null) {
+            if (!$required) {
+                return null;
+            }
+            throw new \RuntimeException('对象取回失败: ' . $oldKey);
+        }
+
+        try {
+            $driver->upload($src, $newKey, $mime !== '' ? $mime : 'application/octet-stream');
+            if (!$driver->exists($newKey)) {
+                throw new \RuntimeException('新对象校验失败: ' . $newKey);
+            }
+        } finally {
+            if ($isTemp) {
+                @unlink($src);
+            }
+        }
+
+        return $newKey;
+    }
+
+    /**
      * v1.3.3-beta.2 增强: POST /admin/images/requeue-one —— 重试**单张**失败的图片。
      *
      * 与 requeueFailed（全部失败项）互补：失败明细面板里逐张操作。
@@ -1313,10 +1563,10 @@ class ImageController extends Controller
                 $batchHashes[$fileHash] = ['name' => $originalName, 'sha256' => $fileSha256];
             }
 
-            // Generate unique filename
-            $uuid = bin2hex(random_bytes(8));
-            $filename = "{$uuid}.{$ext}";
-            $remotePath = date('Y/m') . '/' . $filename;
+            // v1.5.0-beta.1: 新上传走统一布局（方案 A，资产为中心）——
+            //   {yyyy}/{mm}/{uuid}/original.{ext}，缩略图落在同目录 thumb-{size}.webp。
+            // 旧布局对象不受影响（键推导按 path 形态自动选择规则）。
+            $remotePath = \App\Models\Image::newAssetPath($ext);
 
             try {
                 // Get image dimensions
@@ -1336,7 +1586,8 @@ class ImageController extends Controller
                 }
 
                 $image = new Image([
-                    'filename' => $filename,
+                    // 新布局下存储文件名为 original.{ext}（旧布局曾是 {uuid}.{ext}）
+                    'filename' => basename($remotePath),
                     'original_name' => $originalName,
                     'path' => $remotePath,
                     'url' => '',

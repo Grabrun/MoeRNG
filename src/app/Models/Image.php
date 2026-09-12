@@ -31,34 +31,122 @@ class Image extends Model
     public const THUMB_DEFAULT = 'md';
 
     /**
+     * v1.5.0-beta.1 存储结构统一（方案 A：资产为中心）—— 布局解析与键推导。
+     *
+     * 两种布局并存，**按 images.path 自身的形态判定**（无需额外标志列），
+     * 因此读取端零改动（DB 里已存具体键），迁移工具也能对任意行推导目标键：
+     *
+     *   新（v2）：{yyyy}/{mm}/{uuid}/original.{ext}
+     *            {yyyy}/{mm}/{uuid}/thumb-{sm|md|lg}.webp
+     *   旧（v1）：{yyyy}/{mm}/{uuid}.{ext}                      ← 原图
+     *            thumbs/{yyyy}/{mm}/{uuid}.webp                 ← md（无尺寸段）
+     *            thumbs/{sm|lg}/{yyyy}/{mm}/{uuid}.webp
+     *
+     * 设计要点：一个资产的全部对象同处一个前缀（{yyyy}/{mm}/{uuid}/），
+     * 删除/统计/迁移都成为前缀操作；档位命名统一，md 特例只保留在旧布局分支。
+     */
+    public const LAYOUT_V2 = 'v2';
+    public const LAYOUT_V1 = 'v1';
+
+    /**
+     * 解析相对路径为资产各部分。
+     *
+     * @return array{layout: string, dir: string, ext: string, uuid: string}
+     *   layout=v2/v1（v1 同时覆盖任何无法识别形态的历史路径）
+     */
+    public static function assetParts(string $path): array
+    {
+        $p = ltrim(str_replace('\\', '/', trim($path)), '/');
+
+        // 新布局：{yyyy}/{mm}/{uuid}/original.{ext}
+        if (preg_match('#^(\d{4})/(\d{2})/([0-9a-zA-Z]{8,64})/(original)\.([a-zA-Z0-9]+)$#', $p, $m)) {
+            return [
+                'layout' => self::LAYOUT_V2,
+                'dir'    => $m[1] . '/' . $m[2] . '/' . $m[3],
+                'ext'    => strtolower($m[5]),
+                'uuid'   => $m[3],
+            ];
+        }
+
+        // 旧布局：{yyyy}/{mm}/{uuid}.{ext}（含任何其它历史形态 → 一律按旧规则处理）
+        $ext = (string) pathinfo($p, PATHINFO_EXTENSION);
+        $base = $ext !== '' ? substr($p, 0, -(strlen($ext) + 1)) : $p;
+        return [
+            'layout' => self::LAYOUT_V1,
+            'dir'    => $base,
+            'ext'    => strtolower($ext),
+            'uuid'   => basename($base),
+        ];
+    }
+
+    /** 是否已在新布局（迁移的判据）。 */
+    public static function isNewLayout(string $path): bool
+    {
+        return self::assetParts($path)['layout'] === self::LAYOUT_V2;
+    }
+
+    /** 新布局下的原图相对路径（上传时调用；目录名用随机串，扩展名保留）。 */
+    public static function newAssetPath(string $ext): string
+    {
+        $ext = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $ext) ?: 'bin');
+        return date('Y/m') . '/' . bin2hex(random_bytes(8)) . '/original.' . $ext;
+    }
+
+    /**
      * 由原图相对路径推导某尺寸缩略图的存储 key（与生成端共用同一约定）。
+     *
+     * v1.5.0: 按 path 布局自动选择规则 —— 新布局统一 `{dir}/thumb-{size}.webp`，
+     * 旧布局保持历史规则不变（`md` 无尺寸段），二者互不干扰。
      */
     public static function thumbKey(string $size, string $path): string
     {
+        $parts = self::assetParts($path);
+
+        if ($parts['layout'] === self::LAYOUT_V2) {
+            return $parts['dir'] . '/' . self::thumbVariant($size) . '.webp';
+        }
+
+        // —— 旧布局（历史规则，保持兼容，勿改）——
         $rel = ltrim((string) preg_replace('/\.[a-z0-9]+$/i', '.webp', $path), '/');
         if ($size === 'md') {
-            return 'thumbs/' . $rel;           // 历史路径，保持兼容
+            return 'thumbs/' . $rel;
         }
         return 'thumbs/' . $size . '/' . $rel;
+    }
+
+    /** 缩略图文件名（不含扩展名）：thumb-{size}。 */
+    public static function thumbVariant(string $size): string
+    {
+        return 'thumb-' . preg_replace('/[^a-z0-9]/', '', strtolower($size));
     }
 
     /** 解析 `thumbs` JSON 列为 尺寸 => key 映射（非法/空返回空数组）。 */
     public function thumbMap(): array
     {
-        $raw = (string) ($this->attributes['thumbs'] ?? '');
-        if ($raw === '') return [];
-        $map = json_decode($raw, true);
-        if (!is_array($map)) return [];
+        return self::decodeThumbMap(
+            (string) ($this->attributes['thumbs'] ?? ''),
+            (string) ($this->attributes['thumb_path'] ?? '')
+        );
+    }
+
+    /**
+     * 静态解析 thumbs JSON（迁移工具按行处理时需要，不必构造实例）。
+     * md 兼容：老数据只有 thumb_path、thumbs 列里没有 md。
+     */
+    public static function decodeThumbMap(string $thumbsJson, string $thumbPath = ''): array
+    {
+        $map = $thumbsJson !== '' ? json_decode($thumbsJson, true) : null;
+        if (!is_array($map)) {
+            $map = [];
+        }
         $out = [];
         foreach (self::THUMB_SIZES as $size => $_) {
             if (!empty($map[$size]) && is_string($map[$size])) {
                 $out[$size] = $map[$size];
             }
         }
-        // md 兼容：老数据只有 thumb_path、thumbs 列里没有 md
-        if (!isset($out['md'])) {
-            $legacy = (string) ($this->attributes['thumb_path'] ?? '');
-            if ($legacy !== '') $out['md'] = $legacy;
+        if (!isset($out['md']) && $thumbPath !== '') {
+            $out['md'] = $thumbPath;
         }
         return $out;
     }

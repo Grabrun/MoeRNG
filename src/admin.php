@@ -52,6 +52,8 @@ $router->group('/admin', function ($router) {
     $router->post('/images/requeue-one', [$images, 'requeueOne']);
     // v1.4.0-beta.2 增强: 清空处理队列（按范围删除未完成记录 + 清理临时原图）
     $router->post('/images/queue-clear', [$images, 'queueClear']);
+    // v1.5.0-beta.1: 存量对象迁移到统一存储布局（方案 A；dry-run 默认，apply 逐资产原子）
+    $router->post('/images/migrate-layout', [$images, 'migrateLayout']);
     $router->post('/images/update', [$images, 'update']);
     $router->post('/images/delete', [$images, 'delete']);
     $router->post('/images/batch-delete', [$images, 'batchDelete']);

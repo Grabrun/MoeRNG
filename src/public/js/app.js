@@ -1465,6 +1465,142 @@ async function runBackfillThumbs(setUI) {
     return { done: totalDone, failed: totalFailed, total: total };
 }
 
+// ── v1.5.0-beta.1: 存储结构统一（方案 A）—— 存量对象迁移 ────────────────
+// dry-run 只返回计划（不写对象、不改库）；apply 逐资产原子：复制并校验 → 改库记录 →
+// 最后删旧对象，因此迁移过程可随时中断，图片始终可访问。
+async function runLayoutMigration(setUI) {
+    let migrated = 0, failed = 0, skipped = 0, total = 0, firstError = '';
+    for (;;) {
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        fd.append('mode', 'apply');
+        fd.append('batch', '3');
+
+        const r = await fetch('/admin/images/migrate-layout', {
+            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const j = await parseJsonResponse(r, '存储迁移');
+        if (!j || !j.success) {
+            throw new Error((j && j.error) || '未知错误');
+        }
+
+        if (total === 0) total = Number(j.legacy_total) || 0;
+        migrated += Number(j.migrated) || 0;
+        failed += Number(j.failed) || 0;
+        skipped += Number(j.skipped) || 0;
+        if (!firstError) {
+            const bad = (j.results || []).find(x => x && x.error);
+            if (bad) firstError = bad.error;
+        }
+
+        const remaining = Number(j.remaining) || 0;
+        const done = Math.max(0, total - remaining);
+        setUI(total > 0 ? done / total : 1,
+            '迁移中… ' + done + '/' + total,
+            '已迁移 ' + migrated + ' 个资产'
+                + (failed ? '，失败 ' + failed + ' 个' : '')
+                + (skipped ? '，跳过 ' + skipped + ' 个（未处理完成）' : ''));
+
+        if (remaining === 0) break;
+        // 本批没有任何资产完成迁移（存储不可达 / 全是未处理完成的行）→ 收敛退出，
+        // 避免无限空转；剩余数量如实显示在结果里。
+        if ((Number(j.migrated) || 0) === 0) {
+            return { migrated: migrated, failed: failed, skipped: skipped, total: total, remaining: remaining, firstError: firstError };
+        }
+    }
+    return { migrated: migrated, failed: failed, skipped: skipped, total: total, remaining: 0, firstError: firstError };
+}
+
+function initLayoutMigration() {
+    const checkBtn = document.getElementById('layout-check');
+    const migrateBtn = document.getElementById('layout-migrate');
+    if (!checkBtn && !migrateBtn) return;
+
+    const statEl = document.getElementById('layout-stat');
+    const box = document.getElementById('layout-progress');
+    const fill = document.getElementById('layout-fill');
+    const text = document.getElementById('layout-text');
+    const detail = document.getElementById('layout-detail');
+    const setUI = function (pct, t, d) {
+        if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+        if (text && t) text.textContent = t;
+        if (detail && d !== undefined) detail.textContent = d;
+    };
+
+    // 只读检查（dry-run）：给出新旧对象数量与一条示例映射
+    async function check() {
+        if (statEl) statEl.textContent = '正在检查…';
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        fd.append('mode', 'dry-run');
+        fd.append('batch', '3');
+        const r = await fetch('/admin/images/migrate-layout', {
+            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const j = await parseJsonResponse(r, '结构检查');
+        if (!j || !j.success) {
+            if (statEl) statEl.textContent = '检查失败：' + ((j && j.error) || '未知错误');
+            return null;
+        }
+        const legacy = Number(j.legacy_total) || 0;
+        const fresh = Number(j.new_total) || 0;
+        let line = '旧布局 ' + legacy + ' 个资产，新布局 ' + fresh + ' 个';
+        if (legacy === 0) {
+            line += ' —— 已全部为新布局，无需迁移。';
+        } else if (j.plan && j.plan.length && j.plan[0].from && j.plan[0].from.length) {
+            line += '。示例：' + j.plan[0].from[0] + ' → ' + j.plan[0].to[0];
+        } else {
+            line += '。';
+        }
+        if (statEl) statEl.textContent = line;
+        if (migrateBtn) migrateBtn.disabled = legacy === 0;
+        return { legacy: legacy, fresh: fresh };
+    }
+
+    checkBtn?.addEventListener('click', function () { check(); });
+
+    // 两段式确认（迁移会改动对象与记录，属破坏性操作）
+    let armed = false, timer = null;
+    migrateBtn?.addEventListener('click', async function () {
+        if (!armed) {
+            armed = true;
+            migrateBtn.textContent = '再次点击确认迁移';
+            timer = setTimeout(function () {
+                armed = false;
+                migrateBtn.textContent = '开始迁移';
+            }, 5000);
+            return;
+        }
+        clearTimeout(timer);
+        armed = false;
+        migrateBtn.textContent = '开始迁移';
+
+        migrateBtn.disabled = true;
+        if (checkBtn) checkBtn.disabled = true;
+        if (box) { box.classList.remove('hidden'); setUI(0, '准备迁移…', ''); }
+        try {
+            const res = await runLayoutMigration(setUI);
+            let msg = '迁移完成：成功 ' + res.migrated + ' 个资产'
+                + (res.failed ? '，失败 ' + res.failed + ' 个' : '')
+                + (res.skipped ? '，跳过 ' + res.skipped + ' 个（未处理完成）' : '');
+            if (res.remaining > 0) {
+                msg += '；仍有 ' + res.remaining + ' 个旧布局资产待迁移（可在处理队列清空后再执行）';
+            }
+            setUI(res.remaining > 0 ? (res.total > 0 ? (res.total - res.remaining) / res.total : 0) : 1,
+                res.remaining > 0 ? '迁移部分完成' : '迁移完成',
+                msg + (res.firstError ? '（首个错误：' + res.firstError + '）' : ''));
+            showToast(msg, (res.failed || res.remaining > 0) ? 'error' : 'success', 10000);
+        } catch (e) {
+            setUI(0, '迁移中止', e.message);
+            showToast('迁移异常: ' + e.message, 'error', 9000);
+        } finally {
+            migrateBtn.disabled = false;
+            if (checkBtn) checkBtn.disabled = false;
+            await check();
+        }
+    });
+}
+
 async function runHashBackfill(setUI) {
     let totalUpdated = 0, totalFailed = 0, total = 0, done = 0;
     for (;;) {
@@ -1915,6 +2051,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initImageGrid();
     initHealthPanel();
     initQueuePage();
+    initLayoutMigration();
     initApiKeys();
     initCategoryActions();
     initDropZone();

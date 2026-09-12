@@ -132,6 +132,30 @@ admin_header('系统设置', 'page-settings');
         <?php endif; ?>
     </form>
 
+    <?php if ($gid === 'media'): ?>
+    <!-- v1.5.0-beta.1: 存储结构统一（方案 A）—— 存量对象迁移面板 -->
+    <div class="card mb-3">
+        <h3 class="mb-2">存储结构与迁移</h3>
+        <p class="text-muted text-small text-secondary">
+            新上传的图片已自动使用统一布局：<code>{年}/{月}/{uuid}/original.{ext}</code> 与同目录的
+            <code>thumb-{尺寸}.webp</code>（一个资产的全部对象同处一个前缀）。
+            历史对象仍是旧布局（<code>{年}/{月}/{uuid}.{ext}</code> 与 <code>thumbs/…</code>），二者可长期并存 ——
+            迁移是<strong>可选</strong>的增量操作：先把每个对象复制到新键并校验存在，然后才切换记录，最后才删除旧对象，
+            因此迁移过程中图片始终可访问，随时可以中断。
+        </p>
+        <p class="text-muted text-small text-secondary" id="layout-stat">点击「检查当前结构」查看新旧对象的数量。</p>
+        <div class="flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline btn-sm" id="layout-check">检查当前结构</button>
+            <button type="button" class="btn btn-primary btn-sm" id="layout-migrate">开始迁移</button>
+        </div>
+        <div id="layout-progress" class="hidden mt-3">
+            <div class="health-progress-text" id="layout-text">准备迁移…</div>
+            <div class="health-progress-track"><div id="layout-fill" class="health-progress-fill"></div></div>
+            <div class="health-progress-detail" id="layout-detail"></div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <?php if ($gid === 'maintenance'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">缓存清理</h3>
