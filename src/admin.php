@@ -56,6 +56,8 @@ $router->group('/admin', function ($router) {
     $router->post('/images/migrate-layout', [$images, 'migrateLayout']);
     // v1.5.0-beta.1: 清理旧布局对象 / 暂存垃圾 / 历史媒体根残留（干跑优先）
     $router->post('/images/cleanup-storage', [$images, 'cleanupStorage']);
+    // v1.5.0-beta.1: 历史原图批量转 WebP（干跑优先，逐行回滚）
+    $router->post('/images/convert-originals', [$images, 'convertOriginals']);
     $router->post('/images/update', [$images, 'update']);
     $router->post('/images/delete', [$images, 'delete']);
     $router->post('/images/batch-delete', [$images, 'batchDelete']);

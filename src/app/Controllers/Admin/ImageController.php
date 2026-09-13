@@ -187,6 +187,148 @@ class ImageController extends Controller
         return $mb > 0 ? $mb * 1048576 : 0;
     }
 
+    /** v1.5.0-beta.1: 原图是否统一转 WebP（默认开）。 */
+    private static function originalWebpEnabled(): bool
+    {
+        return (string) Config::get('settings.original_webp_enabled', '1') !== '0';
+    }
+
+    /** 原图 WebP 编码质量（40-100，默认 90 —— 原图是质量锚点，故高于缩略图）。 */
+    private static function originalWebpQuality(): int
+    {
+        $q = (int) Config::get('settings.original_webp_quality', '90');
+        return max(40, min(100, $q > 0 ? $q : 90));
+    }
+
+    /**
+     * 把本地图片文件转成 WebP（**原地覆盖同一路径**）。
+     *
+     * 上传路径与「转换历史原图」共用这一个实现 —— 规则只有一份，不会两边走偏。
+     *
+     * @return array{ok: bool, note: string} ok=false 时调用方保持原格式不动。
+     *
+     * 保持原格式的情形（每条都有明确理由，绝不为了"统一"而牺牲正确性）：
+     *   - disabled           开关关闭
+     *   - already-webp       已经是 WebP
+     *   - format-kept        GIF（GD 只取第一帧，转了就**丢动画**）、SVG（矢量图位图化会失真）
+     *   - gd-unavailable     GD 缺 webp 支持
+     *   - too-large          解码会超出可用内存（复用缩略图的同一内存预检）
+     *   - exif-unavailable   JPEG 且读不到 EXIF：浏览器会按 EXIF 旋转 JPEG，WebP 不会 ——
+     *                        不纠正就会把手机照片转"歪"，所以宁可不转
+     *   - unreadable/decode-failed/encode-failed  读取或编解码失败（不阻断上传）
+     *   - not-smaller        编码结果**不比原文件小**（小图/已优化图常见）→ 保留原格式
+     */
+    private function convertOriginalToWebp(string $file, string $mime): array
+    {
+        if (!self::originalWebpEnabled()) {
+            return ['ok' => false, 'note' => 'disabled'];
+        }
+        if ($mime === 'image/webp') {
+            return ['ok' => false, 'note' => 'already-webp'];
+        }
+        if (in_array($mime, ['image/gif', 'image/svg+xml'], true)) {
+            return ['ok' => false, 'note' => 'format-kept'];
+        }
+        if (!function_exists('imagecreatefromstring') || !function_exists('imagewebp')) {
+            return ['ok' => false, 'note' => 'gd-unavailable'];
+        }
+
+        // 与缩略图同一套内存预检：放不下就不解码（避免不可捕获的 OOM）
+        $tooBig = $this->decodeWouldExceedMemory($file);
+        if ($tooBig !== null) {
+            return ['ok' => false, 'note' => 'too-large'];
+        }
+
+        $orientation = 1;
+        if ($mime === 'image/jpeg') {
+            if (!function_exists('exif_read_data')) {
+                return ['ok' => false, 'note' => 'exif-unavailable'];
+            }
+            $exif = @exif_read_data($file);
+            if (is_array($exif) && isset($exif['Orientation'])) {
+                $orientation = (int) $exif['Orientation'];
+            }
+        }
+
+        $data = @file_get_contents($file);
+        if ($data === false || $data === '') {
+            return ['ok' => false, 'note' => 'unreadable'];
+        }
+
+        $src = @imagecreatefromstring($data);
+        if ($src === false) {
+            return ['ok' => false, 'note' => 'decode-failed'];
+        }
+        unset($data);
+
+        if ($orientation > 1) {
+            $src = $this->applyExifOrientation($src, $orientation);
+        }
+
+        // 保留透明通道（PNG/WebP 常见），并统一为真彩色
+        if (function_exists('imagepalettetotruecolor')) {
+            @imagepalettetotruecolor($src);
+        }
+        @imagealphablending($src, false);
+        @imagesavealpha($src, true);
+
+        ob_start();
+        $encoded = @imagewebp($src, null, self::originalWebpQuality());
+        $out = (string) ob_get_clean();
+        imagedestroy($src);
+
+        if ($encoded === false || $out === '') {
+            return ['ok' => false, 'note' => 'encode-failed'];
+        }
+
+        $before = (int) @filesize($file);
+        if ($before > 0 && strlen($out) >= $before) {
+            // 转完更大 → 保留原格式（"优化"不能反而让站点更慢）
+            return ['ok' => false, 'note' => 'not-smaller'];
+        }
+        if (@file_put_contents($file, $out) === false) {
+            return ['ok' => false, 'note' => 'unreadable'];
+        }
+
+        return ['ok' => true, 'note' => 'done'];
+    }
+
+    /**
+     * 按 EXIF Orientation 纠正方向。
+     *
+     * 浏览器对 JPEG 会应用 EXIF 方向，对 WebP **不会** —— 所以转码前必须自己摆正，
+     * 否则手机竖拍的照片会转 90°。映射遵循 EXIF 规范（2~8，1 为正常）。
+     */
+    private function applyExifOrientation(\GdImage $img, int $orientation): \GdImage
+    {
+        switch ($orientation) {
+            case 2:
+                @imageflip($img, IMG_FLIP_HORIZONTAL);
+                break;
+            case 3:
+                $img = imagerotate($img, 180, 0);
+                break;
+            case 4:
+                @imageflip($img, IMG_FLIP_VERTICAL);
+                break;
+            case 5:
+                $img = imagerotate($img, -90, 0);
+                @imageflip($img, IMG_FLIP_HORIZONTAL);
+                break;
+            case 6:
+                $img = imagerotate($img, -90, 0);
+                break;
+            case 7:
+                $img = imagerotate($img, 90, 0);
+                @imageflip($img, IMG_FLIP_HORIZONTAL);
+                break;
+            case 8:
+                $img = imagerotate($img, 90, 0);
+                break;
+        }
+        return $img;
+    }
+
     /**
      * v1.4.0-beta.2 性能修复: 请求内存储实例解析缓存。
      *
@@ -1225,6 +1367,222 @@ class ImageController extends Controller
     }
 
     /* ------------------------------------------------------------------
+     * v1.5.0-beta.1: 历史原图转 WebP（干跑优先）
+     * ------------------------------------------------------------------ */
+
+    /** 每批处理的行数上限（历史原图转换；云端要逐个下载+上传，批量不宜大）。 */
+    private const CONVERT_BATCH_MAX = 20;
+
+    /** 可转 WebP 的源格式（其余一律跳过：GIF 会丢动画、SVG 是矢量）。 */
+    private const CONVERTIBLE_MIMES = ['image/jpeg', 'image/png', 'image/bmp', 'image/avif'];
+
+    /**
+     * POST /admin/images/convert-originals —— 把历史原图批量转成 WebP（干跑优先）。
+     *
+     * v1.5.0-beta.1 之前上传的原图保持原格式（当时只有缩略图转 WebP）。本工具按行
+     * 推进、可中断、可续跑（游标 settings.original_convert_cursor，**只在 apply 时
+     * 推进**）：
+     *
+     *   取字节 → 转码（与上传路径同一个 convertOriginalToWebp）→ 上传新键 →
+     *   **校验新对象存在** → 更新记录（path/mime/size/双哈希）→ 删除旧对象
+     *
+     * 键怎么变：**只换扩展名、布局不动** —— 新布局 `{dir}/original.{ext}` →
+     * `{dir}/original.webp`；旧布局 `{Y}/{m}/{uuid}.{ext}` → `{Y}/{m}/{uuid}.webp`。
+     * 两种布局下**缩略图键都与原图扩展名无关**（新布局是同目录固定名 `thumb-{size}.webp`，
+     * 旧布局是 `thumbs/…/{uuid}.webp`），所以缩略图完全不需要搬迁。
+     *
+     * 安全护栏（任一不满足即回滚该行、保持原样）：
+     *   - 只处理 process_status='done' 且 path 非 .webp 的行；
+     *   - 源格式必须在 CONVERTIBLE_MIMES（GIF/SVG 连字节都不必拉）；
+     *   - 转码不成功/不更小 → 跳过（不换键、不动旧对象）；
+     *   - **新对象上传后先 exists() 校验，再改库** —— 任何时刻记录都指向存在的对象；
+     *   - 改库失败 → 删掉新对象回滚（旧对象与记录原封不动）；
+     *   - 删旧失败只记 orphan 风险（新对象已就位，服务不受影响）。
+     *
+     * 注意：转换会**重算 file_hash/file_sha256**（记录的哈希必须描述实际存储的字节）。
+     * 云端每行都要下载+上传，耗时可观 —— 建议先干跑看数量，再分批执行。
+     */
+    public function convertOriginals(Request $request): void
+    {
+        $this->validateCsrf();
+        $mode = (string) $request->input('mode', 'dry-run');
+        if (!in_array($mode, ['dry-run', 'apply'], true)) {
+            $this->json(['success' => false, 'error' => '无效的转换模式'], 400);
+            return;
+        }
+        $apply = $mode === 'apply';
+        $batch = max(1, min(self::CONVERT_BATCH_MAX, (int) $request->input('batch', '5')));
+
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        $cursor = (int) \App\Models\Setting::get('original_convert_cursor', '0');
+        $stmt = $pdo->prepare(
+            "SELECT `id`, `path`, `mime_type`, `storage_profile_id` FROM `images`"
+            . " WHERE `id` > ? AND `process_status` = 'done' AND `path` <> '' AND `path` NOT LIKE '%.webp'"
+            . " ORDER BY `id` ASC LIMIT {$batch}"
+        );
+        $stmt->execute([$cursor]);
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $scanned = 0;
+        $planned = 0;
+        $converted = 0;
+        $skipped = 0;
+        $failed = 0;
+        $orphanRisk = 0;
+        $notes = [];
+        $samples = [];
+        $lastId = $cursor;
+
+        foreach ($rows as $row) {
+            $scanned++;
+            $id = (int) $row['id'];
+            $lastId = max($lastId, $id);
+            $path = (string) $row['path'];
+            $mime = (string) ($row['mime_type'] ?? '');
+
+            if (!in_array($mime, self::CONVERTIBLE_MIMES, true)) {
+                $skipped++;
+                $notes['源格式不支持'] = ($notes['源格式不支持'] ?? 0) + 1;
+                continue;
+            }
+
+            $tmpFile = null;
+            $isTemp = false;
+            $driver = null;
+            $uploadedNew = null;
+            try {
+                $profile = $this->resolveProfile(
+                    $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
+                );
+                $driver = $profile?->driver();
+                if ($driver === null) {
+                    $failed++;
+                    continue;
+                }
+
+                // —— 取字节到本地（本地直读；云端经签名 URL 拉临时文件）——
+                if ($driver instanceof \App\Storage\LocalDriver) {
+                    $tmpFile = $driver->uploadDir() . '/' . ltrim($path, '/');
+                    if (!is_file($tmpFile) || !is_readable($tmpFile)) {
+                        $failed++;
+                        $notes['源对象不可读'] = ($notes['源对象不可读'] ?? 0) + 1;
+                        continue;
+                    }
+                } else {
+                    $tmpFile = \App\Storage\S3Driver::downloadUrl($driver->url($path));
+                    $isTemp = true;
+                    if ($tmpFile === null || !is_file($tmpFile)) {
+                        $failed++;
+                        $notes['对象拉取失败'] = ($notes['对象拉取失败'] ?? 0) + 1;
+                        continue;
+                    }
+                }
+
+                $conv = $this->convertOriginalToWebp($tmpFile, $mime);
+                if (!$conv['ok']) {
+                    $skipped++;
+                    $reason = $conv['note'] === 'not-smaller' ? '转换后未更小（保留原图）' : ('未转换：' . $conv['note']);
+                    $notes[$reason] = ($notes[$reason] ?? 0) + 1;
+                    continue;
+                }
+
+                // 只换扩展名，布局不动 —— 也正因如此缩略图键不受影响
+                $newPath = (string) preg_replace('/\.[a-z0-9]+$/i', '.webp', $path);
+                if ($newPath === $path || $newPath === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                if (!$apply) {
+                    $planned++;
+                    if (count($samples) < 12) {
+                        $samples[] = ['id' => $id, 'from' => $path, 'to' => $newPath];
+                    }
+                    continue;
+                }
+
+                // —— 上传新键 → 校验 → 改库 → 删旧（任一步失败即回滚）——
+                $driver->upload($tmpFile, $newPath, 'image/webp');
+                $uploadedNew = $newPath;
+                if (!$driver->exists($newPath)) {
+                    throw new \RuntimeException('新对象上传后校验失败');
+                }
+
+                $bytes = (int) @filesize($tmpFile);
+                $md5 = @hash_file('md5', $tmpFile);
+                $sha = @hash_file('sha256', $tmpFile);
+
+                $upd = $pdo->prepare(
+                    "UPDATE `images` SET `path` = ?, `filename` = ?, `mime_type` = 'image/webp',"
+                    . " `file_size` = ?, `file_hash` = ?, `file_sha256` = ?, `url` = '' WHERE `id` = ?"
+                );
+                if (!$upd->execute([
+                    $newPath,
+                    basename($newPath),
+                    $bytes,
+                    ($md5 === false || $md5 === '') ? null : $md5,
+                    ($sha === false || $sha === '') ? null : $sha,
+                    $id,
+                ])) {
+                    throw new \RuntimeException('数据库更新失败');
+                }
+
+                // 旧对象删除失败不影响服务（新对象已就位）—— 如实计入 orphan 风险
+                if (!$driver->delete($path)) {
+                    $orphanRisk++;
+                }
+
+                $converted++;
+                if (count($samples) < 12) {
+                    $samples[] = ['id' => $id, 'from' => $path, 'to' => $newPath, 'action' => 'converted'];
+                }
+            } catch (\Throwable $e) {
+                $failed++;
+                // 回滚：已上传的新对象必须删掉，否则记录仍指向旧对象、新对象白留一份
+                if ($uploadedNew !== null && $driver !== null) {
+                    @$driver->delete($uploadedNew);
+                }
+                if (count($samples) < 12) {
+                    $samples[] = ['id' => $id, 'note' => '异常：' . $e->getMessage()];
+                }
+            } finally {
+                if ($isTemp && is_string($tmpFile) && is_file($tmpFile)) {
+                    @unlink($tmpFile);
+                }
+            }
+        }
+
+        $remaining = (int) $pdo->query(
+            "SELECT COUNT(*) FROM `images` WHERE `id` > " . (int) $lastId
+            . " AND `process_status` = 'done' AND `path` <> '' AND `path` NOT LIKE '%.webp'"
+        )->fetchColumn();
+
+        if ($apply && $scanned > 0) {
+            \App\Models\Setting::set('original_convert_cursor', (string) $lastId);
+        }
+
+        $this->json([
+            'success'    => true,
+            'mode'       => $mode,
+            'scanned'    => $scanned,
+            'planned'    => $planned,
+            'converted'  => $converted,
+            'skipped'    => $skipped,
+            'failed'     => $failed,
+            'orphan_risk' => $orphanRisk,
+            'remaining'  => $remaining,
+            'notes'      => $notes,
+            'samples'    => $samples,
+        ]);
+    }
+
+    /* ------------------------------------------------------------------
      * v1.5.0-beta.1: 存储残留清理（干跑优先）
      * ------------------------------------------------------------------ */
 
@@ -1880,6 +2238,18 @@ class ImageController extends Controller
             if (!in_array($ext, $this->allowedExtensions, true)) {
                 $errors[] = "{$originalName}: Invalid file extension (.{$ext})";
                 continue;
+            }
+
+            // v1.5.0-beta.1: 原图统一转 WebP（可在「系统设置 → 图片与存储」关闭）。
+            //
+            // 位置很关键 —— 必须在**计算哈希之前**：记录的 file_hash/file_sha256 要
+            // 描述**实际存进存储的字节**，否则与「哈希回填」重算出来的值不一致，去重
+            // 也会跟着失效。转换失败/不划算时不阻断上传，保持原格式（见 convertOriginalToWebp）。
+            $conv = $this->convertOriginalToWebp($tmpName, $detectedMime);
+            if ($conv['ok']) {
+                $ext = 'webp';
+                $detectedMime = 'image/webp';
+                $fileSize = (int) @filesize($tmpName);
             }
 
             // v1.3.2 迭代: 分层校验去重 —— MD5 快速初筛 + SHA-256 二次确认。

@@ -180,6 +180,32 @@ admin_header('系统设置', 'page-settings');
             <div class="health-progress-detail" id="cleanup-detail"></div>
         </div>
     </div>
+
+    <!-- v1.5.0-beta.1: 历史原图批量转 WebP（干跑优先） -->
+    <div class="card mb-3">
+        <h3 class="mb-2">转换历史原图为 WebP</h3>
+        <p class="text-muted text-small text-secondary">
+            v1.5.0-beta.1 起<strong>新上传的原图已自动转 WebP</strong>（开关见上方「原图转 WebP」）；
+            此前上传的原图仍是原格式，可用本工具批量补齐。
+            流程为「取字节 → 转码 → 上传新键 → <strong>校验新对象存在</strong> → 更新记录 → 删除旧对象」，
+            <strong>只换扩展名、布局不动</strong>，因此缩略图无需搬迁；任一步失败都会回滚该行，图片始终可访问。
+        </p>
+        <p class="text-muted text-small text-secondary">
+            以下情况会跳过并如实计数：GIF（转码会丢动画）、SVG（矢量）、JPEG 读不到 EXIF 方向
+            （转了会变歪）、转码后体积未变小、源对象不可读。<strong>对象存储在云端时每行都要下载+上传，耗时较长</strong>，
+            建议先干跑看数量再分批执行。
+        </p>
+        <p class="text-muted text-small text-secondary" id="convert-stat">点击「干跑检查」查看待转换数量。</p>
+        <div class="flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline btn-sm" id="convert-check">干跑检查</button>
+            <button type="button" class="btn btn-primary btn-sm" id="convert-run">开始转换</button>
+        </div>
+        <div id="convert-progress" class="hidden mt-3">
+            <div class="health-progress-text" id="convert-text">准备检查…</div>
+            <div class="health-progress-track"><div id="convert-fill" class="health-progress-fill"></div></div>
+            <div class="health-progress-detail" id="convert-detail"></div>
+        </div>
+    </div>
     <?php endif; ?>
 
     <?php if ($gid === 'maintenance'): ?>

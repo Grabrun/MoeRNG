@@ -80,6 +80,18 @@ class SettingController extends Controller
                     'help' => '超过该像素数的原图跳过缩略图生成（仅存原图，避免服务器内存耗尽）；'
                         . '0 = 按当前可用内存自动判断。例：填 80 表示 8000 万像素以内才生成',
                 ],
+                'original_webp_enabled' => [
+                    'type' => 'toggle', 'label' => '原图转 WebP', 'default' => '1', 'rules' => ['in:0,1'],
+                    'help' => '开启后上传的原图统一转成 WebP 存储（体积通常只有 PNG 的 20~35%、JPEG 的 60~75%）；'
+                        . '缩略图本来就是 WebP。以下情形保持原格式：GIF（转码会丢动画）、SVG（矢量）、'
+                        . 'JPEG 读不到 EXIF 方向（转完会变歪）、编码结果不比原文件小。'
+                        . '已有原图可用下方「转换历史原图」批量处理',
+                ],
+                'original_webp_quality' => [
+                    'type' => 'number', 'label' => '原图 WebP 质量', 'default' => '90', 'rules' => ['numeric' => true, 'min' => 40, 'max' => 100],
+                    'help' => '原图是有损转码，质量建议高于缩略图（默认 90）。GD 不支持无损 WebP；'
+                        . '追求极致可用 100（视觉近无损，体积仍通常小于 PNG）',
+                ],
                 'upload_max_mb' => [
                     'type' => 'number', 'label' => '单图大小上限（MB，0=不限制）', 'default' => '0', 'rules' => ['numeric' => true, 'min' => 0, 'max' => 200],
                     'help' => '应用层校验，超限直接拒绝并提示；0 = 只受 PHP 的 upload_max_filesize 限制。'

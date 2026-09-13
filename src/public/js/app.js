@@ -1575,6 +1575,148 @@ async function runStorageCleanup(mode, setUI) {
     return { done: done, planned: planned, failed: failed, skipped: skipped, samples: samples, firstError: firstError, rounds: rounds };
 }
 
+// ── v1.5.0-beta.1: 历史原图批量转 WebP（干跑优先）────────────────────
+// 服务端逐行「取字节 → 转码 → 上传新键 → 校验 → 改库 → 删旧」，任一步失败即回滚该行。
+// 干跑只跑一轮；执行时按批循环，直到 remaining 收敛（游标由服务端在 apply 时推进）。
+async function runOriginalConversion(mode, setUI) {
+    const apply = mode === 'apply';
+    let done = 0, skipped = 0, failed = 0, orphan = 0, scanned = 0, rounds = 0;
+    let firstRemaining = -1, firstError = '';
+    const notes = {};
+    const samples = [];
+
+    for (;;) {
+        rounds++;
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        fd.append('mode', apply ? 'apply' : 'dry-run');
+        fd.append('batch', '5');
+
+        const r = await fetch('/admin/images/convert-originals', {
+            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const j = await parseJsonResponse(r, '原图转换');
+        if (!j || !j.success) {
+            throw new Error((j && j.error) || '未知错误');
+        }
+
+        if (firstRemaining < 0) firstRemaining = Number(j.remaining) || 0;
+        const remaining = Number(j.remaining) || 0;
+        const thisScanned = Number(j.scanned) || 0;
+        scanned += thisScanned;
+        done += apply ? (Number(j.converted) || 0) : (Number(j.planned) || 0);
+        skipped += Number(j.skipped) || 0;
+        failed += Number(j.failed) || 0;
+        orphan += Number(j.orphan_risk) || 0;
+
+        for (const k of Object.keys(j.notes || {})) {
+            notes[k] = (notes[k] || 0) + Number(j.notes[k] || 0);
+        }
+        for (const item of (j.samples || [])) {
+            if (samples.length < 8) samples.push(item);
+        }
+
+        const pct = firstRemaining > 0
+            ? Math.min(0.95, Math.max(0.05, 1 - remaining / firstRemaining))
+            : 1;
+        const topNotes = Object.keys(notes).sort((a, b) => notes[b] - notes[a]).slice(0, 2)
+            .map(k => k + ' ' + notes[k]).join('；');
+        setUI(pct, (apply ? '转换中… 已转 ' : '检查中… 待转 ') + done + ' 项',
+            '跳过 ' + skipped + ' · 失败 ' + failed + (remaining > 0 ? ' · 剩余 ' + remaining : '')
+            + (topNotes ? '　｜　' + topNotes : ''));
+
+        if (!apply) break;                  // 干跑只跑一轮，绝不写状态
+        if (remaining === 0) break;         // 收敛
+        if (thisScanned === 0) {            // 本轮没有扫描到任何行却仍有剩余 → 中止，避免空转
+            firstError = '本轮未扫描到任何行但仍有剩余，已中止';
+            break;
+        }
+        if (rounds > 500) {
+            firstError = '达到轮次上限（500），已中止';
+            break;
+        }
+    }
+
+    return { done, skipped, failed, orphan, scanned, notes, samples, firstError, rounds };
+}
+
+function initOriginalConversion() {
+    const checkBtn = document.getElementById('convert-check');
+    const runBtn = document.getElementById('convert-run');
+    if (!checkBtn && !runBtn) return;
+
+    const statEl = document.getElementById('convert-stat');
+    const box = document.getElementById('convert-progress');
+    const fill = document.getElementById('convert-fill');
+    const text = document.getElementById('convert-text');
+    const detail = document.getElementById('convert-detail');
+    const setUI = function (pct, t, d) {
+        if (box) box.classList.remove('hidden');
+        if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+        if (text && t) text.textContent = t;
+        if (detail && d !== undefined) detail.textContent = d;
+    };
+
+    function describe(res) {
+        const parts = [];
+        for (const item of res.samples) {
+            if (item && item.from) parts.push(item.from + ' → ' + item.to);
+            else if (item && item.note) parts.push(item.note);
+            if (parts.length >= 2) break;
+        }
+        const reasons = Object.keys(res.notes).sort((a, b) => res.notes[b] - res.notes[a]).slice(0, 3);
+        return (parts.join('；') || '—') + (reasons.length ? '　｜　跳过原因：' + reasons.join('、') : '');
+    }
+
+    checkBtn?.addEventListener('click', async function () {
+        checkBtn.disabled = true;
+        try {
+            const res = await runOriginalConversion('dry-run', setUI);
+            statEl.textContent = '待转换 ' + res.done + ' 张，跳过 ' + res.skipped + ' 张'
+                + (res.done + res.skipped > 0 ? '。示例：' + describe(res) : ' —— 没有需要转换的原图。');
+            setUI(1, '检查完成', '待转换 ' + res.done + ' 张');
+            if (runBtn) runBtn.disabled = res.done === 0;
+            showToast('干跑完成：待转换 ' + res.done + ' 张', 'success', 6000);
+        } catch (e) {
+            statEl.textContent = '检查失败：' + e.message;
+            showToast('干跑失败: ' + e.message, 'error', 8000);
+        } finally {
+            checkBtn.disabled = false;
+        }
+    });
+
+    // 两段式确认：转换会改动对象与记录（云端还会产生下载/上传流量）
+    const label = runBtn ? runBtn.textContent : '';
+    let armed = false, timer = null;
+    runBtn?.addEventListener('click', async function () {
+        if (!armed) {
+            armed = true;
+            runBtn.textContent = '再次点击确认开始转换';
+            timer = setTimeout(function () { armed = false; runBtn.textContent = label; }, 6000);
+            return;
+        }
+        clearTimeout(timer);
+        armed = false;
+        runBtn.textContent = label;
+        runBtn.disabled = true;
+        try {
+            const res = await runOriginalConversion('apply', setUI);
+            statEl.textContent = '已转换 ' + res.done + ' 张（跳过 ' + res.skipped + '，失败 ' + res.failed + '）'
+                + (res.orphan ? '，另有 ' + res.orphan + ' 个旧对象未删成功（已成孤立对象，可稍后用「清理存储残留」处理）' : '')
+                + (res.firstError ? '。' + res.firstError : '。');
+            setUI(1, '转换完成', '已转换 ' + res.done + ' 张');
+            showToast('转换完成：' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''),
+                res.failed ? 'error' : 'success', 9000);
+            if (res.firstError) showToast(res.firstError, 'error', 9000);
+        } catch (e) {
+            statEl.textContent = '转换失败：' + e.message;
+            showToast('转换失败: ' + e.message, 'error', 9000);
+        } finally {
+            runBtn.disabled = false;
+        }
+    });
+}
+
 function initStorageCleanup() {
     const checkBtn = document.getElementById('cleanup-check');
     const runBtn = document.getElementById('cleanup-run');
@@ -2196,6 +2338,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initQueuePage();
     initLayoutMigration();
     initStorageCleanup();
+    initOriginalConversion();
     initApiKeys();
     initCategoryActions();
     initDropZone();
