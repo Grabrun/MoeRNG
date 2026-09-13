@@ -1689,8 +1689,11 @@ body.modal-open { overflow: hidden; }
 .pv-req { color: var(--danger); margin-left: 2px; }
 
 /* e) 系统设置页：工具条 / 标签行 / 字段帮助 / 保存提示 */
-.settings-toolbar { margin-bottom: 16px; }
-.settings-tabs { margin-bottom: 4px; }
+.settings-toolbar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+.settings-tabs { display: flex; flex-wrap: wrap; gap: 8px; }   /* 4px 太挤，标签几乎连成一片 */
 .setting-label { display: block; }
 .setting-help { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 0.8rem; }
 .save-hint { color: var(--text-secondary); font-size: 0.85rem; }
@@ -1706,4 +1709,43 @@ body.modal-open { overflow: hidden; }
     display: inline-block; vertical-align: middle;
     max-width: 320px; font-family: var(--font-mono); font-size: 0.78rem;
     color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── 系统设置页（v1.5.0-beta.2 对齐）────────────────────────────
+   问题：① 分组说明塞在 <h3 class="flex flex-between"> 里 → 长句被拉到两端并折行，
+   标题区看起来像两段正文挤在一起；② 四个批处理面板各写一遍 markup，间距各不相同；
+   ③ 设置项单列排布 → 1180px 宽下每行右侧大片空白、页面极长；
+   ④ 字段帮助文本挂了 5 个类（text-muted text-small text-secondary text-xs + block），
+   其中 text-muted 与 text-secondary 同色、text-small 与 text-xs 冲突。
+   ──────────────────────────────────────────────────────────── */
+
+/* 分组说明独立一行：标题归标题、说明归说明 */
+.setting-group-desc {
+    margin: 4px 0 16px;
+    color: var(--text-secondary); font-size: 0.85rem; line-height: 1.75;
+}
+
+/* 批处理面板（存储迁移 / 清理残留 / 转换原图 / 健康检查）统一内部节奏 */
+.batch-panel { display: flex; flex-direction: column; gap: 12px; }
+.batch-summary { margin: 0; color: var(--text-secondary); font-size: 0.85rem; line-height: 1.75; }
+.batch-stat { margin: 0; color: var(--text-secondary); font-size: 0.85rem; }
+.batch-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* 面板内的长说明默认折叠（此前 4 个面板堆了 9 段正文，页面被文案淹没） */
+.batch-help { font-size: 0.85rem; }
+.batch-help summary {
+    cursor: pointer; color: var(--text-secondary); list-style: none;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.batch-help summary::-webkit-details-marker { display: none; }
+.batch-help summary::before { content: '▸'; transition: transform var(--transition); }
+.batch-help[open] summary::before { transform: rotate(90deg); }
+.batch-help summary:hover { color: var(--text); }
+.batch-help[open] summary { margin-bottom: 4px; }
+.batch-help p { margin: 8px 0 0; color: var(--text-secondary); line-height: 1.75; }
+.batch-help code { font-size: 0.95em; }
+
+/* 设置项：宽屏两列（.setting-item-wide 的 grid-column: 1/-1 至此才真正有意义） */
+@media (min-width: 900px) {
+    .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

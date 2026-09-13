@@ -36,7 +36,7 @@ function renderField(string $key, array $def, array $settings): void
         echo '<img id="logo-preview-' . $name . '" src="' . h($previewSrc) . '" alt="当前 Logo" '
             . 'class="logo-preview-img">';
         if (!$hasLogo) {
-            echo '<span class="text-muted text-small text-secondary" id="logo-default-hint-' . $name . '">当前使用默认 Logo，上传后可替换</span>';
+            echo '<span class="setting-help" id="logo-default-hint-' . $name . '">当前使用默认 Logo，上传后可替换</span>';
         }
         echo '</div>';
         echo '<div class="logo-upload-row flex gap-8 flex-wrap">';
@@ -68,7 +68,7 @@ function renderField(string $key, array $def, array $settings): void
     }
 
     if ($help !== '') {
-        echo '<small class="text-muted setting-help block mt-1 text-secondary text-xs">' . h($help) . '</small>';
+        echo '<small class="setting-help">' . h($help) . '</small>';
     }
     echo '</div>';
 }
@@ -84,8 +84,8 @@ admin_header('系统设置', 'page-settings');
 <!-- v1.3.2 迭代: 系统健康检查（检查 + 修复）—— 统一取代 CLI 迁移/回填工具 -->
 
 
-<div class="settings-toolbar flex gap-12 flex-wrap mb-3">
-    <div class="settings-tabs flex gap-4 flex-wrap">
+<div class="settings-toolbar">
+    <div class="settings-tabs">
         <?php foreach ($groups as $gid => $gdef): ?>
         <a href="?tab=<?= h($gid) ?>#<?= h($gid) ?>"
            class="settings-tab btn btn-sm <?= $gid === $activeGroup ? 'btn-primary' : '' ?> no-underline"><?= h($gdef['label']) ?></a>
@@ -105,14 +105,12 @@ admin_header('系统设置', 'page-settings');
         <input type="hidden" name="group" value="<?= h($gid) ?>">
 
         <div class="card mb-3">
-            <h3 class="mb-2 flex flex-between">
-                <span><?= h($gdef['label']) ?></span>
-                <small class="font-normal text-secondary"><?= h($gdef['desc']) ?></small>
-            </h3>
+            <h3><?= h($gdef['label']) ?></h3>
+            <p class="setting-group-desc"><?= h($gdef['desc']) ?></p>
             <!-- v1.2.1 迭代: settings layout — adaptive columns + full-width wide fields -->
             <div class="settings-group-body">
                 <?php if ($gdef['fields'] === []): ?>
-                <p class="text-muted text-secondary text-sm py-2">
+                <p class="text-secondary text-small py-2">
                     该分组暂无可用设置项，敬请期待后续版本。
                 </p>
                 <?php else: ?>
@@ -134,21 +132,24 @@ admin_header('系统设置', 'page-settings');
 
     <?php if ($gid === 'media'): ?>
     <!-- v1.5.0-beta.1: 存储结构统一（方案 A）—— 存量对象迁移面板 -->
-    <div class="card mb-3">
-        <h3 class="mb-2">存储结构与迁移</h3>
-        <p class="text-muted text-small text-secondary">
-            新上传的图片已自动使用统一布局：<code>{年}/{月}/{uuid}/original.{ext}</code> 与同目录的
-            <code>thumb-{尺寸}.webp</code>（一个资产的全部对象同处一个前缀）。
-            历史对象仍是旧布局（<code>{年}/{月}/{uuid}.{ext}</code> 与 <code>thumbs/…</code>），二者可长期并存 ——
-            迁移是<strong>可选</strong>的增量操作：先把每个对象复制到新键并校验存在，然后才切换记录，最后才删除旧对象，
-            因此迁移过程中图片始终可访问，随时可以中断。
-        </p>
-        <p class="text-muted text-small text-secondary" id="layout-stat">点击「检查当前结构」查看新旧对象的数量。</p>
-        <div class="flex gap-2 flex-wrap">
+    <div class="card mb-3 batch-panel">
+        <h3>存储结构与迁移</h3>
+        <p class="batch-summary">新上传的图片已使用统一布局（一个资产的全部对象同处一个前缀）；历史对象仍是旧布局，二者可长期并存，迁移是<strong>可选</strong>的增量操作。</p>
+        <details class="batch-help">
+            <summary>迁移是怎么做的（可中断，图片始终可访问）</summary>
+            <p>
+                新布局为 <code>{年}/{月}/{uuid}/original.{ext}</code> 与同目录的 <code>thumb-{尺寸}.webp</code>；
+                历史布局为 <code>{年}/{月}/{uuid}.{ext}</code> 与 <code>thumbs/…</code>。
+                迁移逐个资产进行：先把对象复制到新键并校验存在，然后才切换记录，最后才删除旧对象 ——
+                因此迁移过程中图片始终可访问，随时可以中断。
+            </p>
+        </details>
+        <p class="batch-stat" id="layout-stat">点击「检查当前结构」查看新旧对象的数量。</p>
+        <div class="batch-actions">
             <button type="button" class="btn btn-outline btn-sm" id="layout-check">检查当前结构</button>
             <button type="button" class="btn btn-primary btn-sm" id="layout-migrate">开始迁移</button>
         </div>
-        <div id="layout-progress" class="hidden mt-3">
+        <div id="layout-progress" class="hidden">
             <div class="health-progress-text" id="layout-text">准备迁移…</div>
             <div class="health-progress-track"><div id="layout-fill" class="health-progress-fill"></div></div>
             <div class="health-progress-detail" id="layout-detail"></div>
@@ -156,33 +157,30 @@ admin_header('系统设置', 'page-settings');
     </div>
 
     <!-- v1.5.0-beta.1: 清理历次更新留下的存储残留（干跑优先） -->
-    <div class="card mb-3">
-        <h3 class="mb-2">清理存储残留</h3>
-        <p class="text-muted text-small text-secondary">
-            清理三类<strong>能被确定性判定</strong>的残留：① 已迁移记录的<strong>旧布局对象</strong>
-            （按旧规则推导键，删前先确认当前对象确实存在）；② <code>storage/incoming</code> 里
-            已不在办（非 待处理/处理中/失败）的<strong>临时文件</strong>；③ <code>public/uploads</code> 下
-            <strong>没有任何记录引用</strong>的文件（品牌 logo 目录不动）。
-            默认<strong>干跑</strong>只出清单；确认后再执行删除。
-        </p>
-        <p class="text-muted text-small text-secondary">
-            ⚠️ 记录已被删除的孤立对象（例如用过「清空队列」的那些）<strong>无法</strong>被本工具发现 ——
-            存储接口没有列举能力，需到对象存储控制台按前缀人工清理。
-        </p>
-        <p class="text-muted text-small text-secondary">
-            提示：干跑是<strong>全表扫描</strong>（逐批推进，行数多时需要等一会儿），并会如实报告
-            「扫描了多少行 / 探测了多少个旧键」——所以「待清理 0 项」是真的看过了，而不是没看。
-            另外，<strong>仍被记录引用的对象不会出现在清单里</strong>：那是正在使用的文件（例如尚未
-            迁移到新布局的行，其缩略图仍在 <code>thumbs/</code> 下）。想确认能否在对象存储控制台
-            整删某个前缀，看下方干跑给出的<strong>结论</strong>。
-        </p>
-        <p class="text-muted text-small text-secondary" id="cleanup-stat">点击「干跑检查」查看待清理清单。</p>
-        <p class="text-small" id="cleanup-verdict"></p>
-        <div class="flex gap-2 flex-wrap">
+    <div class="card mb-3 batch-panel">
+        <h3>清理存储残留</h3>
+        <p class="batch-summary">清理三类<strong>能被确定性判定</strong>的残留：已迁移记录的<strong>旧布局对象</strong>、<code>storage/incoming</code> 里不在办的<strong>临时文件</strong>、<code>public/uploads</code> 下<strong>没有任何记录引用</strong>的文件。默认<strong>干跑</strong>只出清单。</p>
+        <details class="batch-help">
+            <summary>能力边界与「待清理 0 项」的含义</summary>
+            <p>
+                ⚠️ 记录已被删除的孤立对象（例如用过「清空队列」的那些）<strong>无法</strong>被本工具发现 ——
+                存储接口没有列举能力，需到对象存储控制台按前缀人工清理。
+            </p>
+            <p>
+                提示：干跑是<strong>全表扫描</strong>（逐批推进，行数多时需要等一会儿），并会如实报告
+                「扫描了多少行 / 探测了多少个旧键」—— 所以「待清理 0 项」是真的看过了，而不是没看。
+                另外，<strong>仍被记录引用的对象不会出现在清单里</strong>：那是正在使用的文件（例如尚未迁移到
+                新布局的行，其缩略图仍在 <code>thumbs/</code> 下）。想确认能否在对象存储控制台整删某个前缀，
+                看干跑给出的<strong>结论</strong>。
+            </p>
+        </details>
+        <p class="batch-stat" id="cleanup-stat">点击「干跑检查」查看待清理清单。</p>
+        <p class="batch-stat" id="cleanup-verdict"></p>
+        <div class="batch-actions">
             <button type="button" class="btn btn-outline btn-sm" id="cleanup-check">干跑检查</button>
             <button type="button" class="btn btn-danger btn-sm" id="cleanup-run">执行清理</button>
         </div>
-        <div id="cleanup-progress" class="hidden mt-3">
+        <div id="cleanup-progress" class="hidden">
             <div class="health-progress-text" id="cleanup-text">准备检查…</div>
             <div class="health-progress-track"><div id="cleanup-fill" class="health-progress-fill"></div></div>
             <div class="health-progress-detail" id="cleanup-detail"></div>
@@ -190,25 +188,27 @@ admin_header('系统设置', 'page-settings');
     </div>
 
     <!-- v1.5.0-beta.1: 历史原图批量转 WebP（干跑优先） -->
-    <div class="card mb-3">
-        <h3 class="mb-2">转换历史原图为 WebP</h3>
-        <p class="text-muted text-small text-secondary">
-            v1.5.0-beta.1 起<strong>新上传的原图已自动转 WebP</strong>（开关见上方「原图转 WebP」）；
-            此前上传的原图仍是原格式，可用本工具批量补齐。
-            流程为「取字节 → 转码 → 上传新键 → <strong>校验新对象存在</strong> → 更新记录 → 删除旧对象」，
-            <strong>只换扩展名、布局不动</strong>，因此缩略图无需搬迁；任一步失败都会回滚该行，图片始终可访问。
-        </p>
-        <p class="text-muted text-small text-secondary">
-            以下情况会跳过并如实计数：GIF（转码会丢动画）、SVG（矢量）、JPEG 读不到 EXIF 方向
-            （转了会变歪）、转码后体积未变小、源对象不可读。<strong>对象存储在云端时每行都要下载+上传，耗时较长</strong>，
-            建议先干跑看数量再分批执行。
-        </p>
-        <p class="text-muted text-small text-secondary" id="convert-stat">点击「干跑检查」查看待转换数量。</p>
-        <div class="flex gap-2 flex-wrap">
+    <div class="card mb-3 batch-panel">
+        <h3>转换历史原图为 WebP</h3>
+        <p class="batch-summary">新上传的原图已自动转 WebP（开关见上方「原图转 WebP」）；此前上传的原图仍是原格式，可用本工具批量补齐。<strong>只换扩展名、布局不动</strong>，缩略图无需搬迁。</p>
+        <details class="batch-help">
+            <summary>转换流程与会被跳过的情况</summary>
+            <p>
+                流程为「取字节 → 转码 → 上传新键 → <strong>校验新对象存在</strong> → 更新记录 → 删除旧对象」，
+                任一步失败都会回滚该行，图片始终可访问。
+            </p>
+            <p>
+                以下情况会跳过并如实计数：GIF（转码会丢动画）、SVG（矢量）、JPEG 读不到 EXIF 方向
+                （转了会变歪）、转码后体积未变小、源对象不可读。
+                <strong>对象存储在云端时每行都要下载 + 上传，耗时较长</strong>，建议先干跑看数量再分批执行。
+            </p>
+        </details>
+        <p class="batch-stat" id="convert-stat">点击「干跑检查」查看待转换数量。</p>
+        <div class="batch-actions">
             <button type="button" class="btn btn-outline btn-sm" id="convert-check">干跑检查</button>
             <button type="button" class="btn btn-primary btn-sm" id="convert-run">开始转换</button>
         </div>
-        <div id="convert-progress" class="hidden mt-3">
+        <div id="convert-progress" class="hidden">
             <div class="health-progress-text" id="convert-text">准备检查…</div>
             <div class="health-progress-track"><div id="convert-fill" class="health-progress-fill"></div></div>
             <div class="health-progress-detail" id="convert-detail"></div>
@@ -219,7 +219,7 @@ admin_header('系统设置', 'page-settings');
     <?php if ($gid === 'maintenance'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">缓存清理</h3>
-        <p class="text-muted text-small text-secondary">清理 OPcache 与限流计数等运行时缓存。</p>
+        <p class="batch-summary">清理 OPcache 与限流计数等运行时缓存。</p>
         <form method="POST" action="/admin/settings/cache-clear">
             <?= $csrf_field ?>
             <button type="submit" class="btn btn-warning" data-confirm="确认清理缓存？">立即清理缓存</button>
@@ -230,7 +230,7 @@ admin_header('系统设置', 'page-settings');
     <?php if ($gid === 'maintenance'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">测试邮件</h3>
-        <p class="text-muted text-small text-secondary">使用上方 SMTP 参数向「测试收件邮箱」发送一封测试邮件，验证配置是否正确。</p>
+        <p class="batch-summary">使用上方 SMTP 参数向「测试收件邮箱」发送一封测试邮件，验证配置是否正确。</p>
         <form method="POST" action="/admin/settings/test-mail">
             <?= $csrf_field ?>
             <button type="submit" class="btn btn-warning">发送测试邮件</button>
@@ -244,7 +244,7 @@ admin_header('系统设置', 'page-settings');
                 <?= $csrf_field ?>
                 <button type="submit" class="btn btn-warning" data-confirm="立即执行一次完整备份（数据库 + 上传文件）？">立即备份</button>
             </form>
-            <small class="text-muted text-secondary">自动备份按周期在上方「备份与恢复」表单中配置，访问时自动触发检查。</small>
+            <small class="batch-summary">自动备份按周期在上方「备份与恢复」表单中配置，访问时自动触发检查。</small>
         </div>
 
         <?php if ($backups): ?>
@@ -272,7 +272,7 @@ admin_header('系统设置', 'page-settings');
         </table>
         </div>
         <?php else: ?>
-        <p class="text-muted text-secondary">暂无备份。点击「立即备份」生成第一份。</p>
+        <p class="batch-stat">暂无备份。点击「立即备份」生成第一份。</p>
         <?php endif; ?>
     </div>
     <?php endif; ?>
@@ -280,17 +280,15 @@ admin_header('系统设置', 'page-settings');
 <?php endforeach; ?>
 
 <section class="settings-group <?= $activeGroup !== 'health' ? 'hidden' : '' ?>" id="health" data-group="health">
-    <div class="card mb-3">
-        <h3 class="mb-2 flex flex-between">
-            <span>健康检查</span>
-            <small class="font-normal text-secondary">覆盖部署自迁移字段/索引 · 遗留设置行 · 历史图片哈希（检查 + 一键修复）</small>
-        </h3>
-        <div class="settings-group-body">
-            <div class="flex gap-2 mb-2">
+    <div class="card mb-3 batch-panel">
+        <h3>健康检查</h3>
+        <p class="setting-group-desc">覆盖部署自迁移字段/索引 · 遗留设置行 · 历史图片哈希（检查 + 一键修复）</p>
+        <div class="settings-group-body batch-panel">
+            <div class="batch-actions">
                 <button type="button" class="btn btn-outline btn-sm" id="health-run">运行检查</button>
                 <button type="button" class="btn btn-primary btn-sm" id="health-fix" disabled>执行修复</button>
             </div>
-            <div id="health-results" class="text-sm text-muted text-secondary">尚未运行检查 —— 点击「运行检查」。</div>
+            <div id="health-results" class="batch-stat">尚未运行检查 —— 点击「运行检查」。</div>
             <div id="health-backfill-box" class="hidden mt-2 health-backfill-box">
                 <div class="flex-between health-backfill-head">
                     <div class="health-progress-text" id="health-backfill-text">准备回填…</div>
