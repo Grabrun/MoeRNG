@@ -1605,19 +1605,32 @@ async function runOriginalConversion(mode, setUI) {
     const notes = {};
     const samples = [];
 
+    // 干跑是服务端**零 I/O 的候选筛查**（不下载、不解码），因此能、也必须扫全表：
+    // 只查一批会让"待转 0 张"变成"没看"（与清理残留同源的误报）。每轮用 from 推进。
+    // 执行转换按服务端游标逐批推进（可中断续跑），批次小（云端每行都要下载 + 上传）。
+    let from = apply ? null : 0;
+    let prevFrom = apply ? -1 : 0;
+
     for (;;) {
         rounds++;
         const fd = new FormData();
         fd.append('_csrf_token', getCsrfToken());
         fd.append('mode', apply ? 'apply' : 'dry-run');
-        fd.append('batch', '5');
+        fd.append('batch', apply ? '5' : '200');
+        if (from !== null) fd.append('from', String(from));
 
         const r = await fetch('/admin/images/convert-originals', {
             method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
         const j = await parseJsonResponse(r, '原图转换');
         if (!j || !j.success) {
-            throw new Error((j && j.error) || '未知错误');
+            // 服务端现在把 PHP 致命错误（OOM / 超时）也转成 JSON（fatal:true）——
+            // 顺带把 memory_limit 与内存峰值报出来，不再只有一句"空响应"。
+            const extra = (j && j.fatal)
+                ? '（memory_limit=' + (j.memory_limit || '?') + '，峰值 '
+                  + (j.peak_mb === undefined ? '?' : j.peak_mb) + ' MiB）'
+                : '';
+            throw new Error(((j && j.error) || '未知错误') + extra);
         }
 
         if (firstRemaining < 0) firstRemaining = Number(j.remaining) || 0;
@@ -1641,13 +1654,23 @@ async function runOriginalConversion(mode, setUI) {
             : 1;
         const topNotes = Object.keys(notes).sort((a, b) => notes[b] - notes[a]).slice(0, 2)
             .map(k => k + ' ' + notes[k]).join('；');
-        setUI(pct, (apply ? '转换中… 已转 ' : '检查中… 待转 ') + done + ' 项',
-            '跳过 ' + skipped + ' · 失败 ' + failed + (remaining > 0 ? ' · 剩余 ' + remaining : '')
+        setUI(pct, (apply ? '转换中… 已转 ' : '筛查中… 候选 ') + done + ' 张',
+            '已扫描 ' + scanned + ' 行 · 跳过 ' + skipped + ' · 失败 ' + failed
+            + (remaining > 0 ? ' · 剩余 ' + remaining + ' 行' : '')
             + (topNotes ? '　｜　' + topNotes : ''));
 
-        if (!apply) break;                  // 干跑只跑一轮，绝不写状态
-        if (remaining === 0) break;         // 收敛
-        if (thisScanned === 0) {            // 本轮没有扫描到任何行却仍有剩余 → 中止，避免空转
+        if (remaining === 0) break;          // 收敛
+
+        if (!apply) {
+            // 干跑：用服务端返回的扫描位置推进到表尾；位置不前进即中止（防空转）
+            const nextFrom = Number(j.next_from) || 0;
+            if (nextFrom <= prevFrom) {
+                firstError = '扫描位置未推进，已中止';
+                break;
+            }
+            prevFrom = nextFrom;
+            from = nextFrom;
+        } else if (thisScanned === 0) {      // 执行：本轮没扫到行却仍有剩余 → 中止，避免空转
             firstError = '本轮未扫描到任何行但仍有剩余，已中止';
             break;
         }
@@ -1692,11 +1715,16 @@ function initOriginalConversion() {
         checkBtn.disabled = true;
         try {
             const res = await runOriginalConversion('dry-run', setUI);
-            statEl.textContent = '待转换 ' + res.done + ' 张，跳过 ' + res.skipped + ' 张'
-                + (res.done + res.skipped > 0 ? '。示例：' + describe(res) : ' —— 没有需要转换的原图。');
-            setUI(1, '检查完成', '待转换 ' + res.done + ' 张');
+            // 干跑是零 I/O 的**全表候选筛查** —— 数字是"可转候选"，不是"必然更小"：
+            // 是否真的更小只能在执行时逐张判定（服务端会如实计入"转换后未更小"）。
+            statEl.textContent = '可转候选 ' + res.done + ' 张，跳过 ' + res.skipped + ' 张（已扫描 '
+                + res.scanned + ' 行）'
+                + (res.done + res.skipped > 0 ? '。示例：' + describe(res) : ' —— 没有需要转换的原图。')
+                + '候选 ≠ 必然更小：执行时逐张判定，不划算的保留原图并计入跳过。'
+                + (res.firstError ? '　⚠ ' + res.firstError : '');
+            setUI(1, '检查完成', '可转候选 ' + res.done + ' 张 · 扫描 ' + res.scanned + ' 行');
             if (runBtn) runBtn.disabled = res.done === 0;
-            showToast('干跑完成：待转换 ' + res.done + ' 张', 'success', 6000);
+            showToast('干跑完成：扫描 ' + res.scanned + ' 行，可转候选 ' + res.done + ' 张', 'success', 7000);
         } catch (e) {
             statEl.textContent = '检查失败：' + e.message;
             showToast('干跑失败: ' + e.message, 'error', 8000);

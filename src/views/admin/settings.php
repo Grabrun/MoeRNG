@@ -192,18 +192,26 @@ admin_header('系统设置', 'page-settings');
         <h3>转换历史原图为 WebP</h3>
         <p class="batch-summary">新上传的原图已自动转 WebP（开关见上方「原图转 WebP」）；此前上传的原图仍是原格式，可用本工具批量补齐。<strong>只换扩展名、布局不动</strong>，缩略图无需搬迁。</p>
         <details class="batch-help">
-            <summary>转换流程与会被跳过的情况</summary>
+            <summary>转换流程、跳过的情况，以及干跑到底查了什么</summary>
             <p>
                 流程为「取字节 → 转码 → 上传新键 → <strong>校验新对象存在</strong> → 更新记录 → 删除旧对象」，
-                任一步失败都会回滚该行，图片始终可访问。
+                任一步失败都会回滚该行，图片始终可访问。转码在**私有副本**上进行，源文件在明确成功之前
+                不会被改写。
+            </p>
+            <p>
+                <strong>干跑是「零 I/O 的候选筛查」</strong>：它只判「格式可转 + 键名可改写」，
+                <strong>不下载、不解码、不写任何文件</strong>，因此能扫完整个表（数字是<strong>候选数</strong>）。
+                「转完是否真的更小」只能在执行时逐张判定 —— 不划算的行会保留原图并计入「跳过」，
+                所以执行后的「已转」可能少于候选数。
             </p>
             <p>
                 以下情况会跳过并如实计数：GIF（转码会丢动画）、SVG（矢量）、JPEG 读不到 EXIF 方向
-                （转了会变歪）、转码后体积未变小、源对象不可读。
+                （转了会变歪）、转码后体积未变小、源对象不可读、<strong>超出内存预算</strong>
+                （大图解码会打爆 memory_limit —— 宁可跳过并报告，也不会让整批请求致命失败）。
                 <strong>对象存储在云端时每行都要下载 + 上传，耗时较长</strong>，建议先干跑看数量再分批执行。
             </p>
         </details>
-        <p class="batch-stat" id="convert-stat">点击「干跑检查」查看待转换数量。</p>
+        <p class="batch-stat" id="convert-stat">点击「干跑检查」扫描全表，查看可转候选数量。</p>
         <div class="batch-actions">
             <button type="button" class="btn btn-outline btn-sm" id="convert-check">干跑检查</button>
             <button type="button" class="btn btn-primary btn-sm" id="convert-run">开始转换</button>

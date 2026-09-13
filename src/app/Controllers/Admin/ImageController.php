@@ -193,6 +193,17 @@ class ImageController extends Controller
         return (string) Config::get('settings.original_webp_enabled', '1') !== '0';
     }
 
+    /**
+     * 编码输出的临时后缀（与目的地同目录 → rename 是原子替换）。
+     *
+     * v1.5.0-beta.2：原图转码改为「先写临时文件、判定值得替换后才 rename 覆盖」，
+     * 源文件在明确成功之前一个字节都不动。
+     */
+    private const WEBP_TEMP_SUFFIX = '.wip-webp';
+
+    /** 原图转码额外余量（编码器内部缓冲 + 收尾；比缩略图那套宽松，因为原图更大）。 */
+    private const CONVERT_MEMORY_HEADROOM = 16777216; // 16 MiB
+
     /** 原图 WebP 编码质量（40-100，默认 90 —— 原图是质量锚点，故高于缩略图）。 */
     private static function originalWebpQuality(): int
     {
@@ -201,11 +212,23 @@ class ImageController extends Controller
     }
 
     /**
-     * 把本地图片文件转成 WebP（**原地覆盖同一路径**）。
+     * 把本地图片文件转成 WebP，**写入 `$destFile`**（缺省 = 与源同路径 → 原地替换）。
      *
      * 上传路径与「转换历史原图」共用这一个实现 —— 规则只有一份，不会两边走偏。
      *
-     * @return array{ok: bool, note: string} ok=false 时调用方保持原格式不动。
+     * v1.5.0-beta.2 修复（数据安全）：编码**先落到同目录的临时文件**，只有判定
+     * 「确实更小、值得替换」之后才 `rename` 覆盖目的地。此前是
+     * `file_put_contents($file, $out)` **直接写源文件** —— 只要调用方传进来的是真实
+     * 存储文件（本地驱动就是这种情况），两个场景都会弄坏数据：
+     *   - **干跑**：原图被换成 WebP 字节，而记录不改（path 仍是 .jpg、mime 仍是
+     *     image/jpeg）→ 记录与实际字节不一致；反复干跑还会反复重编码、逐次劣化画质；
+     *   - **中途失败**：回滚只回滚记录，而旧文件已经被覆盖成 WebP 了。
+     * 现在源文件在**明确成功之前一个字节都不动**；批量转换的调用方也一律传私有副本。
+     *
+     * 内存上不再经 `ob_start()` / `ob_get_clean()` 把整幅编码结果抓进 PHP 变量
+     * （原图的编码结果可达数 MiB，且与画布同时在内存）——直接把输出路径交给 imagewebp。
+     *
+     * @return array{ok: bool, note: string, bytes?: int} ok=false 时调用方保持原格式不动。
      *
      * 保持原格式的情形（每条都有明确理由，绝不为了"统一"而牺牲正确性）：
      *   - disabled           开关关闭
@@ -215,10 +238,10 @@ class ImageController extends Controller
      *   - too-large          解码会超出可用内存（复用缩略图的同一内存预检）
      *   - exif-unavailable   JPEG 且读不到 EXIF：浏览器会按 EXIF 旋转 JPEG，WebP 不会 ——
      *                        不纠正就会把手机照片转"歪"，所以宁可不转
-     *   - unreadable/decode-failed/encode-failed  读取或编解码失败（不阻断上传）
+     *   - unreadable/decode-failed/encode-failed/write-failed  读取、编解码或落盘失败
      *   - not-smaller        编码结果**不比原文件小**（小图/已优化图常见）→ 保留原格式
      */
-    private function convertOriginalToWebp(string $file, string $mime): array
+    private function convertOriginalToWebp(string $file, string $mime, ?string $destFile = null): array
     {
         if (!self::originalWebpEnabled()) {
             return ['ok' => false, 'note' => 'disabled'];
@@ -239,15 +262,10 @@ class ImageController extends Controller
             return ['ok' => false, 'note' => 'too-large'];
         }
 
-        $orientation = 1;
-        if ($mime === 'image/jpeg') {
-            if (!function_exists('exif_read_data')) {
-                return ['ok' => false, 'note' => 'exif-unavailable'];
-            }
-            $exif = @exif_read_data($file);
-            if (is_array($exif) && isset($exif['Orientation'])) {
-                $orientation = (int) $exif['Orientation'];
-            }
+        // 0 = JPEG 读不到 EXIF（宁可不转，见上方说明）；1 = 正常；2~8 = 需纠正
+        $orientation = self::jpegOrientation($file, $mime);
+        if ($orientation === 0) {
+            return ['ok' => false, 'note' => 'exif-unavailable'];
         }
 
         $data = @file_get_contents($file);
@@ -272,25 +290,123 @@ class ImageController extends Controller
         @imagealphablending($src, false);
         @imagesavealpha($src, true);
 
-        ob_start();
-        $encoded = @imagewebp($src, null, self::originalWebpQuality());
-        $out = (string) ob_get_clean();
+        $dest = $destFile ?? $file;
+        $tmpOut = $dest . self::WEBP_TEMP_SUFFIX;
+
+        // 直接落盘：不再经 ob_start 把整幅编码结果抓进变量（原图可达数 MiB）
+        $encoded = @imagewebp($src, $tmpOut, self::originalWebpQuality());
         imagedestroy($src);
 
-        if ($encoded === false || $out === '') {
+        clearstatcache(true, $tmpOut);
+        $outSize = (int) @filesize($tmpOut);
+        if ($encoded === false || $outSize <= 0) {
+            @unlink($tmpOut);
             return ['ok' => false, 'note' => 'encode-failed'];
         }
 
         $before = (int) @filesize($file);
-        if ($before > 0 && strlen($out) >= $before) {
-            // 转完更大 → 保留原格式（"优化"不能反而让站点更慢）
+        if ($before > 0 && $outSize >= $before) {
+            // 转完更大 → 保留原格式（"优化"不能反而让站点更慢）；**源文件一个字节都没动**
+            @unlink($tmpOut);
             return ['ok' => false, 'note' => 'not-smaller'];
         }
-        if (@file_put_contents($file, $out) === false) {
-            return ['ok' => false, 'note' => 'unreadable'];
+
+        // 到这一步才允许动目的地（同目录 rename = 原子替换；失败则源文件依旧完好）
+        if (!@rename($tmpOut, $dest)) {
+            @unlink($tmpOut);
+            return ['ok' => false, 'note' => 'write-failed'];
         }
 
-        return ['ok' => true, 'note' => 'done'];
+        return ['ok' => true, 'note' => 'done', 'bytes' => $outSize];
+    }
+
+    /**
+     * 读 JPEG 的 EXIF Orientation（v1.5.0-beta.2：从 convertOriginalToWebp 提取，
+     * 内存预算预检也要用同一份判断 —— 旋转与否直接决定峰值是否翻倍）。
+     *
+     * @return int 0 = JPEG 但 exif 扩展不可用（调用方据此放弃转换）；
+     *             1 = 无需纠正（含非 JPEG）；2~8 = EXIF 方向值。
+     */
+    private static function jpegOrientation(string $file, string $mime): int
+    {
+        if ($mime !== 'image/jpeg') {
+            return 1;
+        }
+        if (!function_exists('exif_read_data')) {
+            return 0;
+        }
+        $exif = @exif_read_data($file);
+        if (is_array($exif) && isset($exif['Orientation'])) {
+            $o = (int) $exif['Orientation'];
+            return ($o >= 2 && $o <= 8) ? $o : 1;
+        }
+        return 1;
+    }
+
+    /**
+     * v1.5.0-beta.2: **原图转码专用的内存预算**（不能沿用缩略图那套）。
+     *
+     * 背景（线上真实故障）：干跑「转换历史原图为 WebP」返回**空响应 HTTP 500** ——
+     * 那是 PHP 致命错误（不可捕获），因为这个端点既没有致命错误守卫，也没有按原图
+     * 的真实峰值做预算。缩略图路径的预检按 `w×h×4×1.25 + 32MiB` 估算，而原图转码的
+     * 峰值还要多出：
+     *   - `file_get_contents()` 读进来的**整个原始字节**（与画布同时在内存）；
+     *   - **EXIF 旋转时 `imagerotate` 必然新建的第二块画布**（≈ 再 +w×h×4）——
+     *     手机竖拍照片（orientation 6/8）全在此列，于是实际峰值接近预算的 2 倍；
+     *   - 编码结果与 libwebp 内部缓冲。
+     *
+     * 另外这里**刻意不套用 `thumb_max_pixels`**：那是"生成缩略图的成本上限"，
+     * 拿它限制原图会把合法的超大原图误判成"超出设置上限"（原图的正确性上限是内存）。
+     *
+     * @return array{code: string, detail: string}|null null = 预算内，可以转码。
+     */
+    private function originalConvertBudget(string $file, string $mime): ?array
+    {
+        $info = function_exists('getimagesize') ? @getimagesize($file) : false;
+        if (!is_array($info) || empty($info[0]) || empty($info[1])) {
+            return ['code' => 'dimensions-unavailable', 'detail' => '无法读取图像尺寸（文件损坏或格式不受支持）'];
+        }
+        $w = (int) $info[0];
+        $h = (int) $info[1];
+        if ($w <= 0 || $h <= 0) {
+            return ['code' => 'dimensions-unavailable', 'detail' => '图像尺寸无效（' . $w . '×' . $h . '）'];
+        }
+
+        $canvas = (int) ((float) $w * $h * 4 * self::DECODE_MEMORY_FACTOR);
+        $rotate = self::jpegOrientation($file, $mime) >= 2 ? (int) ((float) $w * $h * 4) : 0;
+        $bytes  = min((int) @filesize($file), 67108864);   // file_get_contents 的驻留字节（封顶 64 MiB 估算）
+        $need   = $canvas + $rotate + $bytes + self::CONVERT_MEMORY_HEADROOM;
+
+        $limit = self::memoryLimitBytes();
+        if ($limit === PHP_INT_MAX) {
+            return null;   // 无内存限制 → 交给解码器
+        }
+        $available = $limit - memory_get_usage(true) - 16777216;   // 再留 16 MiB 基线余量
+        if ($need > $available) {
+            return [
+                'code' => 'memory-budget',
+                'detail' => sprintf(
+                    '超出内存预算（%d×%d，预计峰值 %.0f MiB%s，当前可用 %.0f MiB，memory_limit=%s）',
+                    $w,
+                    $h,
+                    $need / 1048576,
+                    $rotate > 0 ? '（含 EXIF 旋转的第二块画布）' : '',
+                    max(0, $available) / 1048576,
+                    (string) ini_get('memory_limit')
+                ),
+            ];
+        }
+        return null;
+    }
+
+    /** 批量转换用的私有临时路径（storage/incoming，web 不可达；调用方负责清理）。 */
+    private function tempConvertPath(int $id): string
+    {
+        $dir = self::incomingDir();
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        return $dir . '/convert-' . $id . '-' . bin2hex(random_bytes(6));
     }
 
     /**
@@ -594,11 +710,16 @@ class ImageController extends Controller
                 http_response_code(500);
                 header('Content-Type: application/json; charset=utf-8');
             }
+            // v1.5.0-beta.2: 把"是哪种致命错误、撞到哪条上限、卡在哪一行"一并报出来。
+            // 只回一句"服务器返回空响应"时，运维既不知道是 OOM 还是超时，也无从下手。
             echo json_encode([
                 'success' => false,
                 'fatal'   => true,
                 'error'   => 'PHP 致命错误（' . $label . '）: ' . $detail,
                 'marked_failed' => $marked,
+                'memory_limit'  => (string) ini_get('memory_limit'),
+                'peak_mb'       => round(memory_get_peak_usage(true) / 1048576, 1),
+                'inflight_ids'  => array_slice(array_map('intval', self::$inflightIds), 0, 20),
             ], JSON_INVALID_UTF8_SUBSTITUTE);
         });
     }
@@ -1104,6 +1225,9 @@ class ImageController extends Controller
     public function migrateLayout(Request $request): void
     {
         $this->validateCsrf();
+        // v1.5.0-beta.2: 迁移会逐行复制对象（含网络往返），同样是长任务 —— 致命错误
+        // 必须变成可读 JSON（此前三个阶段都没有守卫，出事只能看到空响应）。
+        $this->jsonFatalGuard('migrate-layout');
         $mode = (string) $request->input('mode', 'dry-run');
         if (!in_array($mode, ['dry-run', 'apply'], true)) {
             $this->json(['success' => false, 'error' => '无效的迁移模式'], 400);
@@ -1373,6 +1497,16 @@ class ImageController extends Controller
     /** 每批处理的行数上限（历史原图转换；云端要逐个下载+上传，批量不宜大）。 */
     private const CONVERT_BATCH_MAX = 20;
 
+    /**
+     * 干跑（候选筛查）的每批行数上限。
+     *
+     * v1.5.0-beta.2：干跑改为**零 I/O 的纯筛查**（只判格式与键名，不下载不解码），
+     * 因此批次可以大得多 —— 这样才能在合理轮次内扫完整个表。此前干跑与执行共用
+     * LIMIT 5，且只在"第一批"上做判断，表里前 5 行恰好都是 GIF/SVG 时就会报
+     * "待转 0 张"（与清理残留同源的误报：0 表示"没看"，不是"没有"）。
+     */
+    private const CONVERT_SCAN_BATCH_MAX = 500;
+
     /** 可转 WebP 的源格式（其余一律跳过：GIF 会丢动画、SVG 是矢量）。 */
     private const CONVERTIBLE_MIMES = ['image/jpeg', 'image/png', 'image/bmp', 'image/avif'];
 
@@ -1405,13 +1539,23 @@ class ImageController extends Controller
     public function convertOriginals(Request $request): void
     {
         $this->validateCsrf();
+        // v1.5.0-beta.2（线上故障修复）: 致命错误必须变成**可读 JSON**，而不是空响应。
+        // 此前本端点没有守卫（6 个重型端点里只有 processQueue / backfillThumbs 有）→
+        // 大图解码 OOM 或超时时，前端只看到"服务器返回空响应（HTTP 500）"，
+        // 既不知道原因，也不知道卡在哪一行。守卫同时提升内存与时间上限。
+        $this->jsonFatalGuard('convert-originals');
+
         $mode = (string) $request->input('mode', 'dry-run');
         if (!in_array($mode, ['dry-run', 'apply'], true)) {
             $this->json(['success' => false, 'error' => '无效的转换模式'], 400);
             return;
         }
         $apply = $mode === 'apply';
-        $batch = max(1, min(self::CONVERT_BATCH_MAX, (int) $request->input('batch', '5')));
+
+        // 干跑是**零 I/O 的候选筛查**（不下载、不解码、不写任何文件）→ 批次可以大得多；
+        // 执行转换每行都要下载 + 转码 + 上传，保持小批次。
+        $batchMax = $apply ? self::CONVERT_BATCH_MAX : self::CONVERT_SCAN_BATCH_MAX;
+        $batch = max(1, min($batchMax, (int) $request->input('batch', $apply ? '5' : '200')));
 
         try {
             $pdo = \App\Core\Database::getInstance();
@@ -1420,7 +1564,12 @@ class ImageController extends Controller
             return;
         }
 
-        $cursor = (int) \App\Models\Setting::get('original_convert_cursor', '0');
+        // 起点：干跑由前端显式给 from（**每轮从表头开始**，幂等重扫，避免"游标已越过"漏扫）；
+        // 执行转换沿用持久化游标，可中断、可续跑。
+        $fromRaw = $request->input('from', null);
+        $fromId  = ($fromRaw === null || $fromRaw === '') ? null : max(0, (int) $fromRaw);
+        $cursor  = $fromId ?? ($apply ? (int) \App\Models\Setting::get('original_convert_cursor', '0') : 0);
+
         $stmt = $pdo->prepare(
             "SELECT `id`, `path`, `mime_type`, `storage_profile_id` FROM `images`"
             . " WHERE `id` > ? AND `process_status` = 'done' AND `path` <> '' AND `path` NOT LIKE '%.webp'"
@@ -1452,8 +1601,30 @@ class ImageController extends Controller
                 continue;
             }
 
-            $tmpFile = null;
-            $isTemp = false;
+            // 只换扩展名、布局不动 —— 也正因如此缩略图键不受影响（廉价检查放在重活之前）
+            $newPath = (string) preg_replace('/\.[a-z0-9]+$/i', '.webp', $path);
+            if ($newPath === $path || $newPath === '') {
+                $skipped++;
+                $notes['键名无法改写'] = ($notes['键名无法改写'] ?? 0) + 1;
+                continue;
+            }
+
+            if (!$apply) {
+                // 干跑：**零 I/O**。不下载、不解码、不编码、不写任何文件 ——
+                //   ① 干跑绝不能改动文件：此前本地驱动把真实原图传进转码函数，
+                //      而旧实现是"原地覆盖"，于是干跑真的把原图换成 WebP、记录却不改；
+                //   ② 干跑若也下载 + 解码，大图会 OOM，"看下数量"这种轻操作反而致命；
+                //   ③ 所以"是否真的更小"只能在执行时逐张判定 —— 这里的数字是
+                //      **候选数**，面板文案如实这么写，不谎称是精确的待转数。
+                $planned++;
+                if (count($samples) < 12) {
+                    $samples[] = ['id' => $id, 'from' => $path, 'to' => $newPath];
+                }
+                continue;
+            }
+
+            $srcCopy = null;
+            $destCopy = null;
             $driver = null;
             $uploadedNew = null;
             try {
@@ -1463,28 +1634,48 @@ class ImageController extends Controller
                 $driver = $profile?->driver();
                 if ($driver === null) {
                     $failed++;
+                    $notes['存储实例不可用'] = ($notes['存储实例不可用'] ?? 0) + 1;
                     continue;
                 }
 
-                // —— 取字节到本地（本地直读；云端经签名 URL 拉临时文件）——
+                // —— 取字节到**私有副本**：本地也复制一份，绝不在真实存储文件上转码 ——
                 if ($driver instanceof \App\Storage\LocalDriver) {
-                    $tmpFile = $driver->uploadDir() . '/' . ltrim($path, '/');
-                    if (!is_file($tmpFile) || !is_readable($tmpFile)) {
+                    $stored = $driver->uploadDir() . '/' . ltrim($path, '/');
+                    if (!is_file($stored) || !is_readable($stored)) {
                         $failed++;
                         $notes['源对象不可读'] = ($notes['源对象不可读'] ?? 0) + 1;
                         continue;
                     }
+                    $srcCopy = $this->tempConvertPath($id);
+                    if (!@copy($stored, $srcCopy)) {
+                        $failed++;
+                        $notes['副本创建失败'] = ($notes['副本创建失败'] ?? 0) + 1;
+                        continue;
+                    }
                 } else {
-                    $tmpFile = \App\Storage\S3Driver::downloadUrl($driver->url($path));
-                    $isTemp = true;
-                    if ($tmpFile === null || !is_file($tmpFile)) {
+                    $srcCopy = \App\Storage\S3Driver::downloadUrl($driver->url($path));
+                    if ($srcCopy === null || !is_file($srcCopy)) {
                         $failed++;
                         $notes['对象拉取失败'] = ($notes['对象拉取失败'] ?? 0) + 1;
                         continue;
                     }
                 }
 
-                $conv = $this->convertOriginalToWebp($tmpFile, $mime);
+                // —— 内存预算（原图专用口径：含 EXIF 旋转的第二块画布与原始字节）——
+                // 超预算就跳过后如实计数，**绝不让它变成不可捕获的 OOM**
+                $budget = $this->originalConvertBudget($srcCopy, $mime);
+                if ($budget !== null) {
+                    $skipped++;
+                    $key = $budget['code'] === 'memory-budget' ? '超出内存预算（跳过）' : '尺寸不可读（跳过）';
+                    $notes[$key] = ($notes[$key] ?? 0) + 1;
+                    if (count($samples) < 12) {
+                        $samples[] = ['id' => $id, 'note' => $budget['detail']];
+                    }
+                    continue;
+                }
+
+                $destCopy = $this->tempConvertPath($id);
+                $conv = $this->convertOriginalToWebp($srcCopy, $mime, $destCopy);
                 if (!$conv['ok']) {
                     $skipped++;
                     $reason = $conv['note'] === 'not-smaller' ? '转换后未更小（保留原图）' : ('未转换：' . $conv['note']);
@@ -1492,31 +1683,19 @@ class ImageController extends Controller
                     continue;
                 }
 
-                // 只换扩展名，布局不动 —— 也正因如此缩略图键不受影响
-                $newPath = (string) preg_replace('/\.[a-z0-9]+$/i', '.webp', $path);
-                if ($newPath === $path || $newPath === '') {
-                    $skipped++;
-                    continue;
-                }
-
-                if (!$apply) {
-                    $planned++;
-                    if (count($samples) < 12) {
-                        $samples[] = ['id' => $id, 'from' => $path, 'to' => $newPath];
-                    }
-                    continue;
-                }
-
                 // —— 上传新键 → 校验 → 改库 → 删旧（任一步失败即回滚）——
-                $driver->upload($tmpFile, $newPath, 'image/webp');
+                $driver->upload($destCopy, $newPath, 'image/webp');
                 $uploadedNew = $newPath;
                 if (!$driver->exists($newPath)) {
                     throw new \RuntimeException('新对象上传后校验失败');
                 }
 
-                $bytes = (int) @filesize($tmpFile);
-                $md5 = @hash_file('md5', $tmpFile);
-                $sha = @hash_file('sha256', $tmpFile);
+                $bytes = (int) ($conv['bytes'] ?? 0);
+                if ($bytes <= 0) {
+                    $bytes = (int) @filesize($destCopy);
+                }
+                $md5 = @hash_file('md5', $destCopy);
+                $sha = @hash_file('sha256', $destCopy);
 
                 $upd = $pdo->prepare(
                     "UPDATE `images` SET `path` = ?, `filename` = ?, `mime_type` = 'image/webp',"
@@ -1552,8 +1731,12 @@ class ImageController extends Controller
                     $samples[] = ['id' => $id, 'note' => '异常：' . $e->getMessage()];
                 }
             } finally {
-                if ($isTemp && is_string($tmpFile) && is_file($tmpFile)) {
-                    @unlink($tmpFile);
+                // 两个副本都是我们自己创建的（本地复制的 / 云端下载的），一律清理 ——
+                // 真实存储对象从头到尾没有被当作工作文件使用过。
+                foreach ([$srcCopy, $destCopy] as $tmp) {
+                    if (is_string($tmp) && $tmp !== '' && is_file($tmp)) {
+                        @unlink($tmp);
+                    }
                 }
             }
         }
@@ -1577,6 +1760,7 @@ class ImageController extends Controller
             'failed'     => $failed,
             'orphan_risk' => $orphanRisk,
             'remaining'  => $remaining,
+            'next_from'  => $lastId,
             'notes'      => $notes,
             'samples'    => $samples,
         ]);
@@ -1624,6 +1808,10 @@ class ImageController extends Controller
     public function cleanupStorage(Request $request): void
     {
         $this->validateCsrf();
+        // v1.5.0-beta.2: 与 convert-originals 同理 —— 重型端点必须把致命错误
+        // （OOM / 超时）变成可读 JSON，而不是让前端只看到"空响应（HTTP 500）"
+        // （清理会遍历公共目录，文件极多时属于长任务）。
+        $this->jsonFatalGuard('cleanup-storage');
         $mode = (string) $request->input('mode', 'dry-run');
         if (!in_array($mode, ['dry-run', 'apply'], true)) {
             $this->json(['success' => false, 'error' => '无效的清理模式'], 400);
@@ -2132,6 +2320,9 @@ class ImageController extends Controller
     public function backfillHashes(Request $request): void
     {
         $this->validateCsrf();
+        // v1.5.0-beta.2: 回填要逐行取对象字节再算哈希（云端每行一次网络往返），
+        // 属于长任务 —— 致命错误同样要变成可读 JSON 而不是空响应。
+        $this->jsonFatalGuard('backfill-hashes');
 
         $batchSize = max(1, min(20, (int) $request->input('batch', '5')));
 
@@ -2250,6 +2441,10 @@ class ImageController extends Controller
     public function upload(Request $request): void
     {
         $this->validateCsrf();
+        // v1.5.0-beta.2: 上传路径同样做 GD 解码（原图转码 + 缩略图），必须把致命错误
+        // 变成可读 JSON —— 否则一张大图就能让"上传"变成一个没有内容的 500，
+        // 用户看不出是文件太大、内存不足，还是超时。
+        $this->jsonFatalGuard('upload');
 
         $categoryId = $request->input('category_id', '');
         $categoryId = $categoryId !== '' ? (int) $categoryId : null;
