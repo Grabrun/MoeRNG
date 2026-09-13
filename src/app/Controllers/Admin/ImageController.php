@@ -1613,6 +1613,13 @@ class ImageController extends Controller
      *   - 品牌 logo 目录（public/uploads/logo）永不触碰。
      *
      * `mode=dry-run`（默认）只出清单、**不写任何状态**；`apply` 才真正删除并推进游标。
+     *
+     * 干跑可以**全表扫描**：前端按批携带 `from`（首轮 0，随后用响应里的 next_from），
+     * 因此干跑不受持久化游标影响 —— 这点是修过的：此前干跑只扫一批，行数一多就会
+     * 给出"待清理 0 项"的错误结论（其实是"没看"）。
+     *
+     * 响应额外带 `diagnostics`（含"为什么没有可清理项"的结论 `verdict`），
+     * 供操作员判断能否在对象存储控制台整删 `thumbs/`。
      */
     public function cleanupStorage(Request $request): void
     {
@@ -1624,6 +1631,13 @@ class ImageController extends Controller
         }
         $apply = $mode === 'apply';
         $batch = max(1, min(self::CLEANUP_BATCH_MAX, (int) $request->input('batch', '10')));
+        // 扫描起点：客户端可用 from 显式指定（干跑即用此法从 0 开始逐批推进 → **全表扫描**）。
+        // 缺省沿用持久化游标（apply 的续跑语义）。此前干跑只跑一批，行数多时会给出
+        // "待清理 0 项"的错误结论 —— 那是"没看"而不是"没有"。
+        $fromRaw = $request->input('from', null);
+        $fromId = ($fromRaw === null || $fromRaw === '') ? null : max(0, (int) $fromRaw);
+        // 本地目录（暂存 / 历史根）与行游标无关，前端只在首轮请求，避免重复计数。
+        $scope = (string) $request->input('scope', 'all');
 
         try {
             $pdo = \App\Core\Database::getInstance();
@@ -1633,9 +1647,12 @@ class ImageController extends Controller
         }
 
         try {
-            $objects = $this->cleanupLegacyObjects($pdo, $batch, $apply);
-            $staging = $this->cleanupStagingFiles($pdo, $batch, $apply);
-            $legacy  = $this->cleanupLegacyRootFiles($pdo, $batch, $apply);
+            $objects = $this->cleanupLegacyObjects($pdo, $batch, $apply, $fromId);
+            $zero = ['scanned' => 0, 'deleted' => 0, 'planned' => 0, 'skipped' => 0,
+                     'failed' => 0, 'remaining' => 0, 'samples' => []];
+            $staging = $scope === 'all' ? $this->cleanupStagingFiles($pdo, $batch, $apply) : $zero;
+            $legacy  = $scope === 'all' ? $this->cleanupLegacyRootFiles($pdo, $batch, $apply) : $zero;
+            $diag = $this->cleanupDiagnostics($pdo, $objects);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => '清理失败: ' . $e->getMessage()], 500);
             return;
@@ -1647,16 +1664,75 @@ class ImageController extends Controller
             'objects'     => $objects,
             'staging'     => $staging,
             'legacy_root' => $legacy,
+            'diagnostics' => $diag,
+            // 下一批的扫描起点（0 表示已到表尾）；干跑靠它逐批推进到全表结束
+            'next_from'   => $objects['next_from'],
             'remaining'   => $objects['remaining'] + $staging['remaining'] + $legacy['remaining'],
         ]);
     }
 
     /**
-     * ① 旧布局对象清理（按行推进；游标只在 apply 时持久化，便于分批续跑）。
+     * ③ 诊断：把"为什么没有可清理项"讲清楚（此前只回一个 0，操作员无从判断）。
+     *
+     * 关键判据 `refs_thumbs_prefix`：**仍有多少行引用 `thumbs/` 前缀下的对象**。
+     *   - > 0 → 那些对象是活引用，绝不能删（先把这些行迁移到新布局）；
+     *   - = 0 → `thumbs/` 下不存在任何被记录引用的对象，桶里若还有东西，就都是
+     *           「记录已删除」的孤儿 —— 本工具查不到（存储接口无 LIST），可直接整删。
+     *
+     * 计数为什么可信：`thumbs` 列是 JSON（`encodeThumbs` 用 JSON_UNESCAPED_SLASHES，
+     * 斜杠不转义），`thumb_path` 是纯路径，两者任一含 `thumbs/` 即计入。
      */
-    private function cleanupLegacyObjects(\PDO $pdo, int $batch, bool $apply): array
+    private function cleanupDiagnostics(\PDO $pdo, array $objects): array
     {
+        $legacyWhere = "`path` IS NOT NULL AND `path` <> '' AND `path` NOT LIKE '%/original.%'";
+        $newRows    = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE `path` LIKE '%/original.%'")->fetchColumn();
+        $legacyRows = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE {$legacyWhere}")->fetchColumn();
+        $refs       = (int) $pdo->query(
+            "SELECT COUNT(*) FROM `images` WHERE `thumb_path` LIKE 'thumbs/%' OR `thumbs` LIKE '%\"thumbs/%'"
+        )->fetchColumn();
         $cursor = (int) \App\Models\Setting::get('storage_cleanup_cursor', '0');
+
+        if ($refs > 0) {
+            $verdict = "仍有 {$refs} 行引用 thumbs/ 下的对象 —— 它们正在使用中，不能删。"
+                . '请先到「存储结构与迁移」执行「开始迁移」，必要时再「补全历史缩略图」。';
+            $canWipe = false;
+        } elseif ($objects['planned'] > 0) {
+            $verdict = '发现 ' . $objects['planned'] . ' 个已无引用的旧布局对象（属于已迁移的行），点「执行清理」删除即可。';
+            $canWipe = true;
+        } elseif ($legacyRows > 0) {
+            $verdict = "thumbs/ 下没有任何记录引用，可整删（桶里剩余对象均为「记录已删除」的孤儿）。"
+                . "注意仍有 {$legacyRows} 行未迁移，它们处理完成后会把缩略图写回 thumbs/，建议先「开始迁移」。";
+            $canWipe = true;
+        } else {
+            $verdict = 'thumbs/ 下没有任何记录引用 —— 桶里若仍有对象，都属于「记录已删除」的孤儿'
+                . '（本工具无法列举桶内对象），可直接在对象存储控制台整删。';
+            $canWipe = true;
+        }
+
+        return [
+            'cursor'              => $cursor,
+            'new_layout_rows'     => $newRows,
+            'legacy_layout_rows'  => $legacyRows,
+            'refs_thumbs_prefix'  => $refs,
+            'keys_checked'        => (int) ($objects['keys_checked'] ?? 0),
+            'keys_existing'       => (int) ($objects['keys_existing'] ?? 0),
+            'can_wipe_thumbs'     => $canWipe,
+            'verdict'             => $verdict,
+        ];
+    }
+
+    /**
+     * ① 旧布局对象清理（按行推进；游标只在 apply 时持久化，便于分批续跑）。
+     *
+     * @param int|null $fromId 扫描起点；null = 用持久化游标。干跑由前端按批推进 from，
+     *                         从而做到"全表扫描但不写任何状态"。
+     */
+    private function cleanupLegacyObjects(\PDO $pdo, int $batch, bool $apply, ?int $fromId = null): array
+    {
+        // 新一轮**始终从表头开始**（清点是幂等的，重扫最多多几次 exists 探测），
+        // 这样不会因为"游标已经越过某行"而漏清。批间推进由前端携带 from 完成；
+        // settings.storage_cleanup_cursor 仍写回，仅用于观测。
+        $cursor = $fromId ?? 0;
         $stmt = $pdo->prepare(
             "SELECT `id`, `path`, `thumbs`, `thumb_path`, `storage_profile_id` FROM `images`"
             . " WHERE `id` > ? AND `path` LIKE '%/original.%' ORDER BY `id` ASC LIMIT {$batch}"
@@ -1669,6 +1745,10 @@ class ImageController extends Controller
         $planned = 0;
         $skipped = 0;
         $failed = 0;
+        // 诊断计数：本批到底探测了多少个候选旧键、其中多少个确实存在。
+        // 二者都为 0 时才能说"这一批确实没有残留"，而不是"没看"。
+        $keysChecked = 0;
+        $keysExisting = 0;
         $samples = [];
         $lastId = $cursor;
 
@@ -1722,9 +1802,14 @@ class ImageController extends Controller
 
                 foreach ($candidates as $key) {
                     $key = (string) $key;
-                    if ($key === '' || isset($current[$key]) || !$driver->exists($key)) {
+                    if ($key === '' || isset($current[$key])) {
                         continue;
                     }
+                    $keysChecked++;
+                    if (!$driver->exists($key)) {
+                        continue;
+                    }
+                    $keysExisting++;
                     if (!$apply) {
                         $planned++;
                         if (count($samples) < 12) {
@@ -1760,6 +1845,8 @@ class ImageController extends Controller
         return [
             'scanned' => $scanned, 'deleted' => $deleted, 'planned' => $planned,
             'skipped' => $skipped, 'failed' => $failed, 'remaining' => $remaining,
+            'keys_checked' => $keysChecked, 'keys_existing' => $keysExisting,
+            'next_from' => $lastId,
             'samples' => $samples,
         ];
     }

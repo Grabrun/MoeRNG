@@ -328,3 +328,45 @@ Image::objectKey(version: 'original'|'thumb':string, size: ?string, path: string
 - 删旧失败只计 `orphan_risk`（新对象已就位，服务不受影响），可随后用「清理存储残留」处理；
 - 游标 `settings.original_convert_cursor` **只在 apply 时推进**；
 - 云端每行都要**下载 + 上传**，耗时与流量可观 —— 建议先干跑看数量再分批执行。
+
+### 12.2 干跑是全表扫描，且会给结论（v1.5.0-beta.1 修复）
+
+早期版本的干跑**只扫一批**（一批 10 行就停），行数一多就会报「待清理 0 项」——
+那是「没看」而不是「没有」。现在：
+
+- 干跑由前端按批携带 `from` **推进到全表结束**（不写任何状态）；
+- 响应带 `keys_checked` / `keys_existing`（本批探测了多少候选旧键、其中多少个确实存在），
+  让「0 项」可自证；
+- 响应带 `diagnostics`，包含 `new_layout_rows` / `legacy_layout_rows` / `refs_thumbs_prefix`
+  与一句 `verdict` —— 直接回答「为什么没有可清理项」。
+- 执行清理的防空转判据由「本轮零删除即中止」改为 **`next_from` 单调推进**（否则
+  「这轮本来就没有东西可删」会被误判成异常）。
+
+### 12.3 能否在对象存储控制台整删某个前缀？
+
+浏览器控制台里的「文件夹」是**虚拟前缀**，删文件夹就是按前缀删掉该前缀下的全部对象，
+**对象存储没有回收站，不可逆**。删除前先看清两棵树的性质：
+
+| 桶根前缀 | 性质 | 能否整删 |
+|---|---|---|
+| `{yyyy}/`（如 `2026/`） | **混合树** —— 新布局 `{Y}/{m}/{uuid}/original.webp` 与**未迁移**的旧布局 `{Y}/{m}/{uuid}.{ext}` 都在其下 | ❌ 绝不整删（那是全部图片数据） |
+| `thumbs/` | **纯旧布局缩略图树** —— 只有 `Image::thumbKey()` 的旧布局分支会产生该前缀；新布局缩略图在同目录固定名 `{dir}/thumb-{size}.webp` | ⚠️ 满足下方条件才可整删 |
+
+**整删 `thumbs/` 的唯一前提**：没有任何记录引用该前缀下的对象，即
+
+```sql
+SELECT COUNT(*) FROM `images`
+WHERE `thumb_path` LIKE 'thumbs/%' OR `thumbs` LIKE '%"thumbs/%';
+```
+
+必须为 **0**。这条与干跑的 `diagnostics.refs_thumbs_prefix` / `can_wipe_thumbs` 同源，
+所以**直接看干跑结论即可**：
+
+- `refs_thumbs_prefix > 0` → 有 N 行正在用它（尚未迁移 / 缩略图仍指向旧键），先「开始迁移」；
+- `refs_thumbs_prefix = 0` → `thumbs/` 下不存在被引用的对象，桶里若还有东西，都是
+  「记录已删除」的孤儿，可以整删；
+- 若同时 `legacy_layout_rows > 0`，提示：那些未迁移的行被处理时仍会把缩略图写回 `thumbs/`，
+  建议先迁移再删。
+
+**删除后万一出现破图**（说明有行仍引用旧键，即上面的判据被跳过）：原图不受影响，按
+「先迁移 → 必要时置空 `thumbs`/`thumb_path` → 补全历史缩略图」的顺序修复即可。

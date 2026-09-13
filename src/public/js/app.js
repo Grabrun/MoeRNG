@@ -1524,9 +1524,15 @@ function sumCleanupResponse(j) {
 
 async function runStorageCleanup(mode, setUI) {
     const apply = mode === 'apply';
-    let done = 0, planned = 0, failed = 0, skipped = 0, rounds = 0, firstRemaining = -1;
-    let firstError = '';
+    let done = 0, planned = 0, failed = 0, skipped = 0, scanned = 0, rounds = 0;
+    let keysChecked = 0, keysExisting = 0;
+    let diag = null, firstError = '';
     const samples = [];
+
+    // 干跑从表头开始 → **全表扫描**（此前只扫一批，会给出"待清理 0 项"的错误结论）；
+    // 执行清理首轮不带 from，服务端同样从表头开始。
+    let from = apply ? null : 0;
+    let prevFrom = apply ? -1 : 0;
 
     for (;;) {
         rounds++;
@@ -1534,6 +1540,9 @@ async function runStorageCleanup(mode, setUI) {
         fd.append('_csrf_token', getCsrfToken());
         fd.append('mode', apply ? 'apply' : 'dry-run');
         fd.append('batch', '10');
+        // 本地目录（暂存 / 历史根）与行游标无关 —— 只在首轮请求，避免重复计数
+        fd.append('scope', rounds === 1 ? 'all' : 'objects');
+        if (from !== null) fd.append('from', String(from));
 
         const r = await fetch('/admin/images/cleanup-storage', {
             method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -1543,36 +1552,47 @@ async function runStorageCleanup(mode, setUI) {
             throw new Error((j && j.error) || '未知错误');
         }
 
+        const o = j.objects || {};
         const a = sumCleanupResponse(j);
+        if (j.diagnostics) diag = j.diagnostics;
         for (const item of a.samples) {
             if (samples.length < 8) samples.push(item);
         }
-        if (firstRemaining < 0) firstRemaining = a.remaining;
 
-        done += apply ? a.deleted : a.planned;
-        planned += a.planned;
+        scanned += Number(o.scanned) || 0;
+        done += apply ? (Number(o.deleted) || 0) : (Number(o.planned) || 0);
+        planned += Number(o.planned) || 0;
         failed += a.failed;
         skipped += a.skipped;
+        keysChecked += Number(o.keys_checked) || 0;
+        keysExisting += Number(o.keys_existing) || 0;
 
-        const pct = firstRemaining > 0
-            ? Math.min(0.95, Math.max(0.05, 1 - a.remaining / firstRemaining))
-            : 1;
+        const remaining = Number(o.remaining) || 0;
+        const total = diag && Number(diag.new_layout_rows) > 0 ? Number(diag.new_layout_rows) : 0;
+        const pct = remaining === 0 ? 1 : (total > 0 ? Math.min(0.95, scanned / total) : 0.5);
         setUI(pct, (apply ? '清理中… 已删除 ' : '检查中… 待清理 ') + done + ' 项',
-            '跳过 ' + a.skipped + ' · 失败 ' + a.failed + (a.remaining > 0 ? ' · 剩余 ' + a.remaining : ''));
+            '已扫描 ' + scanned + ' 行 · 探测旧键 ' + keysChecked + '（存在 ' + keysExisting + '）'
+            + (remaining > 0 ? ' · 剩余 ' + remaining + ' 行' : ''));
 
-        if (!apply) break;                 // 干跑只跑一轮，绝不写状态
-        if (a.remaining === 0) break;      // 收敛：没有剩余待处理条目
-        if (a.deleted === 0) {             // 本轮零删除却仍有剩余 → 中止，避免空转
-            firstError = '本轮没有可删除项但仍有剩余（可能权限不足或对象仍被引用），已中止';
+        if (remaining === 0) break;
+        const nextFrom = Number(o.next_from) || 0;
+        if (nextFrom <= prevFrom) {
+            firstError = '扫描位置未推进，已中止（数据在扫描期间被改动？）';
             break;
         }
-        if (rounds > 200) {
-            firstError = '达到轮次上限（200），已中止';
+        prevFrom = nextFrom;
+        from = nextFrom;
+        if (rounds > 500) {
+            firstError = '达到轮次上限（500），已中止';
             break;
         }
     }
 
-    return { done: done, planned: planned, failed: failed, skipped: skipped, samples: samples, firstError: firstError, rounds: rounds };
+    return {
+        done: done, planned: planned, failed: failed, skipped: skipped, scanned: scanned,
+        keysChecked: keysChecked, keysExisting: keysExisting, diag: diag,
+        samples: samples, firstError: firstError, rounds: rounds,
+    };
 }
 
 // ── v1.5.0-beta.1: 历史原图批量转 WebP（干跑优先）────────────────────
@@ -1723,6 +1743,7 @@ function initStorageCleanup() {
     if (!checkBtn && !runBtn) return;
 
     const statEl = document.getElementById('cleanup-stat');
+    const verdictEl = document.getElementById('cleanup-verdict');
     const box = document.getElementById('cleanup-progress');
     const fill = document.getElementById('cleanup-fill');
     const text = document.getElementById('cleanup-text');
@@ -1747,16 +1768,31 @@ function initStorageCleanup() {
         return parts.join('；');
     }
 
+    // 把"扫了多少、看了什么、结论是什么"讲清楚 —— 只报一个 0 会让操作员无从判断
+    function counterLine(res) {
+        const d = res.diag || {};
+        return '已扫描 ' + res.scanned + ' 行 · 探测旧键 ' + res.keysChecked + ' 个（其中存在 '
+            + res.keysExisting + ' 个） · 仍引用 thumbs/ 的行 ' + (d.refs_thumbs_prefix ?? '—')
+            + ' · 未迁移行 ' + (d.legacy_layout_rows ?? '—');
+    }
+
     checkBtn?.addEventListener('click', async function () {
         checkBtn.disabled = true;
+        if (verdictEl) verdictEl.textContent = '';
         try {
             const res = await runStorageCleanup('dry-run', setUI);
+            const d = res.diag || {};
+            statEl.textContent = '待清理 ' + res.planned + ' 项 · ' + counterLine(res);
+            if (res.planned > 0) {
+                if (verdictEl) verdictEl.textContent = '→ ' + (d.verdict || '');
+            } else if (verdictEl) {
+                verdictEl.textContent = (d.can_wipe_thumbs ? '✓ ' : '✗ ') + (d.verdict || '');
+            }
             const sample = describe(res.samples);
-            statEl.textContent = '待清理 ' + res.planned + ' 项，跳过 ' + res.skipped + ' 项'
-                + (sample ? '。示例：' + sample : ' —— 没有发现残留。');
-            setUI(1, '检查完成', '待清理 ' + res.planned + ' 项');
+            if (sample && res.planned > 0) statEl.textContent += '。示例：' + sample;
+            setUI(1, '检查完成', '待清理 ' + res.planned + ' 项 · 扫描 ' + res.scanned + ' 行');
             if (runBtn) runBtn.disabled = res.planned === 0;
-            showToast('干跑完成：待清理 ' + res.planned + ' 项', 'success', 6000);
+            showToast('干跑完成：扫描 ' + res.scanned + ' 行，待清理 ' + res.planned + ' 项', 'success', 7000);
         } catch (e) {
             statEl.textContent = '检查失败：' + e.message;
             showToast('干跑失败: ' + e.message, 'error', 8000);
@@ -1781,8 +1817,9 @@ function initStorageCleanup() {
         runBtn.disabled = true;
         try {
             const res = await runStorageCleanup('apply', setUI);
-            statEl.textContent = '已删除 ' + res.done + ' 项（失败 ' + res.failed + '，跳过 ' + res.skipped + '）'
-                + (res.firstError ? '。' + res.firstError : '。');
+            statEl.textContent = '已删除 ' + res.done + ' 项（失败 ' + res.failed + '，跳过 ' + res.skipped
+                + '，扫描 ' + res.scanned + ' 行）' + (res.firstError ? '。' + res.firstError : '。');
+            if (verdictEl) verdictEl.textContent = '建议再点一次「干跑检查」确认剩余情况。';
             setUI(1, '清理完成', '已删除 ' + res.done + ' 项');
             showToast('清理完成：删除 ' + res.done + ' 项'
                 + (res.failed ? '，失败 ' + res.failed + ' 项' : ''), res.failed ? 'error' : 'success', 8000);

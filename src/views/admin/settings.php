@@ -169,7 +169,15 @@ admin_header('系统设置', 'page-settings');
             ⚠️ 记录已被删除的孤立对象（例如用过「清空队列」的那些）<strong>无法</strong>被本工具发现 ——
             存储接口没有列举能力，需到对象存储控制台按前缀人工清理。
         </p>
+        <p class="text-muted text-small text-secondary">
+            提示：干跑是<strong>全表扫描</strong>（逐批推进，行数多时需要等一会儿），并会如实报告
+            「扫描了多少行 / 探测了多少个旧键」——所以「待清理 0 项」是真的看过了，而不是没看。
+            另外，<strong>仍被记录引用的对象不会出现在清单里</strong>：那是正在使用的文件（例如尚未
+            迁移到新布局的行，其缩略图仍在 <code>thumbs/</code> 下）。想确认能否在对象存储控制台
+            整删某个前缀，看下方干跑给出的<strong>结论</strong>。
+        </p>
         <p class="text-muted text-small text-secondary" id="cleanup-stat">点击「干跑检查」查看待清理清单。</p>
+        <p class="text-small" id="cleanup-verdict"></p>
         <div class="flex gap-2 flex-wrap">
             <button type="button" class="btn btn-outline btn-sm" id="cleanup-check">干跑检查</button>
             <button type="button" class="btn btn-danger btn-sm" id="cleanup-run">执行清理</button>
