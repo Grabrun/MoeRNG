@@ -248,17 +248,18 @@ admin_header('系统设置', 'page-settings');
         </div>
 
         <?php if ($backups): ?>
+        <div class="table-wrap">
         <table class="table table-full">
             <thead>
-                <tr><th class="text-left p-8">备份文件</th><th class="text-left p-8">大小</th><th class="text-left p-8">时间</th><th class="text-left p-8">操作</th></tr>
+                <tr><th class="text-left">备份文件</th><th class="text-left">大小</th><th class="text-left">时间</th><th class="text-left">操作</th></tr>
             </thead>
             <tbody>
             <?php foreach ($backups as $b): ?>
                 <tr>
-                    <td class="p-8"><?= h($b['name']) ?></td>
-                    <td class="p-8"><?= $b['size'] >= 1048576 ? round($b['size'] / 1048576, 2) . ' MB' : round($b['size'] / 1024, 1) . ' KB' ?></td>
-                    <td class="p-8"><?= date('Y-m-d H:i', $b['mtime']) ?></td>
-                    <td class="p-8">
+                    <td><?= h($b['name']) ?></td>
+                    <td><?= $b['size'] >= 1048576 ? round($b['size'] / 1048576, 2) . ' MB' : round($b['size'] / 1024, 1) . ' KB' ?></td>
+                    <td><?= date('Y-m-d H:i', $b['mtime']) ?></td>
+                    <td>
                         <form method="POST" action="/admin/settings/backup-delete" class="inline">
                             <?= $csrf_field ?>
                             <input type="hidden" name="stamp" value="<?= h($b['stamp']) ?>">
@@ -269,6 +270,7 @@ admin_header('系统设置', 'page-settings');
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php else: ?>
         <p class="text-muted text-secondary">暂无备份。点击「立即备份」生成第一份。</p>
         <?php endif; ?>

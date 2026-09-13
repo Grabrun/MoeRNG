@@ -1,6 +1,6 @@
 <?php include __DIR__ . '/helpers.php'; admin_header('操作日志'); ?>
 
-<div class="page-header flex-between flex">
+<div class="page-header flex-between">
     <div>
         <h1>操作日志</h1>
         <p>管理员操作审计记录（设置变更 / 备份 / 缓存 / 登录）</p>
@@ -37,23 +37,24 @@
 
 <div class="card">
     <?php if ($logs): ?>
+    <div class="table-wrap">
     <table class="table table-full">
         <thead>
             <tr>
-                <th class="text-left p-10">时间</th>
-                <th class="text-left p-10">用户</th>
-                <th class="text-left p-10">动作</th>
-                <th class="text-left p-10">详情</th>
-                <th class="text-left p-10">IP</th>
+                <th class="text-left">时间</th>
+                <th class="text-left">用户</th>
+                <th class="text-left">动作</th>
+                <th class="text-left">详情</th>
+                <th class="text-left">IP</th>
             </tr>
         </thead>
         <tbody>
         <?php foreach ($logs as $log): ?>
             <tr>
-                <td class="p-10 nowrap"><?= h($log['created_at']) ?></td>
-                <td class="p-10"><?= h($log['username'] !== '' ? $log['username'] : '—') ?></td>
-                <td class="p-10"><code><?= h($log['action']) ?></code></td>
-                <td class="p-10 text-small max-w-420 wrap-all">
+                <td class="nowrap"><?= h($log['created_at']) ?></td>
+                <td><?= h($log['username'] !== '' ? $log['username'] : '—') ?></td>
+                <td><code><?= h($log['action']) ?></code></td>
+                <td class="text-small max-w-420 wrap-all">
                     <?php
                     $detail = json_decode((string) $log['detail'], true);
                     if (is_array($detail)) {
@@ -67,11 +68,12 @@
                     }
                     ?>
                 </td>
-                <td class="p-10 nowrap"><?= h($log['ip'] !== '' ? $log['ip'] : '—') ?></td>
+                <td class="nowrap"><?= h($log['ip'] !== '' ? $log['ip'] : '—') ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
     <?php else: ?>
     <p class="text-muted p-16 text-secondary">暂无操作日志记录。</p>
     <?php endif; ?>
