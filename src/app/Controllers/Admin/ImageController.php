@@ -1224,6 +1224,366 @@ class ImageController extends Controller
         $this->json(['success' => true, 'requeued' => 1, 'id' => $id]);
     }
 
+    /* ------------------------------------------------------------------
+     * v1.5.0-beta.1: 存储残留清理（干跑优先）
+     * ------------------------------------------------------------------ */
+
+    /** 每批处理的条目上限（行 / 文件），防止一次请求做太多删除。 */
+    private const CLEANUP_BATCH_MAX = 50;
+
+    /**
+     * POST /admin/images/cleanup-storage —— 清理历次更新留下的存储残留（干跑优先）。
+     *
+     * 只清理三类**能被确定性判定**的残留：
+     *   ① 旧布局对象：行的 path 已是新布局，但按旧规则对应的键仍留在存储里
+     *      （迁移工具"尽力删旧"失败、或曾经手工迁移过）。
+     *   ② 暂存垃圾：storage/incoming 下不再属于 pending/processing/failed 行的
+     *      临时文件（致命错误、清空队列等留下的）。
+     *   ③ 历史媒体根残留：public/uploads 下**没有任何记录引用**的文件
+     *      （品牌 logo 目录永不触碰）。
+     *
+     * 为什么不做"孤立对象扫描"：`StorageInterface` 没有 LIST 能力，无法枚举桶内
+     * 对象 —— **记录已被删除**的孤立对象（`queueClear` 的 orphan_risk）依旧无法
+     * 被发现，只能人工处理。UI 与文档都如实说明，不假装能清干净。
+     *
+     * 安全护栏（任一不满足就跳过该条，绝不删）：
+     *   - 只删"确定没有被任何记录引用"的对象/文件；
+     *   - 删旧布局对象前，先确认该行**当前的原图对象确实存在**（否则旧对象可能是
+     *     唯一副本 —— 宁可留下垃圾也不赌）；
+     *   - 待删键不得等于该行当前记录的任何键；
+     *   - 暂存文件对应的行若处于 pending/processing/failed 则保留（可能正在处理）；
+     *   - 品牌 logo 目录（public/uploads/logo）永不触碰。
+     *
+     * `mode=dry-run`（默认）只出清单、**不写任何状态**；`apply` 才真正删除并推进游标。
+     */
+    public function cleanupStorage(Request $request): void
+    {
+        $this->validateCsrf();
+        $mode = (string) $request->input('mode', 'dry-run');
+        if (!in_array($mode, ['dry-run', 'apply'], true)) {
+            $this->json(['success' => false, 'error' => '无效的清理模式'], 400);
+            return;
+        }
+        $apply = $mode === 'apply';
+        $batch = max(1, min(self::CLEANUP_BATCH_MAX, (int) $request->input('batch', '10')));
+
+        try {
+            $pdo = \App\Core\Database::getInstance();
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        try {
+            $objects = $this->cleanupLegacyObjects($pdo, $batch, $apply);
+            $staging = $this->cleanupStagingFiles($pdo, $batch, $apply);
+            $legacy  = $this->cleanupLegacyRootFiles($pdo, $batch, $apply);
+        } catch (\Throwable $e) {
+            $this->json(['success' => false, 'error' => '清理失败: ' . $e->getMessage()], 500);
+            return;
+        }
+
+        $this->json([
+            'success'     => true,
+            'mode'        => $mode,
+            'objects'     => $objects,
+            'staging'     => $staging,
+            'legacy_root' => $legacy,
+            'remaining'   => $objects['remaining'] + $staging['remaining'] + $legacy['remaining'],
+        ]);
+    }
+
+    /**
+     * ① 旧布局对象清理（按行推进；游标只在 apply 时持久化，便于分批续跑）。
+     */
+    private function cleanupLegacyObjects(\PDO $pdo, int $batch, bool $apply): array
+    {
+        $cursor = (int) \App\Models\Setting::get('storage_cleanup_cursor', '0');
+        $stmt = $pdo->prepare(
+            "SELECT `id`, `path`, `thumbs`, `thumb_path`, `storage_profile_id` FROM `images`"
+            . " WHERE `id` > ? AND `path` LIKE '%/original.%' ORDER BY `id` ASC LIMIT {$batch}"
+        );
+        $stmt->execute([$cursor]);
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $scanned = 0;
+        $deleted = 0;
+        $planned = 0;
+        $skipped = 0;
+        $failed = 0;
+        $samples = [];
+        $lastId = $cursor;
+
+        foreach ($rows as $row) {
+            $scanned++;
+            $id = (int) $row['id'];
+            $lastId = max($lastId, $id);
+            $path = (string) $row['path'];
+
+            $parts = \App\Models\Image::assetParts($path);
+            if ($parts['layout'] !== \App\Models\Image::LAYOUT_V2) {
+                $skipped++;
+                continue;
+            }
+
+            // 该行当前的键（原图 + 各尺寸）—— 待删键绝不能与它们重合
+            $current = [$path => true];
+            $thumbMap = \App\Models\Image::decodeThumbMap(
+                (string) ($row['thumbs'] ?? ''),
+                (string) ($row['thumb_path'] ?? '')
+            );
+            foreach ($thumbMap as $k) {
+                $current[(string) $k] = true;
+            }
+
+            try {
+                $profile = $this->resolveProfile(
+                    $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
+                );
+                $driver = $profile?->driver();
+                if ($driver === null) {
+                    $skipped++;
+                    continue;
+                }
+
+                // —— 关键护栏：当前原图对象必须存在，否则旧对象可能是唯一副本 ——
+                if (!$driver->exists($path)) {
+                    $skipped++;
+                    if (count($samples) < 12) {
+                        $samples[] = ['id' => $id, 'note' => '当前原图对象不存在，跳过（避免删掉唯一副本）'];
+                    }
+                    continue;
+                }
+
+                $legacyOriginal = dirname($parts['dir']) . '/' . basename($parts['dir']) . '.' . $parts['ext'];
+                $candidates = [$legacyOriginal];
+                foreach (['md', 'sm', 'lg'] as $size) {
+                    // thumbKey() 对旧布局路径即产出旧规则键（与生成端同源）
+                    $candidates[] = \App\Models\Image::thumbKey($size, $legacyOriginal);
+                }
+
+                foreach ($candidates as $key) {
+                    $key = (string) $key;
+                    if ($key === '' || isset($current[$key]) || !$driver->exists($key)) {
+                        continue;
+                    }
+                    if (!$apply) {
+                        $planned++;
+                        if (count($samples) < 12) {
+                            $samples[] = ['id' => $id, 'key' => $key, 'action' => 'would-delete'];
+                        }
+                        continue;
+                    }
+                    if ($driver->delete($key)) {
+                        $deleted++;
+                        if (count($samples) < 12) {
+                            $samples[] = ['id' => $id, 'key' => $key, 'action' => 'deleted'];
+                        }
+                    } else {
+                        $failed++;
+                    }
+                }
+            } catch (\Throwable $e) {
+                $failed++;
+                if (count($samples) < 12) {
+                    $samples[] = ['id' => $id, 'note' => '异常：' . $e->getMessage()];
+                }
+            }
+        }
+
+        $remaining = (int) $pdo->query(
+            "SELECT COUNT(*) FROM `images` WHERE `id` > " . (int) $lastId . " AND `path` LIKE '%/original.%'"
+        )->fetchColumn();
+
+        if ($apply && $scanned > 0) {
+            \App\Models\Setting::set('storage_cleanup_cursor', (string) $lastId);
+        }
+
+        return [
+            'scanned' => $scanned, 'deleted' => $deleted, 'planned' => $planned,
+            'skipped' => $skipped, 'failed' => $failed, 'remaining' => $remaining,
+            'samples' => $samples,
+        ];
+    }
+
+    /**
+     * ② 暂存目录垃圾：storage/incoming 下不再属于"在办"行的临时文件。
+     */
+    private function cleanupStagingFiles(\PDO $pdo, int $batch, bool $apply): array
+    {
+        $root = self::incomingDir();
+        $result = ['scanned' => 0, 'deleted' => 0, 'planned' => 0, 'skipped' => 0, 'failed' => 0, 'remaining' => 0, 'samples' => []];
+        if (!is_dir($root)) {
+            return $result;
+        }
+
+        $lookup = $pdo->prepare("SELECT `process_status` FROM `images` WHERE `path` = ? LIMIT 1");
+        $files = $this->listFilesRecursive($root, $batch * 4);
+        $stale = 0;
+
+        foreach ($files as $abs) {
+            $result['scanned']++;
+            $rel = ltrim(str_replace('\\', '/', substr($abs, strlen($root))), '/');
+            $lookup->execute([$rel]);
+            $status = $lookup->fetchColumn();
+
+            // 在办的行（含正在处理）一律保留 —— 那个文件可能正被另一个请求使用
+            if ($status !== false && in_array((string) $status, ['pending', 'processing', 'failed'], true)) {
+                $result['skipped']++;
+                continue;
+            }
+
+            $stale++;
+            if ($stale > $batch) {
+                $result['remaining']++;
+                continue;
+            }
+            if (!$apply) {
+                $result['planned']++;
+                if (count($result['samples']) < 12) {
+                    $result['samples'][] = ['path' => $rel, 'action' => 'would-delete'];
+                }
+                continue;
+            }
+            if (@unlink($abs)) {
+                $result['deleted']++;
+                if (count($result['samples']) < 12) {
+                    $result['samples'][] = ['path' => $rel, 'action' => 'deleted'];
+                }
+                $this->pruneEmptyDirs(dirname($abs), $root);
+            } else {
+                $result['failed']++;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * ③ 历史媒体根残留：public/uploads 下没有任何记录引用的文件。
+     *
+     * 注意这条**与迁移状态无关**也安全：只要还有记录引用某个文件就保留 —— 因此
+     * 即使尚未执行布局迁移，也不会误删在用的图。
+     */
+    private function cleanupLegacyRootFiles(\PDO $pdo, int $batch, bool $apply): array
+    {
+        $root = \App\Storage\LocalDriver::legacyUploadDir();
+        $result = ['scanned' => 0, 'deleted' => 0, 'planned' => 0, 'skipped' => 0, 'failed' => 0, 'remaining' => 0, 'samples' => []];
+        if (!is_dir($root)) {
+            return $result;
+        }
+
+        $branding = basename(\App\Storage\LocalDriver::BRANDING_REL_DIR);
+        $referenced = $pdo->prepare(
+            "SELECT 1 FROM `images` WHERE `path` = ? OR `thumb_path` = ? OR `thumbs` LIKE ? LIMIT 1"
+        );
+        $files = $this->listFilesRecursive($root, $batch * 4, [$branding]);
+        $stale = 0;
+
+        foreach ($files as $abs) {
+            $result['scanned']++;
+            $rel = ltrim(str_replace('\\', '/', substr($abs, strlen($root))), '/');
+
+            // thumbs 是 JSON，键以字符串形式出现 —— 用带引号的模式匹配，并转义通配符
+            $referenced->execute([$rel, $rel, '%"' . addcslashes($rel, '%_\\') . '"%']);
+            if ($referenced->fetchColumn() !== false) {
+                $result['skipped']++;
+                continue;
+            }
+
+            $stale++;
+            if ($stale > $batch) {
+                $result['remaining']++;
+                continue;
+            }
+            if (!$apply) {
+                $result['planned']++;
+                if (count($result['samples']) < 12) {
+                    $result['samples'][] = ['path' => $rel, 'action' => 'would-delete'];
+                }
+                continue;
+            }
+            if (@unlink($abs)) {
+                $result['deleted']++;
+                if (count($result['samples']) < 12) {
+                    $result['samples'][] = ['path' => $rel, 'action' => 'deleted'];
+                }
+                $this->pruneEmptyDirs(dirname($abs), $root);
+            } else {
+                $result['failed']++;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * 列出目录下的文件（相对根的绝对路径），按路径排序保证可预期。
+     *
+     * - 只返回常规文件：符号链接与目录都跳过（不跟随链接，避免越界删除）；
+     * - $excludeTop 里的顶层目录整体跳过（用于保护品牌 logo）；
+     * - 最多返回 $limit 个（调用方按批处理，避免一次扫描巨量文件）。
+     *
+     * @param list<string> $excludeTop
+     * @return list<string>
+     */
+    private function listFilesRecursive(string $dir, int $limit, array $excludeTop = []): array
+    {
+        $out = [];
+        if (!is_dir($dir) || $limit <= 0) {
+            return $out;
+        }
+        $entries = scandir($dir);
+        if ($entries === false) {
+            return $out;
+        }
+        sort($entries);
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            if (count($out) >= $limit) {
+                break;
+            }
+            $full = $dir . '/' . $entry;
+            if (is_link($full)) {
+                continue;
+            }
+            if (is_dir($full)) {
+                if (in_array($entry, $excludeTop, true)) {
+                    continue;
+                }
+                foreach ($this->listFilesRecursive($full, $limit - count($out)) as $f) {
+                    $out[] = $f;
+                    if (count($out) >= $limit) {
+                        break;
+                    }
+                }
+                continue;
+            }
+            if (is_file($full)) {
+                $out[] = $full;
+            }
+        }
+        return $out;
+    }
+
+    /** 自底向上删除空目录，绝不动 $stopAt 本身。 */
+    private function pruneEmptyDirs(string $dir, string $stopAt): void
+    {
+        $stopAt = rtrim(str_replace('\\', '/', $stopAt), '/');
+        $dir = rtrim(str_replace('\\', '/', $dir), '/');
+        while ($dir !== '' && $dir !== $stopAt && str_starts_with($dir . '/', $stopAt . '/')) {
+            if (!is_dir($dir) || (scandir($dir) ?: ['.', '..']) !== ['.', '..']) {
+                return;
+            }
+            if (!@rmdir($dir)) {
+                return;
+            }
+            $dir = rtrim(dirname($dir), '/');
+        }
+    }
+
     /**
      * v1.4.0-beta.2 增强: POST /admin/images/queue-clear —— 清空处理队列。
      *
@@ -1234,6 +1594,11 @@ class ImageController extends Controller
      * 原图在失败前**可能已经上传到最终存储**（上传失败只可能发生在缩略图阶段），
      * 删除记录会让那份文件成为存储侧的孤立对象，需操作员自行清理 —— 响应里以
      * orphan_risk 如实报告，前端确认文案也会提示。
+     *
+     * 补充（v1.5.0-beta.1）：这类**记录已删**的孤立对象无法被 cleanupStorage()
+     * 发现（存储接口没有 LIST 能力），只能到对象存储控制台按前缀人工清理；
+     * cleanupStorage() 负责的是记录仍在、但旧键/暂存/无引用文件等**可确定性判定**
+     * 的残留。
      */
     public function queueClear(Request $request): void
     {

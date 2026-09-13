@@ -905,19 +905,9 @@ class Application
         return (bool) $db->query('SELECT COUNT(*) FROM `storage_profiles` WHERE `is_default` = 1')->fetchColumn();
     }
 
-    public function isInstalled(): bool
-    {
-        return $this->installed;
-    }
-
     public function router(): Router
     {
         return $this->router;
-    }
-
-    public function basePath(): string
-    {
-        return $this->basePath;
     }
 
     public function baseUrl(): string

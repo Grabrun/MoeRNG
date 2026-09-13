@@ -699,9 +699,4 @@ class SettingController extends Controller
         ]);
     }
 
-    /** Render helpers for the view. */
-    public static function fieldValue(array $settings, string $key, array $def): string
-    {
-        return (string) ($settings[$key] ?? $def['default'] ?? '');
-    }
 }

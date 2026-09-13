@@ -148,9 +148,4 @@ final class Autoloader
         return self::$prefixes;
     }
 
-    /** @return list<string> Paths attempted since registration (debug mode only) */
-    public static function trace(): array
-    {
-        return self::$trace;
-    }
 }

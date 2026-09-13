@@ -20,11 +20,6 @@ class User extends Model
         return password_verify($password, $this->password);
     }
 
-    public function isAdmin(): bool
-    {
-        return $this->role === 'admin';
-    }
-
     public function isActive(): bool
     {
         return $this->status === 'active';

@@ -16,12 +16,6 @@ class Category extends Model
         return Image::where('category_id', $this->id);
     }
 
-    public function parent(): ?self
-    {
-        if (!$this->parent_id) return null;
-        return self::find($this->parent_id);
-    }
-
     public function children(): array
     {
         return self::childrenRowsOf((int) $this->id, true);

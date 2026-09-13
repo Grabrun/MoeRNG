@@ -1354,16 +1354,6 @@ async function parseJsonResponse(resp, label) {
 }
 
 // 表单 POST + 健壮解析（统一带上 CSRF 与 X-Requested-With）
-async function postJson(url, fd, label) {
-    let resp;
-    try {
-        resp = await fetch(url, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-    } catch (e) {
-        throw new Error((label ? label + '：' : '') + '网络请求失败：' + (e && e.message ? e.message : e));
-    }
-    return parseJsonResponse(resp, label);
-}
-
 // v1.3.2-beta.2: 图片处理队列共享循环（上传后自动触发 / 图片页清积压 / 处理页共用）。
 // 每批由服务端完成缩略图生成 + 最终存储上传 + 临时文件清理；循环直到 remaining=0。
 // v1.3.3-beta.1 修复: 本函数曾在一次脚本异常中整体丢失（3 处调用点引用未定义函数，
@@ -1509,6 +1499,159 @@ async function runLayoutMigration(setUI) {
         }
     }
     return { migrated: migrated, failed: failed, skipped: skipped, total: total, remaining: 0, firstError: firstError };
+}
+
+// ── v1.5.0-beta.1: 存储残留清理（干跑优先）────────────────────────────
+// 三类残留：① 旧布局对象 ② storage/incoming 暂存垃圾 ③ public/uploads 无引用文件。
+// 干跑只跑一轮并返回清单；执行清理按批循环直到 remaining 收敛。
+function sumCleanupResponse(j) {
+    const agg = { deleted: 0, planned: 0, failed: 0, skipped: 0, scanned: 0, remaining: 0, samples: [] };
+    for (const key of ['objects', 'staging', 'legacy_root']) {
+        const part = j[key] || {};
+        agg.deleted += Number(part.deleted) || 0;
+        agg.planned += Number(part.planned) || 0;
+        agg.failed += Number(part.failed) || 0;
+        agg.skipped += Number(part.skipped) || 0;
+        agg.scanned += Number(part.scanned) || 0;
+        agg.remaining += Number(part.remaining) || 0;
+        const list = part.samples || [];
+        for (const item of list) {
+            if (agg.samples.length < 8) agg.samples.push(item);
+        }
+    }
+    return agg;
+}
+
+async function runStorageCleanup(mode, setUI) {
+    const apply = mode === 'apply';
+    let done = 0, planned = 0, failed = 0, skipped = 0, rounds = 0, firstRemaining = -1;
+    let firstError = '';
+    const samples = [];
+
+    for (;;) {
+        rounds++;
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        fd.append('mode', apply ? 'apply' : 'dry-run');
+        fd.append('batch', '10');
+
+        const r = await fetch('/admin/images/cleanup-storage', {
+            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const j = await parseJsonResponse(r, '存储清理');
+        if (!j || !j.success) {
+            throw new Error((j && j.error) || '未知错误');
+        }
+
+        const a = sumCleanupResponse(j);
+        for (const item of a.samples) {
+            if (samples.length < 8) samples.push(item);
+        }
+        if (firstRemaining < 0) firstRemaining = a.remaining;
+
+        done += apply ? a.deleted : a.planned;
+        planned += a.planned;
+        failed += a.failed;
+        skipped += a.skipped;
+
+        const pct = firstRemaining > 0
+            ? Math.min(0.95, Math.max(0.05, 1 - a.remaining / firstRemaining))
+            : 1;
+        setUI(pct, (apply ? '清理中… 已删除 ' : '检查中… 待清理 ') + done + ' 项',
+            '跳过 ' + a.skipped + ' · 失败 ' + a.failed + (a.remaining > 0 ? ' · 剩余 ' + a.remaining : ''));
+
+        if (!apply) break;                 // 干跑只跑一轮，绝不写状态
+        if (a.remaining === 0) break;      // 收敛：没有剩余待处理条目
+        if (a.deleted === 0) {             // 本轮零删除却仍有剩余 → 中止，避免空转
+            firstError = '本轮没有可删除项但仍有剩余（可能权限不足或对象仍被引用），已中止';
+            break;
+        }
+        if (rounds > 200) {
+            firstError = '达到轮次上限（200），已中止';
+            break;
+        }
+    }
+
+    return { done: done, planned: planned, failed: failed, skipped: skipped, samples: samples, firstError: firstError, rounds: rounds };
+}
+
+function initStorageCleanup() {
+    const checkBtn = document.getElementById('cleanup-check');
+    const runBtn = document.getElementById('cleanup-run');
+    if (!checkBtn && !runBtn) return;
+
+    const statEl = document.getElementById('cleanup-stat');
+    const box = document.getElementById('cleanup-progress');
+    const fill = document.getElementById('cleanup-fill');
+    const text = document.getElementById('cleanup-text');
+    const detail = document.getElementById('cleanup-detail');
+    const setUI = function (pct, t, d) {
+        if (box) box.classList.remove('hidden');
+        if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+        if (text && t) text.textContent = t;
+        if (detail && d !== undefined) detail.textContent = d;
+    };
+
+    // 清单里挑前几条人话描述（键 / 路径 / 跳过原因）
+    function describe(found) {
+        const parts = [];
+        for (const item of found) {
+            if (!item) continue;
+            if (item.key) parts.push('#' + item.id + ' ' + item.key);
+            else if (item.path) parts.push(item.path);
+            else if (item.note) parts.push(item.note);
+            if (parts.length >= 3) break;
+        }
+        return parts.join('；');
+    }
+
+    checkBtn?.addEventListener('click', async function () {
+        checkBtn.disabled = true;
+        try {
+            const res = await runStorageCleanup('dry-run', setUI);
+            const sample = describe(res.samples);
+            statEl.textContent = '待清理 ' + res.planned + ' 项，跳过 ' + res.skipped + ' 项'
+                + (sample ? '。示例：' + sample : ' —— 没有发现残留。');
+            setUI(1, '检查完成', '待清理 ' + res.planned + ' 项');
+            if (runBtn) runBtn.disabled = res.planned === 0;
+            showToast('干跑完成：待清理 ' + res.planned + ' 项', 'success', 6000);
+        } catch (e) {
+            statEl.textContent = '检查失败：' + e.message;
+            showToast('干跑失败: ' + e.message, 'error', 8000);
+        } finally {
+            checkBtn.disabled = false;
+        }
+    });
+
+    // 两段式确认：执行清理会真正删除对象/文件
+    const label = runBtn ? runBtn.textContent : '';
+    let armed = false, timer = null;
+    runBtn?.addEventListener('click', async function () {
+        if (!armed) {
+            armed = true;
+            runBtn.textContent = '再次点击确认执行清理';
+            timer = setTimeout(function () { armed = false; runBtn.textContent = label; }, 6000);
+            return;
+        }
+        clearTimeout(timer);
+        armed = false;
+        runBtn.textContent = label;
+        runBtn.disabled = true;
+        try {
+            const res = await runStorageCleanup('apply', setUI);
+            statEl.textContent = '已删除 ' + res.done + ' 项（失败 ' + res.failed + '，跳过 ' + res.skipped + '）'
+                + (res.firstError ? '。' + res.firstError : '。');
+            setUI(1, '清理完成', '已删除 ' + res.done + ' 项');
+            showToast('清理完成：删除 ' + res.done + ' 项'
+                + (res.failed ? '，失败 ' + res.failed + ' 项' : ''), res.failed ? 'error' : 'success', 8000);
+            if (res.firstError) showToast(res.firstError, 'error', 9000);
+        } catch (e) {
+            statEl.textContent = '清理失败：' + e.message;
+            showToast('清理失败: ' + e.message, 'error', 9000);
+        } finally {
+            runBtn.disabled = false;
+        }
+    });
 }
 
 function initLayoutMigration() {
@@ -2052,6 +2195,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initHealthPanel();
     initQueuePage();
     initLayoutMigration();
+    initStorageCleanup();
     initApiKeys();
     initCategoryActions();
     initDropZone();

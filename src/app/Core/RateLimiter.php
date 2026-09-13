@@ -61,12 +61,6 @@ class RateLimiter
         ];
     }
 
-    /** True when the bucket has not exceeded its allowance. */
-    public static function allow(string $bucket, int $limit, int $windowSeconds): bool
-    {
-        return self::hit($bucket, $limit, $windowSeconds)[0];
-    }
-
     /**
      * Read the current state WITHOUT consuming a token (used by the login
      * form to render the lockout banner — hitting there would self-lock).

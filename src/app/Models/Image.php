@@ -79,12 +79,6 @@ class Image extends Model
         ];
     }
 
-    /** 是否已在新布局（迁移的判据）。 */
-    public static function isNewLayout(string $path): bool
-    {
-        return self::assetParts($path)['layout'] === self::LAYOUT_V2;
-    }
-
     /** 新布局下的原图相对路径（上传时调用；目录名用随机串，扩展名保留）。 */
     public static function newAssetPath(string $ext): string
     {
@@ -292,24 +286,6 @@ class Image extends Model
         return count($parts) >= 2 ? implode(', ', $parts) : '';
     }
 
-    /** Absolute-ish stored URL as persisted in the DB (diagnostics only). */
-    public function storedUrl(): string
-    {
-        return (string) ($this->attributes['url'] ?? '');
-    }
-
-    /** Whether the backing file actually exists in storage. */
-    public function fileExists(): bool
-    {
-        $path = (string) ($this->attributes['path'] ?? '');
-        if ($path === '') return false;
-        try {
-            return self::driverFor($this)->exists($path);
-        } catch (\Throwable) {
-            return false;
-        }
-    }
-
     public static function random(?int $categoryId = null): ?self
     {
         // v1.3.1 性能优化: 用「COUNT + 随机 OFFSET」替代 ORDER BY RAND()——
@@ -430,31 +406,6 @@ class Image extends Model
         return array_values(array_unique($ids));
     }
 
-    public static function getByCategory(int $categoryId, int $limit = 20, int $offset = 0): array
-    {
-        $ids = self::getCategoryAndChildIds($categoryId);
-        if (empty($ids)) return [];
-
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IN ({$placeholders}) ORDER BY sort_order ASC, id DESC LIMIT {$limit} OFFSET {$offset}";
-        $stmt = Database::getInstance()->prepare($sql);
-        $stmt->execute($ids);
-
-        return array_map(fn($row) => self::hydrate($row), $stmt->fetchAll(\PDO::FETCH_ASSOC));
-    }
-
-    public static function countByCategory(int $categoryId): int
-    {
-        $ids = self::getCategoryAndChildIds($categoryId);
-        if (empty($ids)) return 0;
-
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $sql = "SELECT COUNT(*) FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IN ({$placeholders})";
-        $stmt = Database::getInstance()->prepare($sql);
-        $stmt->execute($ids);
-        return (int) $stmt->fetchColumn();
-    }
-
     public static function updateSortOrders(array $orderData): void
     {
         $sql = "UPDATE images SET sort_order = ? WHERE id = ?";
@@ -474,17 +425,6 @@ class Image extends Model
             // Storage deletion failure should not block DB deletion
         }
         return parent::delete();
-    }
-
-    public static function getStorageDriver(): \App\Storage\StorageInterface
-    {
-        static $driver = null;
-        if ($driver !== null) return $driver;
-
-        // v1.0.33: uploads resolve through the default storage profile; the
-        // legacy settings-store path remains only when no profile exists yet.
-        $driver = \App\Models\StorageProfile::defaultDriver();
-        return $driver;
     }
 
     /**

@@ -52,12 +52,6 @@ abstract class Controller
         exit; // unreachable
     }
 
-    protected function back(): never
-    {
-        $url = $_SERVER['HTTP_REFERER'] ?? '/';
-        $this->redirect($url);
-    }
-
     protected function validateCsrf(): void
     {
         $token = $_POST['_csrf_token'] ?? '';
@@ -157,16 +151,4 @@ abstract class Controller
         return $_POST[$key] ?? $_GET[$key] ?? $default;
     }
 
-    protected function allInput(): array
-    {
-        if ($this->isPost()) {
-            $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-            if (str_contains($contentType, 'application/json')) {
-                $body = file_get_contents('php://input') ?: '';
-                return json_decode($body, true) ?: [];
-            }
-            return $_POST;
-        }
-        return $_GET;
-    }
 }

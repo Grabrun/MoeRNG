@@ -19,21 +19,6 @@ class AuditLog extends Model
     protected static string $table = 'audit_logs';
     protected static array $fillable = ['user_id', 'username', 'action', 'detail', 'ip', 'created_at'];
 
-    /** JSON-decoded detail (never null). */
-    public function detailArray(): array
-    {
-        $raw = (string) ($this->attributes['detail'] ?? '');
-        if ($raw === '') {
-            return [];
-        }
-        try {
-            $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
-            return is_array($decoded) ? $decoded : [];
-        } catch (\Throwable) {
-            return [];
-        }
-    }
-
     /**
      * Append one audit entry. Never throws — logging is fire-and-forget.
      *

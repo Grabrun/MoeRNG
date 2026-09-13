@@ -8,18 +8,6 @@ class Response
     private array $headers = [];
     private int $statusCode = 200;
 
-    public function setHeader(string $key, string $value): self
-    {
-        $this->headers[$key] = $value;
-        return $this;
-    }
-
-    public function setStatusCode(int $code): self
-    {
-        $this->statusCode = $code;
-        return $this;
-    }
-
     public function json(mixed $data, int $status = 200, int $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES): never
     {
         http_response_code($status);

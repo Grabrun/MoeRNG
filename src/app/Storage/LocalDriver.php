@@ -215,12 +215,6 @@ class LocalDriver implements StorageInterface
         return $this->cdnOverride !== '' ? 'cdn' : 'signed';
     }
 
-    /** 该实例配置的 CDN 域名（空 = 未配置）。 */
-    public function cdnUrl(): string
-    {
-        return $this->cdnOverride;
-    }
-
     public static function configFields(): array
     {
         return [

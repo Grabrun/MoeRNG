@@ -176,19 +176,4 @@ class ApiController extends Controller
         ]);
     }
 
-    /**
-     * v1.0.35: storage state comes from storage_profiles, not settings.
-     * Returns the default profile's driver (local | s3:{provider}), or null
-     * when no usable profile exists.
-     */
-    private static function activeStorageDriver(): ?string
-    {
-        $profile = \App\Models\StorageProfile::defaultProfile();
-        if ($profile === null) {
-            return null;
-        }
-        return $profile->isS3()
-            ? 's3:' . (string) $profile->provider
-            : 'local';
-    }
 }

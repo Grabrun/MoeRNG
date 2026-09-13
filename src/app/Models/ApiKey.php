@@ -37,14 +37,4 @@ class ApiKey extends Model
         return (int) ($this->rate_limit ?: 60);
     }
 
-    public function getRateWindow(): int
-    {
-        return (int) ($this->rate_window ?: 60);
-    }
-
-    public function hasPermission(string $permission): bool
-    {
-        $permissions = json_decode($this->permissions ?: '[]', true);
-        return in_array('*', $permissions, true) || in_array($permission, $permissions, true);
-    }
 }

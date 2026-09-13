@@ -154,6 +154,32 @@ admin_header('系统设置', 'page-settings');
             <div class="health-progress-detail" id="layout-detail"></div>
         </div>
     </div>
+
+    <!-- v1.5.0-beta.1: 清理历次更新留下的存储残留（干跑优先） -->
+    <div class="card mb-3">
+        <h3 class="mb-2">清理存储残留</h3>
+        <p class="text-muted text-small text-secondary">
+            清理三类<strong>能被确定性判定</strong>的残留：① 已迁移记录的<strong>旧布局对象</strong>
+            （按旧规则推导键，删前先确认当前对象确实存在）；② <code>storage/incoming</code> 里
+            已不在办（非 待处理/处理中/失败）的<strong>临时文件</strong>；③ <code>public/uploads</code> 下
+            <strong>没有任何记录引用</strong>的文件（品牌 logo 目录不动）。
+            默认<strong>干跑</strong>只出清单；确认后再执行删除。
+        </p>
+        <p class="text-muted text-small text-secondary">
+            ⚠️ 记录已被删除的孤立对象（例如用过「清空队列」的那些）<strong>无法</strong>被本工具发现 ——
+            存储接口没有列举能力，需到对象存储控制台按前缀人工清理。
+        </p>
+        <p class="text-muted text-small text-secondary" id="cleanup-stat">点击「干跑检查」查看待清理清单。</p>
+        <div class="flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline btn-sm" id="cleanup-check">干跑检查</button>
+            <button type="button" class="btn btn-danger btn-sm" id="cleanup-run">执行清理</button>
+        </div>
+        <div id="cleanup-progress" class="hidden mt-3">
+            <div class="health-progress-text" id="cleanup-text">准备检查…</div>
+            <div class="health-progress-track"><div id="cleanup-fill" class="health-progress-fill"></div></div>
+            <div class="health-progress-detail" id="cleanup-detail"></div>
+        </div>
+    </div>
     <?php endif; ?>
 
     <?php if ($gid === 'maintenance'): ?>

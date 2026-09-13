@@ -68,20 +68,6 @@ class S3Driver implements StorageInterface
         return null;
     }
 
-    public function setProvider(string $provider, ?array $creds = null): self
-    {
-        $this->provider = $provider;
-        $data = $creds ?? [];
-        $this->accessKey = (string) ($data['key'] ?? '');
-        $this->secretKey = (string) ($data['secret'] ?? '');
-        $this->region    = (string) ($data['region'] ?? '');
-        $this->bucket    = (string) ($data['bucket'] ?? '');
-        $this->endpoint  = (string) ($data['endpoint'] ?? '');
-        $this->cdnUrl    = (string) ($data['cdn'] ?? '');
-        $this->sourceDomain = (string) ($data['source_domain'] ?? '');
-        return $this;
-    }
-
     /**
      * v1.0.33: load credentials directly from a StorageProfile instance
      * (multi-instance storage config) instead of the legacy settings store.
@@ -105,23 +91,6 @@ class S3Driver implements StorageInterface
         $this->sourceDomain = (string) ($cfg['source_domain'] ?? '');
         $this->signedTtl = max(1, (int) ($cfg['signed_ttl'] ?? 300));
         return $this;
-    }
-
-    /**
-     * Resolve credentials for $provider from the storage_profiles table
-     * (v1.0.35: single source of truth — no settings JSON fallback).
-     */
-    private function loadProviderConfig(string $provider): array
-    {
-        foreach (\App\Models\StorageProfile::all('sort_order ASC, id ASC') as $candidate) {
-            if ($candidate->isS3() && $candidate->isEnabled()
-                && $candidate->provider === $provider) {
-                $cfg = $candidate->config();
-                $cfg['_profile_id'] = (int) $candidate->id;
-                return $cfg;
-            }
-        }
-        return [];
     }
 
     /** Missing SDK dir(s) named in the error so a partial deploy is obvious. */

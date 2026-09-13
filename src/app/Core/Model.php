@@ -63,11 +63,6 @@ abstract class Model
         $this->attributes[$key] = $value;
     }
 
-    public function toArray(): array
-    {
-        return $this->attributes;
-    }
-
     public function save(): bool
     {
         // Auto-increment tables: presence of the id means the row already exists.

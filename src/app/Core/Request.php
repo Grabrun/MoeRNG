@@ -37,38 +37,6 @@ class Request
         $this->ip = $this->resolveIp();
     }
 
-    public static function fromGlobals(): self
-    {
-        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-        $uri = $_SERVER['REQUEST_URI'] ?? '/';
-
-        // Handle method override
-        if ($method === 'POST' && isset($_POST['_method'])) {
-            $method = strtoupper($_POST['_method']);
-        }
-
-        $post = [];
-        $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';
-        if ($method === 'POST' || $method === 'PUT' || $method === 'PATCH') {
-            if (str_contains($contentType, 'application/json')) {
-                $body = file_get_contents('php://input') ?: '';
-                $post = json_decode($body, true) ?: [];
-            } else {
-                $post = $_POST;
-            }
-        }
-
-        return new self(
-            $method,
-            $uri,
-            [],
-            $_GET,
-            $post,
-            getallheaders() ?: [],
-            file_get_contents('php://input') ?: ''
-        );
-    }
-
     private function resolveIp(): string
     {
         // v1.2.1 security: NEVER trust the client-supplied X-Forwarded-For —
@@ -82,11 +50,6 @@ class Request
     public function input(string $key, mixed $default = null): mixed
     {
         return $this->post[$key] ?? $this->query[$key] ?? $default;
-    }
-
-    public function param(string $key, mixed $default = null): mixed
-    {
-        return $this->params[$key] ?? $default;
     }
 
     public function header(string $key, mixed $default = null): mixed
@@ -111,11 +74,6 @@ class Request
     public function isPost(): bool
     {
         return $this->method === 'POST';
-    }
-
-    public function isGet(): bool
-    {
-        return $this->method === 'GET';
     }
 
     public function validate(array $rules): array
