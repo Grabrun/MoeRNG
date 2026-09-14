@@ -207,7 +207,8 @@ admin_header('系统设置', 'page-settings');
             <p>
                 以下情况会跳过并如实计数：GIF（转码会丢动画）、SVG（矢量）、JPEG 读不到 EXIF 方向
                 （转了会变歪）、转码后体积未变小、源对象不可读、<strong>超出内存预算</strong>
-                （大图解码会打爆 memory_limit —— 宁可跳过并报告，也不会让整批请求致命失败）。
+                （大图的<strong>解码与编码各要一块整幅画布</strong>，超限会打爆 memory_limit ——
+                宁可跳过并报告，也不会让整批请求致命失败）。
                 <strong>对象存储在云端时每行都要下载 + 上传，耗时较长</strong>，建议先干跑看数量再分批执行。
             </p>
         </details>

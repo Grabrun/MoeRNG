@@ -204,6 +204,16 @@ class ImageController extends Controller
     /** 原图转码额外余量（编码器内部缓冲 + 收尾；比缩略图那套宽松，因为原图更大）。 */
     private const CONVERT_MEMORY_HEADROOM = 16777216; // 16 MiB
 
+    /**
+     * 原图转码预算的安全边际：估算值必须 ≤ 可用内存 × 该系数才放行。
+     *
+     * 留 15% 余量是为了吸收估算误差 —— 估算公式里的"编码器同级缓冲"是从一次
+     * 线上 OOM（imagewebp 在 280 MiB 画布上又申请 280 MiB）反推出来的经验值，
+     * 不同 libwebp 版本/编码模式会有出入。宁可多跳过几张并如实报告，
+     * 也不要用一次不可捕获的致命错误把整批请求打断。
+     */
+    private const MEMORY_SAFETY_FACTOR = 0.85;
+
     /** 原图 WebP 编码质量（40-100，默认 90 —— 原图是质量锚点，故高于缩略图）。 */
     private static function originalWebpQuality(): int
     {
@@ -346,6 +356,20 @@ class ImageController extends Controller
     /**
      * v1.5.0-beta.2: **原图转码专用的内存预算**（不能沿用缩略图那套）。
      *
+     * 两次线上故障把口径校准了出来：
+     *   ① 干跑返回**空响应 500** —— 端点没有致命守卫（已修）；
+     *   ② 执行转换时守卫报出关键数据：
+     *      `Allowed memory size of 536870912 bytes exhausted (tried to allocate
+     *       293601280 bytes) @ ImageController.php:297`，
+     *      297 行正是 **imagewebp（编码）**：解码后的画布本身就是 280 MiB
+     *      （w×h×4 ⇒ 约 73 MP），编码器又申请了一块 280 MiB → 两块共 560 MiB
+     *      > 512 MiB 上限 → 必然 OOM。
+     *
+     * **教训：编码器不是"几乎不占内存"。** 缩略图路径能用小系数糊过去，是因为它
+     * 的编码目标是几十像素的小图；原图转码的编码目标与原图同尺寸，libwebp 在
+     * 编码期至少要再一块与画布同级的缓冲（实测恰好 ≈ w×h×4）。上一版预算只留了
+     * 25% 余量（≈73 MiB），于是 73 MP 那张被"放行"到 imagewebp 才炸。
+     *
      * 背景（线上真实故障）：干跑「转换历史原图为 WebP」返回**空响应 HTTP 500** ——
      * 那是 PHP 致命错误（不可捕获），因为这个端点既没有致命错误守卫，也没有按原图
      * 的真实峰值做预算。缩略图路径的预检按 `w×h×4×1.25 + 32MiB` 估算，而原图转码的
@@ -372,25 +396,31 @@ class ImageController extends Controller
             return ['code' => 'dimensions-unavailable', 'detail' => '图像尺寸无效（' . $w . '×' . $h . '）'];
         }
 
-        $canvas = (int) ((float) $w * $h * 4 * self::DECODE_MEMORY_FACTOR);
-        $rotate = self::jpegOrientation($file, $mime) >= 2 ? (int) ((float) $w * $h * 4) : 0;
-        $bytes  = min((int) @filesize($file), 67108864);   // file_get_contents 的驻留字节（封顶 64 MiB 估算）
-        $need   = $canvas + $rotate + $bytes + self::CONVERT_MEMORY_HEADROOM;
+        $canvas = (float) $w * $h * 4;                 // 一块真彩画布（GD 真彩 = 4 B/px）
+        $bytes  = (int) @filesize($file);              // file_get_contents 会把**整个文件**读进内存
+        $rotate = self::jpegOrientation($file, $mime) >= 2;
+
+        // 按**分阶段的峰值**取最大值（三个阶段不会同时达到峰值）：
+        $decode = $bytes + $canvas;                    // ① 解码：整个文件字节 + 画布
+        $encode = $canvas * 2;                         // ② 编码：画布 + 编码器同级缓冲（实测 ≈ 一块画布）
+        $rot    = $rotate ? $canvas * 2 : 0;           // ③ EXIF 旋转：imagerotate 期间新旧两块画布并存
+        $need   = (int) (max($decode, $encode, $rot) + $canvas * 0.25)
+                + self::CONVERT_MEMORY_HEADROOM;
 
         $limit = self::memoryLimitBytes();
         if ($limit === PHP_INT_MAX) {
             return null;   // 无内存限制 → 交给解码器
         }
         $available = $limit - memory_get_usage(true) - 16777216;   // 再留 16 MiB 基线余量
-        if ($need > $available) {
+        if ($available <= 0 || $need > (int) ($available * self::MEMORY_SAFETY_FACTOR)) {
             return [
                 'code' => 'memory-budget',
                 'detail' => sprintf(
-                    '超出内存预算（%d×%d，预计峰值 %.0f MiB%s，当前可用 %.0f MiB，memory_limit=%s）',
+                    '超出内存预算（%d×%d，预计峰值 %.0f MiB%s；可用 %.0f MiB，memory_limit=%s）',
                     $w,
                     $h,
                     $need / 1048576,
-                    $rotate > 0 ? '（含 EXIF 旋转的第二块画布）' : '',
+                    $rotate ? '，含 EXIF 旋转的两块画布' : '',
                     max(0, $available) / 1048576,
                     (string) ini_get('memory_limit')
                 ),
