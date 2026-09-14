@@ -30,7 +30,10 @@
                         <div class="label">分类主题</div>
                     </div>
                     <div class="stat">
-                        <div class="num">99.9%</div>
+                        <!-- 三个统计数字必须挂同一套类：此前这一项只挂了 num、没有 stat-value，
+                             于是拿不到统一下来的 line-height，行盒比另两项高约 16px，
+                             把它的标签「服务可用性」顶得偏低（2026-09-14 对齐修复）。 -->
+                        <div class="num stat-value">99.9%</div>
                         <div class="label">服务可用性</div>
                     </div>
                 </div>
