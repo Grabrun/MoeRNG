@@ -246,13 +246,27 @@ class Image extends Model
      */
     public function displayUrl(string $size = self::THUMB_DEFAULT): string
     {
+        return $this->displayUrlWithSize($size)['url'];
+    }
+
+    /**
+     * 同 displayUrl，但**同时回报实际生效的尺寸**。
+     *
+     * v1.5.0-beta.2（API 缩略图获取）：调用方（尤其 API）必须能知道"我要的 sm
+     * 并不存在、实际给的是 md" —— 否则它会以为拿到了 320px 的图。
+     * **兜底链只此一处实现**，displayUrl 委托过来，避免两条链各自演化后不一致。
+     *
+     * @return array{url: string, size: ?string} size = null 表示链走到底、回退到原图。
+     */
+    public function displayUrlWithSize(string $size = self::THUMB_DEFAULT): array
+    {
         $u = $this->thumbUrl($size);
-        if ($u !== '') return $u;
+        if ($u !== '') return ['url' => $u, 'size' => $size];
         if ($size !== self::THUMB_DEFAULT) {
             $u = $this->thumbUrl(self::THUMB_DEFAULT);
-            if ($u !== '') return $u;
+            if ($u !== '') return ['url' => $u, 'size' => self::THUMB_DEFAULT];
         }
-        return $this->url();
+        return ['url' => $this->url(), 'size' => null];
     }
 
     /**
