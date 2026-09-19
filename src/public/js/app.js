@@ -134,6 +134,7 @@ function initApiTester() {
 
     const categorySelect = document.getElementById('test-category');
     const typeSelect = document.getElementById('test-type');
+    const sizeSelect = document.getElementById('test-size');
     const runBtn = document.getElementById('test-run');
     const resultBox = document.getElementById('test-result');
     const urlDisplay = document.getElementById('test-url');
@@ -171,20 +172,34 @@ function initApiTester() {
         } catch (e) { /* private mode — ignore */ }
     }
 
-    function updateUrl() {
-        const category = categorySelect.value;
-        const type = typeSelect.value;
-        const base = window.location.origin + '/api/v1/random';
+    // v1.5.0-beta.2: 参数构造与路径拼装**只有这一份** —— URL 展示、cURL 提示、
+    // 实际发出的请求全部由它派生。此前 updateUrl() 与点击处理器各写一遍参数逻辑，
+    // 加了 size 之后必然漂移：页面显示的 URL 与实际请求不一致，测试页就失去了
+    // "所见即所测"的意义。
+    function buildParams() {
         const params = new URLSearchParams();
-        if (category) params.set('category', category);
-        if (type) params.set('type', type);
-        const url = base + (params.toString() ? '?' + params.toString() : '');
+        if (categorySelect.value) params.set('category', categorySelect.value);
+        if (typeSelect.value) params.set('type', typeSelect.value);
+        // 空值 = 不传 size：由服务端决定缺省（JSON 为 md、redirect 为原图），
+        // 测试页因此也能验证「向后兼容」这一条。
+        if (sizeSelect && sizeSelect.value) params.set('size', sizeSelect.value);
+        return params;
+    }
+
+    function buildApiPath() {
+        const qs = buildParams().toString();
+        return '/api/v1/random' + (qs ? '?' + qs : '');
+    }
+
+    function updateUrl() {
+        const url = window.location.origin + buildApiPath();
         urlDisplay.textContent = url;
         curlDisplay.textContent = 'curl -H "X-API-Key: YOUR_API_KEY" "' + url + '"';
     }
 
     categorySelect.addEventListener('change', updateUrl);
     typeSelect.addEventListener('change', updateUrl);
+    if (sizeSelect) sizeSelect.addEventListener('change', updateUrl);
     updateUrl();
 
     runBtn.addEventListener('click', async function() {
@@ -194,11 +209,9 @@ function initApiTester() {
         resultBox.innerHTML = '<div class="spinner"></div>';
         if (metaBox) metaBox.classList.add('hidden');
 
-        const category = categorySelect.value;
         const type = typeSelect.value;
-        const params = new URLSearchParams();
-        if (category) params.set('category', category);
-        if (type) params.set('type', type);
+        // 与 updateUrl() 同源：页面上显示的 URL 与实际请求只差一个 origin 前缀
+        const apiPath = buildApiPath();
         const t0 = performance.now();
 
         // Promise wrapper so finally runs in BOTH json/redirect branches,
@@ -211,8 +224,6 @@ function initApiTester() {
         const requestDone = new Promise(r => { resolveRequest = r; });
 
         try {
-            const apiPath = '/api/v1/random?' + params.toString();
-
             if (type === 'redirect') {
                 // fetch() following a 302 to a cross-origin object-storage URL
                 // (e.g. COS bucket) blows up with "Failed to fetch" when the
@@ -271,7 +282,7 @@ function initApiTester() {
             const ms = performance.now() - t0;
             resultBox.innerHTML = '<pre style="color:var(--danger)">Error: ' + e.message + '</pre>';
             showMeta(0, 'Network Error', ms);
-            saveTestHistory('/api/v1/random?' + params.toString(), 'Error: ' + e.message);
+            saveTestHistory(apiPath, 'Error: ' + e.message);
             // v1.2.1-beta.3 修复: 异常分支也要 resolve，否则 await requestDone 永远挂起 → 按钮卡 Loading
             resolveRequest();
         }

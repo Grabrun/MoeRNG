@@ -2,6 +2,7 @@
 
 > 规则：只追加 + 就地关闭（OPEN → RESOLVED，补 Resolution）。每次 Phase 开始时把未决项复现到工作上下文最前面。
 > 三类固定 slug：`waiting-on-external-condition` / `design-decision-to-evaluate` / `existing-design-boundary`
+> 已升格为 ADR 的长期约束见同目录 [`ADR-001-api-thumbnail-size.md`](./ADR-001-api-thumbnail-size.md)。
 
 | Date | Source | Open Item | Related Constraints | Decision | Blocked By | Resolved | Status |
 |------|--------|-----------|---------------------|----------|------------|----------|--------|
@@ -27,6 +28,15 @@
   3. 兜底链**只此一处实现**（`Image::displayUrlWithSize`），`displayUrl` 只做委托。
 - **契约测试**：`.dsh/api_contract_test.js`（45 项）+ **7 向故障注入全命中**；
   `thumbs_contract_test.js` 48 → 50 项（两条断言改为指向兜底链的新单一来源）。
-- **未包含**：在线测试页 `tester.php` 的尺寸下拉与 `app.js` 的 `updateUrl()` 接线 ——
-  实施期间该文件读取被环境审批拦截，按规则未重试、未推测，因此没有把「未接线的控件」提前提交。
-- **可升格 ADR**：把「兼容性红线 + 缓存与随机性的矛盾」整理为 `ADR-001`（等用户需要时再做）。
+- **测试页接线**（本批补完）：`views/tester.php` 新增尺寸下拉 `test-size`（含"默认（不传 size）"项，
+  让测试页也能验证向后兼容）+ 缺省语义提示；`app.js` 抽出 `buildParams()` / `buildApiPath()`，
+  使 **URL 展示、cURL 提示、实际请求三者同源**（此前两处各写一遍 —— 加了 `size` 后必然漂移）。
+  - 元素矩阵同步纳入前台测试页：`click_matrix_test.js` 新增 `tester` 与 `testerRedirect`
+    （后者预设 `type=redirect`，否则永远只走 JSON 分支），并补上沙箱缺口
+    `performance` / `Image`（必须异步触发 onload，否则 `await requestDone` 会挂死）/
+    `location.origin`；`page_matrix_test.js` 把空 stub `URLSearchParams` 换成真实现。
+  - **契约测试**：`api_contract_test.js` 45 → **62 项**（新增 §8），**7 向故障注入全命中**。
+  - **矩阵自身加固**：清单非空却零次点击 = **失败**（本次漏登记守卫元素 `api-tester`，
+    导致"零执行却报零异常"，已由该规则抓住）。
+- **已升格 ADR-001** → [`ADR-001-api-thumbnail-size.md`](./ADR-001-api-thumbnail-size.md)：
+  记录两条红线（兼容性 / 缓存）、5 条配套不变量、6 个被拒方案与回顾触发条件。
