@@ -501,7 +501,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
 
                 // v1.3.2-beta.2: 历史缩略图缺失（存量图）
                 try {
-                    $noThumb = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'done' AND (thumbs IS NULL OR thumbs = '')")->fetchColumn();
+                    $noThumb = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'done' AND " . \App\Models\Image::thumbsIncompleteSql())->fetchColumn();
                     if ($noThumb === 0) {
                         check('Image thumbnails', true, 'all images have multi-size thumbnails (sm/md/lg)');
                     } else {

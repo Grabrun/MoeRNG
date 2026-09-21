@@ -622,9 +622,13 @@ class ImageController extends Controller
                 if ($tmp !== false) @unlink($tmp);
                 continue; // 该档失败，其余档继续
             }
+            // v1.5.0-beta.2: 字节数**生成时实测**（webp 编码结果取决于质量设置与
+            // libwebp 版本，事后无法推导）→ 随 thumbs 一起入库，供 API 如实回报 file_size。
+            $bytes = (int) @filesize($tmp);
             $out[$size] = [
                 'tmp' => $tmp,
                 'key' => \App\Models\Image::thumbKey($size, $path),
+                'bytes' => $bytes > 0 ? $bytes : null,   // 0 = 未知，绝不谎报
             ];
         }
 
@@ -674,17 +678,23 @@ class ImageController extends Controller
     private function uploadThumbs(\App\Storage\StorageInterface $driver, array $thumbs): array
     {
         $keys = [];
+        $bytes = [];
         foreach ($thumbs as $size => $t) {
             try {
                 $driver->upload($t['tmp'], $t['key'], 'image/webp');
                 $keys[$size] = $t['key'];
+                // 只记**上传成功**档的字节数（失败档的对象不存在，记了就是谎报）
+                $b = (int) ($t['bytes'] ?? 0);
+                if ($b > 0) {
+                    $bytes[$size] = $b;
+                }
             } catch (\Throwable) {
                 // 单档上传失败不影响其它档（该档缺失时前端回退到 md/原图）
             } finally {
                 @unlink($t['tmp']);
             }
         }
-        return $keys;
+        return ['keys' => $keys, 'bytes' => $bytes];
     }
 
     /**
@@ -867,7 +877,8 @@ class ImageController extends Controller
                     }
 
                     // —— 逐档上传缩略图（单档失败不影响其它档）——
-                    $thumbKeys = $this->uploadThumbs($storage, $gen['thumbs']);
+                    $thumbUp = $this->uploadThumbs($storage, $gen['thumbs']);
+                    $thumbKeys = $thumbUp['keys'];
                     $thumbPath = $thumbKeys['md'] ?? null;
 
                     // —— 记录置 done（thumbs 恒非空 → 回填队列不会重复选中该行）——
@@ -875,10 +886,13 @@ class ImageController extends Controller
                     // 使这些行仍属于"缺少缩略图"集合，重新开启后可用「补全历史缩略图」
                     // 一键补齐（否则会被 {"ok":1} 标记永久排除在补全之外）。
                     $thumbsValue = $genReason === 'disabled' ? '' : \App\Models\Image::encodeThumbs($thumbKeys);
+                    // v1.5.0-beta.2: 字节数同批入库。总开关关闭时同样留空 ——
+                    // 这些行仍留在「待补全」集合里，重新开启后可被补全工具收走。
+                    $thumbBytesValue = $genReason === 'disabled' ? '' : \App\Models\Image::encodeThumbBytes($thumbUp['bytes']);
                     $upd = $pdo->prepare(
-                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `thumbs` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ?"
+                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `thumbs` = ?, `thumb_bytes` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ?"
                     );
-                    $upd->execute([$url, $thumbPath, $thumbsValue, $id]);
+                    $upd->execute([$url, $thumbPath, $thumbsValue, $thumbBytesValue, $id]);
 
                     // —— 成功后删除临时原图 ——
                     @unlink($incomingFile);
@@ -924,7 +938,7 @@ class ImageController extends Controller
             'processing' => $count("process_status = 'processing'"),
             'done'       => $count("process_status = 'done'"),
             'failed'     => $failedLeft,
-            'no_thumb'   => $count("process_status = 'done' AND (thumbs IS NULL OR thumbs = '')"),
+            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbsIncompleteSql()),
             'total'      => $total,
         ];
 
@@ -944,7 +958,7 @@ class ImageController extends Controller
     /**
      * POST /admin/images/backfill-thumbs —— 补全历史图片**多尺寸**缩略图（分批，幂等）。
      *
-     * 判据：process_status='done' AND (thumbs IS NULL OR thumbs='')
+     * 判据：process_status='done' AND Image::thumbsIncompleteSql()（缺缩略图或缺字节数）
      * —— 覆盖两类存量行：① 完全无缩略图；② 只有单档 md（本迭代前生成）。
      *
      * 关键：**不改变 process_status**。存量图已在线上展示，若置回 pending 会因
@@ -980,7 +994,8 @@ class ImageController extends Controller
 
         // 判据 = thumbs 列空（含"只有 md、缺 sm/lg"的存量行）。选中的行处理完
         // 会写入非空 JSON（至少 {"ok":1}），因此天然幂等、不会被重复选中。
-        $missingCond = "(thumbs IS NULL OR thumbs = '')";
+        // 判据来自模型（单一来源，见 Image::thumbsIncompleteSql）
+        $missingCond = \App\Models\Image::thumbsIncompleteSql();
         $total = (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
         $remaining = (int) $pdo->query(
             "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$missingCond}"
@@ -1009,6 +1024,32 @@ class ImageController extends Controller
                     }
                     $driver = $profile->driver();
 
+                    // v1.5.0-beta.2: 已有缩略图、只缺字节数 → **只实测，不重做**。
+                    // 不重新编码、不覆盖对象（缩略图本身是好的），只问存储要对象长度。
+                    // 字节数无法推导（取决于质量设置与 libwebp 版本），但对象长度可以直接问。
+                    $haveThumbs = \App\Models\Image::decodeThumbMap(
+                        (string) $row['thumbs'],
+                        (string) $row['thumb_path']
+                    );
+                    if ($haveThumbs !== []) {
+                        $bytes = [];
+                        foreach ($haveThumbs as $size => $key) {
+                            $n = $driver->size($key);
+                            if ($n !== null && $n > 0) {
+                                $bytes[$size] = $n;
+                            }
+                        }
+                        $pdo->prepare("UPDATE `images` SET `thumb_bytes` = ? WHERE `id` = ?")
+                            ->execute([\App\Models\Image::encodeThumbBytes($bytes), $id]);
+                        $done++;
+                        $results[] = [
+                            'id'   => $id,
+                            'ok'   => true,
+                            'note' => '已实测缩略图字节数（' . count($bytes) . '/' . count($haveThumbs) . ' 档）',
+                        ];
+                        continue;
+                    }
+
                     // —— 从最终存储取回原图字节 ——
                     $localFile = null;
                     $isTemp = false;
@@ -1030,13 +1071,19 @@ class ImageController extends Controller
                     if ($isTemp) {
                         @unlink($localFile);
                     }
-                    $thumbKeys = $this->uploadThumbs($driver, $gen['thumbs']);
+                    $thumbUp = $this->uploadThumbs($driver, $gen['thumbs']);
+                    $thumbKeys = $thumbUp['keys'];
 
                     // —— 仅回填缩略图（thumb_path 与 thumbs），**状态保持 done** ——
                     // COALESCE 保证未重新生成 md 时不会把已有 thumb_path 抹掉。
                     $pdo->prepare(
-                        "UPDATE `images` SET `thumb_path` = COALESCE(?, `thumb_path`), `thumbs` = ? WHERE `id` = ?"
-                    )->execute([$thumbKeys['md'] ?? null, \App\Models\Image::encodeThumbs($thumbKeys), $id]);
+                        "UPDATE `images` SET `thumb_path` = COALESCE(?, `thumb_path`), `thumbs` = ?, `thumb_bytes` = ? WHERE `id` = ?"
+                    )->execute([
+                        $thumbKeys['md'] ?? null,
+                        \App\Models\Image::encodeThumbs($thumbKeys),
+                        \App\Models\Image::encodeThumbBytes($thumbUp['bytes']),
+                        $id,
+                    ]);
 
                     if ($thumbKeys === []) {
                         // 源图小于所有档位（合法空操作）/ 过大（内存预检）/ 不可解码
@@ -1123,7 +1170,7 @@ class ImageController extends Controller
             'processing' => $count("process_status = 'processing'"),
             'done'       => $count("process_status = 'done'"),
             'failed'     => $count("process_status = 'failed'"),
-            'no_thumb'   => $count("process_status = 'done' AND (thumbs IS NULL OR thumbs = '')"),
+            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbsIncompleteSql()),
             'total'      => $count(''),
         ];
 
@@ -1227,7 +1274,7 @@ class ImageController extends Controller
             'processing' => $count("process_status = 'processing'"),
             'done'       => $count("process_status = 'done'"),
             'failed'     => $count("process_status = 'failed'"),
-            'no_thumb'   => $count("process_status = 'done' AND (thumbs IS NULL OR thumbs = '')"),
+            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbsIncompleteSql()),
             'total'      => (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn(),
         ];
 

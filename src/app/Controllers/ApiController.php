@@ -92,8 +92,10 @@ class ApiController extends Controller
      *     与生成端**同一份实现**，所以报的就是实际生成的那张图的尺寸；
      *   - `mime_type` —— 从缩略图键的扩展名推导（`thumbKey()` 统一生成 `.webp`）；
      *     不写死 `image/webp`，将来换编码格式时这里不会说谎，认不出则报 `null` 而不是猜；
-     *   - `file_size` —— **仅原图有**。缩略图字节数没有入库，也不为它多打一次对象存储
-     *     往返（列表端点会因此变成 N 次网络调用）→ 缩略图时为 `null`（"未知"，不填原图的值）。
+     *   - `file_size` —— **该图的实测字节数**：原图取记录值，缩略图取生成时实测入库的值
+     *     （`thumb_bytes` 列）。存量行尚未补全字节数时为 `null`（"未知"）——
+     *     既不填原图的值（那是谎报），也不为它多打一次对象存储往返；
+     *     跑一次「补全缩略图」即可补齐。
      */
     private function imagePayload(Image $img, string $size): array
     {
@@ -117,7 +119,7 @@ class ApiController extends Controller
             'width' => $dims[0] ?? null,
             'height' => $dims[1] ?? null,
             'mime_type' => $isOrig ? $img->mime_type : ($thumbExt === 'webp' ? 'image/webp' : null),
-            'file_size' => $isOrig ? $img->file_size : null,
+            'file_size' => $isOrig ? $img->file_size : $img->thumbBytesFor($actual),
             'category' => $img->category() ? $img->category()->name : null,
         ];
     }

@@ -48,12 +48,14 @@
                                 <td><code>size</code></td>
                                 <td>string</td>
                                 <td>否</td>
-                                <td><code>json</code> 时为 <code>md</code>；<code>redirect</code> 时为 <code>original</code></td>
+                                <td><code>original</code>（原图）</td>
                                 <td>取图尺寸：<code>sm</code>(320) / <code>md</code>(640) / <code>lg</code>(1280) / <code>original</code>(原图)。
-                                    只影响 <code>thumb</code> 字段与 <code>redirect</code> 的目标，<code>url</code> 始终是原图。
+                                    <strong>传什么就返回什么</strong>：<code>url</code> 就是该尺寸的直链，
+                                    响应里其余字段（<code>width</code> / <code>height</code> / <code>mime_type</code> /
+                                    <code>file_size</code>）<strong>都描述这一张图</strong>。
                                     <strong>取值非法时返回 <code>400</code></strong>（不静默回退，否则调用方会误以为拿到了指定尺寸）；
-                                    该尺寸尚未生成时按 <code>请求尺寸 → md → 原图</code> 回退，绝不返回 404，
-                                    实际生效尺寸见 <code>thumb_size</code></td>
+                                    该尺寸尚未生成时按 <code>请求尺寸 → md → 原图</code> 回退（绝不返回 404），
+                                    响应里的 <code>size</code> 字段如实回报<strong>实际生效</strong>的尺寸，回退也能被察觉</td>
                             </tr>
                         </tbody>
                     </table>
@@ -65,19 +67,16 @@
                     </div>
 
                     <h3 class="mb-1">JSON 响应示例</h3>
+                    <p class="text-muted text-small">
+                        不传 <code>size</code> 时返回原图（与既有调用方一致）：只有 <code>url</code> 一个地址字段。
+                    </p>
                     <div class="copy-wrap">
                         <button type="button" class="copy-btn" data-copy-text='{
   "success": true,
   "data": {
     "id": 42,
     "url": "https://cdn.example.com/2026/08/abc123def/original.png",
-    "thumb": "https://cdn.example.com/2026/08/abc123def/thumb-md.webp",
-    "thumb_size": "md",
-    "thumbs": {
-      "sm": "https://cdn.example.com/2026/08/abc123def/thumb-sm.webp",
-      "md": "https://cdn.example.com/2026/08/abc123def/thumb-md.webp",
-      "lg": "https://cdn.example.com/2026/08/abc123def/thumb-lg.webp"
-    },
+    "size": "original",
     "width": 1920,
     "height": 1080,
     "mime_type": "image/png",
@@ -90,13 +89,7 @@
   "data": {
     "id": 42,
     "url": "https://cdn.example.com/2026/08/abc123def/original.png",
-    "thumb": "https://cdn.example.com/2026/08/abc123def/thumb-md.webp",
-    "thumb_size": "md",
-    "thumbs": {
-      "sm": "https://cdn.example.com/2026/08/abc123def/thumb-sm.webp",
-      "md": "https://cdn.example.com/2026/08/abc123def/thumb-md.webp",
-      "lg": "https://cdn.example.com/2026/08/abc123def/thumb-lg.webp"
-    },
+    "size": "original",
     "width": 1920,
     "height": 1080,
     "mime_type": "image/png",
@@ -106,6 +99,43 @@
 }</code></pre>
                     </div>
 
+                    <p class="text-muted text-small">
+                        传了 <code>size</code> 就换成那一张 —— <code>url</code>、宽高、格式、字节数全部跟着变：
+                    </p>
+                    <div class="copy-wrap">
+                        <button type="button" class="copy-btn" data-copy-text='{
+  "success": true,
+  "data": {
+    "id": 42,
+    "url": "https://cdn.example.com/2026/08/abc123def/thumb-sm.webp",
+    "size": "sm",
+    "width": 320,
+    "height": 180,
+    "mime_type": "image/webp",
+    "file_size": 18432,
+    "category": "landscape"
+  }
+}'>复制</button>
+                        <pre><code>{
+  "success": true,
+  "data": {
+    "id": 42,
+    "url": "https://cdn.example.com/2026/08/abc123def/thumb-sm.webp",
+    "size": "sm",
+    "width": 320,
+    "height": 180,
+    "mime_type": "image/webp",
+    "file_size": 18432,
+    "category": "landscape"
+  }
+}</code></pre>
+                    </div>
+                    <p class="text-muted text-small">
+                        缩略图的字节数在生成时实测入库，所以是精确值；<strong>更早的图片</strong>可能还没记录，
+                        此时 <code>file_size</code> 为 <code>null</code>（表示「未知」，不是 0）——
+                        到后台跑一次「补全缩略图」即可补齐。
+                    </p>
+
                     <h3 class="mb-1">缩略图示例</h3>
                     <div class="copy-wrap">
                         <button type="button" class="copy-btn" data-copy-text='# 只要 URL（JSON），取 320px 缩略图
@@ -114,7 +144,7 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
 # 直接把缩略图当图片用（HTTP 302 跳到缩略图直链）
 curl -L -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?type=redirect&size=sm"
 
-# 列表页推荐：一次取一批，用 thumbs 映射自己选尺寸（比逐张调 random 省配额）
+# 列表页推荐：一次取一批，用 size 指定要哪种尺寸（比逐张调 random 省配额）
 curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/images?limit=20&size=sm"'>复制</button>
                         <pre><code># 只要 URL（JSON），取 320px 缩略图
 curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?size=sm"
@@ -122,20 +152,20 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
 # 直接把缩略图当图片用（HTTP 302 跳到缩略图直链）
 curl -L -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?type=redirect&size=sm"
 
-# 列表页推荐：一次取一批，用 thumbs 映射自己选尺寸（比逐张调 random 省配额）
+# 列表页推荐：一次取一批，用 size 指定要哪种尺寸（比逐张调 random 省配额）
 curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/images?limit=20&size=sm"</code></pre>
                     </div>
 
                     <h3 class="mb-1">返回 URL 的时效性</h3>
                     <p class="text-muted text-small">
-                        响应里的 <code>url</code> / <code>thumb</code> / <code>thumbs</code> 都是**带签名的直链**，
+                        响应里的 <code>url</code> 是<strong>带签名的直链</strong>，
                         按存储实例的 <code>signed_ttl</code> 生效（默认 300 秒，云端为预签名、本地为 <code>/files</code> 短时签名）。
                         请勿把返回的 URL 长期存库或嵌到第三方页面 —— 过期后会失效，重新请求本接口即可。
                         需要长期稳定的直链，请给存储实例配置 CDN 域名。
                     </p>
                     <p class="text-muted text-small">
                         另外：<code>/random</code> 的响应带 <code>Cache-Control: no-store</code>。这不是保守设置而是**功能性要求** ——
-                        该接口的 URL 固定、语义却是"每次换一张"，一旦被缓存，随机性会在缓存期内整体失效。
+                        该接口的 URL 固定、语义却是「每次换一张」，一旦被缓存，随机性会在缓存期内整体失效。
                     </p>
 
                     <h3 class="mb-1">重定向模式</h3>

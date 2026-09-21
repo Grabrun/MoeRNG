@@ -310,6 +310,44 @@ class S3Driver implements StorageInterface
         }
     }
 
+    public function size(string $remotePath): ?int
+    {
+        try {
+            return self::sizeUrl($this->url($remotePath));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * 只取对象长度：**读到响应头即关闭，不下载 body**。
+     *
+     * 为什么不用 HEAD：各家的预签名 URL 通常按 HTTP 方法签名，HEAD 会被拒（403）。
+     * 所以用 GET 建立连接、从响应头里取 Content-Length 后立刻 fclose —— 与 hashUrl()
+     * （真读完整流）相比省掉了整个 body，存量补全时每张图 3 档都能廉价实测。
+     *
+     * 跟随重定向时会有多组响应头，取**最后一组**的 Content-Length（即最终 body 的长度）。
+     */
+    public static function sizeUrl(string $url): ?int
+    {
+        $ctx = stream_context_create([
+            'http' => ['timeout' => 20, 'follow_location' => 1, 'method' => 'GET'],
+            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false],
+        ]);
+        $fp = @fopen($url, 'rb', false, $ctx);
+        if ($fp === false) {
+            return null;
+        }
+        $len = null;
+        foreach (($http_response_header ?? []) as $h) {
+            if (stripos((string) $h, 'Content-Length:') === 0) {
+                $len = (int) trim(substr((string) $h, strlen('Content-Length:')));
+            }
+        }
+        @fclose($fp);
+        return ($len !== null && $len > 0) ? $len : null;
+    }
+
     /** Stream a URL and compute its SHA-256 in hex (null on any failure). */
     public static function hashUrl(string $url): ?string
     {

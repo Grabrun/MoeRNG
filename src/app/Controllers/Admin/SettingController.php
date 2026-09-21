@@ -530,6 +530,7 @@ class SettingController extends Controller
             ['images', 'thumb_path',         "ADD COLUMN `thumb_path` VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`"],
             ['images', 'process_error',      "ADD COLUMN `process_error` VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`"],
             ['images', 'thumbs',             "ADD COLUMN `thumbs` VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`"],
+            ['images', 'thumb_bytes',        "ADD COLUMN `thumb_bytes` VARCHAR(255) NULL DEFAULT NULL AFTER `thumbs`"],
             ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
             ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
             ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
@@ -617,7 +618,7 @@ class SettingController extends Controller
         // —— v1.3.2-beta.2: 历史缩略图缺失统计（存量图，不影响前台展示）——
         try {
             $noThumb = (int) $pdo->query(
-                "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND (thumbs IS NULL OR thumbs = '')"
+                "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND " . \App\Models\Image::thumbsIncompleteSql()
             )->fetchColumn();
             $checks['thumb_backfill'] = [
                 'ok' => $noThumb === 0,

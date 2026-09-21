@@ -109,6 +109,16 @@ class QiniuSdkDriver implements StorageInterface
         }
     }
 
+    public function size(string $remotePath): ?int
+    {
+        // v1.5.0-beta.2: 存量缩略图的字节数补全用（只读响应头，不下载 body）。
+        try {
+            return S3Driver::sizeUrl($this->url($remotePath));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     public function url(string $remotePath): string
     {
         $key = ltrim($remotePath, '/');

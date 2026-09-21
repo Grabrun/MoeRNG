@@ -194,6 +194,72 @@ class Image extends Model
         return $this->thumbMap()[$size] ?? '';
     }
 
+    /**
+     * 解析 `thumb_bytes` JSON 列为 尺寸 => 字节数（非法/缺失忽略）。
+     *
+     * v1.5.0-beta.2：缩略图的字节数**在生成时实测**并入库 —— 它无法从别的数据推导
+     * （webp 编码结果取决于质量设置与 libwebp 版本），只能在生成时实测一次并记下来。
+     */
+    public static function decodeThumbBytes(string $json): array
+    {
+        $map = $json !== '' ? json_decode($json, true) : null;
+        if (!is_array($map)) {
+            return [];
+        }
+        $out = [];
+        foreach (self::THUMB_SIZES as $size => $_) {
+            if (isset($map[$size]) && is_int($map[$size]) && $map[$size] > 0) {
+                $out[$size] = $map[$size];
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * 编码 尺寸 => 字节数 为 `thumb_bytes` 列值。
+     *
+     * 与 encodeThumbs 同策略：**始终写入 `ok:1` 标记** —— 这样「已处理但一档都没测到」
+     * （源图小于所有档位 / 对象读取失败）的行也会得到非空 JSON，补全工具据
+     * `thumb_bytes IS NULL OR thumb_bytes = ''` 选行时不会反复重选同一批（否则前端
+     * 进度循环永不收敛）。
+     */
+    public static function encodeThumbBytes(array $bytes): string
+    {
+        $payload = ['ok' => 1];
+        foreach ($bytes as $size => $n) {
+            if (isset(self::THUMB_SIZES[$size]) && is_int($n) && $n > 0) {
+                $payload[$size] = $n;
+            }
+        }
+        return (string) json_encode($payload, JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * 「待补全缩略图」的 SQL 判据 —— **唯一来源**。
+     *
+     * v1.5.0-beta.2：此前这段条件在 6 处各写一遍（补全工具 / 三处统计 / 健康检查 /
+     * doctor.php），加一个维度就得改 6 遍 —— 漏掉任何一处，界面就会显示「0 待补全」
+     * 而工具其实还有活干（按钮被禁用、操作员无从触发）。
+     *
+     * 判据 = 缺缩略图 **或** 缺字节数：存量行的 thumbs 早已写好（那时还没记录字节数），
+     * 需要单独补；补完会写入非空 JSON（至少 {"ok":1}），因此天然幂等、不会被重选。
+     */
+    public static function thumbsIncompleteSql(): string
+    {
+        return "(thumbs IS NULL OR thumbs = '' OR thumb_bytes IS NULL OR thumb_bytes = '')";
+    }
+
+    /**
+     * 某尺寸缩略图的**实测**字节数。
+     *
+     * `null` = 未知（尚未生成、或存量行还没跑过补全）—— 调用方**必须**按未知处理，
+     * 绝不能当成 0，也不能拿原图的字节数顶替（那是谎报）。
+     */
+    public function thumbBytesFor(string $size): ?int
+    {
+        return self::decodeThumbBytes((string) ($this->attributes['thumb_bytes'] ?? ''))[$size] ?? null;
+    }
+
     public function category(): ?Category
     {
         if (!$this->category_id) return null;

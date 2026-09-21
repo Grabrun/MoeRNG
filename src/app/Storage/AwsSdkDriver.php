@@ -158,6 +158,15 @@ class AwsSdkDriver implements StorageInterface
         }
     }
 
+    public function size(string $remotePath): ?int
+    {
+        try {
+            return S3Driver::sizeUrl($this->url($remotePath));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     public function url(string $remotePath): string
     {
         if ($this->cdnUrl !== '') {
