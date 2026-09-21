@@ -14,7 +14,12 @@ class Image extends Model
         'file_size', 'width', 'height', 'category_id', 'sort_order', 'status',
         'storage', 'storage_provider', 'storage_profile_id',
         'file_hash', 'file_sha256',
-        'process_status', 'thumb_path', 'process_error', 'thumbs'
+        'process_status', 'thumb_path', 'process_error', 'thumbs',
+        // ★ v1.5.0-beta.2 修复：`thumb_bytes` **必须**在这里列出。
+        //   Model::hydrate() → fill() 按 $fillable 过滤，漏写会让该列在读取时被**静默丢弃**
+        //   （`thumbBytesFor()` 永远返回 null → API 的缩略图 file_size 永远为 null，
+        //   而所有"源码里有这段"的断言都照样通过）。由 .dsh/model_fillable_audit.js 守着。
+        'thumb_bytes',
     ];
 
     /**
