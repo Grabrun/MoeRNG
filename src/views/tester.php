@@ -25,7 +25,7 @@
                         </select>
                     </div>
                     <!-- v1.5.0-beta.2: 图片尺寸。首项 value="" 表示**不传 size** ——
-                         保持既有语义（JSON 的 thumb 为 md、Redirect 直接出原图），
+                         保持既有语义（缺省即原图，JSON 与 Redirect 一致），
                          这样测试页也能验证"向后兼容"这一条；显式选值才传参。 -->
                     <div class="form-group tester-field">
                         <label for="test-size">图片尺寸</label>
@@ -42,10 +42,13 @@
                     </div>
                 </div>
                 <p class="text-muted text-small">
-                    不传 <code>size</code> 时保持既有语义：JSON 的 <code>thumb</code> 为 <code>md</code> 缩略图，
-                    Redirect 直接输出原图（向后兼容）。所选尺寸尚未生成时会按
-                    <code>请求尺寸 → md → 原图</code> 回退，绝不返回 404 ——
-                    实际生效的尺寸以响应里的 <code>thumb_size</code> 为准。
+                    传什么 <code>size</code> 就返回那张图：响应里的 <code>url</code>、<code>width</code>、
+                    <code>height</code>、<code>mime_type</code>、<code>file_size</code>
+                    <strong>全部描述 <code>url</code> 指向的那一张</strong>。
+                    <code>size</code> 缺省是原图；所选尺寸尚未生成时会按
+                    <code>请求尺寸 → md → 原图</code> 回退（绝不 404），
+                    响应里的 <code>size</code> 字段如实回报<strong>实际生效</strong>的尺寸，
+                    所以回退也能被察觉。
                 </p>
                 <p class="mb-2"><strong>请求 URL：</strong> <code id="test-url" class="wrap-all">-</code>
                     <button type="button" class="copy-btn copy-btn-inline" data-copy="test-url" aria-label="复制 URL" title="复制 URL"><?= icon('copy', 14) ?></button>

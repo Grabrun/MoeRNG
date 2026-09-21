@@ -114,6 +114,31 @@ class Image extends Model
         return 'thumb-' . preg_replace('/[^a-z0-9]/', '', strtolower($size));
     }
 
+    /**
+     * 缩略图尺寸推导 —— **唯一来源**，生成端（ImageController::makeThumbnails）
+     * 与读取端（API 需要如实回报"返回的那张图"的宽高）共用。
+     *
+     * 规则（与生成时逐字一致）：原图长边超过目标档位时，按 `target / 长边` 等比缩放，
+     * 宽高各自 `round()` 后至少 1px；长边本就不超过档位则**不放大**（该档不生成）。
+     *
+     * 为什么必须放在一处：两处各算一次就是两套规则，"接口报的宽高"与"实际生成的图"
+     * 迟早对不上 —— 而这类偏差不会报错，只会让调用方按错误的尺寸预留布局。
+     *
+     * @return ?array{0: int, 1: int} 该档位不存在（不放大）或原图尺寸未知时返回 null。
+     */
+    public static function thumbDimensions(int $width, int $height, int $target): ?array
+    {
+        if ($width <= 0 || $height <= 0 || $target <= 0) {
+            return null;
+        }
+        $maxEdge = max($width, $height);
+        if ($maxEdge <= $target) {
+            return null;   // 不放大 —— 该档位不会生成
+        }
+        $scale = $target / $maxEdge;
+        return [max(1, (int) round($width * $scale)), max(1, (int) round($height * $scale))];
+    }
+
     /** 解析 `thumbs` JSON 列为 尺寸 => key 映射（非法/空返回空数组）。 */
     public function thumbMap(): array
     {
@@ -267,20 +292,6 @@ class Image extends Model
             if ($u !== '') return ['url' => $u, 'size' => self::THUMB_DEFAULT];
         }
         return ['url' => $this->url(), 'size' => null];
-    }
-
-    /**
-     * 各尺寸缩略图 URL 映射（仅含真实存在的尺寸；供 API / 前端按场景选用）。
-     * 例：{"sm":"https://.../thumbs/sm/2026/09/x.webp","md":"...","lg":"..."}
-     */
-    public function thumbUrls(): array
-    {
-        $out = [];
-        foreach (array_keys(self::THUMB_SIZES) as $size) {
-            $u = $this->thumbUrl($size);
-            if ($u !== '') $out[$size] = $u;
-        }
-        return $out;
     }
 
     /**

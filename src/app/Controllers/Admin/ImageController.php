@@ -595,17 +595,17 @@ class ImageController extends Controller
 
         $w = imagesx($src);
         $h = imagesy($src);
-        $maxEdge = max($w, $h);
         $quality = self::thumbQuality();   // v1.4.0-beta.2: 来自系统设置（默认 82）
         $out = [];
 
         foreach (\App\Models\Image::THUMB_SIZES as $size => $target) {
-            if ($maxEdge <= $target) {
-                continue; // 不放大
+            // 尺寸推导与读取端（API 要如实回报"返回的那张图"的宽高）**共用同一份实现**，
+            // 所以接口报出来的宽高必然等于实际生成的那张图的宽高，不会两处各算一套。
+            $dims = \App\Models\Image::thumbDimensions($w, $h, $target);
+            if ($dims === null) {
+                continue;   // 不放大（原图长边本就不超过该档位）
             }
-            $scale = $target / $maxEdge;
-            $tw = max(1, (int) round($w * $scale));
-            $th = max(1, (int) round($h * $scale));
+            [$tw, $th] = $dims;
 
             $dst = imagecreatetruecolor($tw, $th);
             // 保留透明通道（PNG/WebP 带 alpha）

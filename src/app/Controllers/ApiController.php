@@ -72,23 +72,52 @@ class ApiController extends Controller
     /**
      * 单张图片的 API 载荷 —— random 与 list **共用同一份**，字段与语义不会漂移。
      *
-     * `thumb` 取解析后的直链（尺寸不存在时按 请求尺寸 → md → 原图 兜底，**永不为空**），
-     * `thumb_size` 如实回报**实际生效**的尺寸（`original` 表示回退到了原图），
-     * `thumbs` 仍只含**真实存在**的尺寸映射。
+     * v1.5.0-beta.2（口径修正）：**请求什么图就返回什么** —— 响应里只有一个地址
+     * 字段 `url`，它是按 `size` 解析后的那个地址（`size` 缺省即原图）。
+     *
+     * 此前还附带 `thumb` / `thumbs` / `thumb_size`，现已整体移除：
+     *   - 每个预签名 URL 约 450 字节，四个字段 ≈ 1.8 KB —— 对"要一张图"的调用方是纯负担；
+     *   - `size=original` 时 `thumb` 与 `url` 完全重复；
+     *   - 要别的尺寸就改 `size` 再请求一次，比"一次给一串让你自己挑"更直白。
+     *
+     * **`url` 的含义随 `size` 变化**（这正是本方法的设计意图）；不传 `size` 时它是
+     * 原图，因此对既有调用方而言 `url` 字段的含义**没有变**。
+     *
+     * **响应里所有字段都描述 `url` 指向的那一张图**（用户口径）：
+     *
+     *   - `url`  —— 按 `size` 解析后的地址（`size` 缺省即原图）；
+     *   - `size` —— **实际生效**的尺寸（回退过就写回退后的值，回退到原图写 `original`）。
+     *     极短，保留它是因为没有它调用方无法察觉"我要 sm、实际给的是 md"；
+     *   - `width` / `height` —— 该图的宽高。缩略图宽高由 `Image::thumbDimensions()` 推导，
+     *     与生成端**同一份实现**，所以报的就是实际生成的那张图的尺寸；
+     *   - `mime_type` —— 从缩略图键的扩展名推导（`thumbKey()` 统一生成 `.webp`）；
+     *     不写死 `image/webp`，将来换编码格式时这里不会说谎，认不出则报 `null` 而不是猜；
+     *   - `file_size` —— **仅原图有**。缩略图字节数没有入库，也不为它多打一次对象存储
+     *     往返（列表端点会因此变成 N 次网络调用）→ 缩略图时为 `null`（"未知"，不填原图的值）。
      */
     private function imagePayload(Image $img, string $size): array
     {
         $resolved = $img->displayUrlWithSize($size);
+        // 链走到底回退到原图时 displayUrlWithSize 给 null —— 这里统一成 'original'
+        $actual = $resolved['size'] ?? self::SIZE_ORIGINAL;
+        $isOrig = $actual === self::SIZE_ORIGINAL;
+
+        $w = (int) $img->width;
+        $h = (int) $img->height;
+        $dims = $isOrig
+            ? (($w > 0 && $h > 0) ? [$w, $h] : null)
+            : Image::thumbDimensions($w, $h, Image::THUMB_SIZES[$actual]);
+
+        $thumbExt = strtolower(pathinfo($img->thumbKeyFor($actual), PATHINFO_EXTENSION));
+
         return [
             'id' => $img->id,
-            'url' => $img->url(),
-            'thumb' => $resolved['url'],
-            'thumb_size' => $resolved['size'] ?? self::SIZE_ORIGINAL,
-            'thumbs' => $img->thumbUrls(),
-            'width' => $img->width,
-            'height' => $img->height,
-            'mime_type' => $img->mime_type,
-            'file_size' => $img->file_size,
+            'url' => $resolved['url'],
+            'size' => $actual,
+            'width' => $dims[0] ?? null,
+            'height' => $dims[1] ?? null,
+            'mime_type' => $isOrig ? $img->mime_type : ($thumbExt === 'webp' ? 'image/webp' : null),
+            'file_size' => $isOrig ? $img->file_size : null,
             'category' => $img->category() ? $img->category()->name : null,
         ];
     }
@@ -98,8 +127,13 @@ class ApiController extends Controller
      * Get a random image
      *
      * v1.5.0-beta.2: 新增 `size`（`sm` / `md` / `lg` / `original`）——
-     *   - `size` 只影响 `thumb` 字段与 redirect 的目标；`url` 始终是原图；
-     *   - **不传 `size` 时 redirect 仍指向原图**（既有语义一字不改）；
+     *   - **请求什么图就返回什么**：`url` 就是按 `size` 解析后的地址；
+     *   - `size` 缺省 = `original`（原图）→ 不传 `size` 时 `url` 仍是原图，
+     *     对既有调用方而言 `url` 字段的含义没有变；
+     *   - redirect 的目标同样由 `size` 决定，缺省仍是原图（既有语义一字不改）；
+     *   - 响应不再附带 `thumb` / `thumbs` / `thumb_size`（见 imagePayload 注释）；
+     *   - 响应带一个极短的 `size` 字段，如实回报**实际生效**尺寸 ——
+     *     没有它，请求 `sm` 而该档未生成时会静默回退到 md/原图，调用方无从察觉；
      *   - 随机端点带 `Cache-Control: no-store`：URL 固定但语义是"每次换一张"，
      *     一旦允许缓存，随机性会在缓存期内整体失效（刷新也拿同一张）。
      */
@@ -114,13 +148,11 @@ class ApiController extends Controller
             $returnType = 'json';
         }
 
-        // redirect 缺省 = 原图（向后兼容）；JSON 缺省 = md（与既有 thumb 字段一致）
+        // 缺省 = 原图（JSON 与 redirect 一致）—— 这不只是"保守"：
+        // `url` 现在承载"请求的那张图"，缺省若是 md，不传 size 的既有调用方
+        // 会从"拿到原图"变成"拿到缩略图"，那才是真正的破坏性变更。
         $sizeError = null;
-        $size = $this->parseSize(
-            $request,
-            $returnType === 'redirect' ? self::SIZE_ORIGINAL : Image::THUMB_DEFAULT,
-            $sizeError
-        );
+        $size = $this->parseSize($request, self::SIZE_ORIGINAL, $sizeError);
         if ($size === null) {
             $this->json(['success' => false, 'error' => $sizeError], 400);
         }
@@ -174,7 +206,7 @@ class ApiController extends Controller
         $category = $request->input('category', '');
 
         $sizeError = null;
-        $size = $this->parseSize($request, Image::THUMB_DEFAULT, $sizeError);
+        $size = $this->parseSize($request, self::SIZE_ORIGINAL, $sizeError);
         if ($size === null) {
             $this->json(['success' => false, 'error' => $sizeError], 400);
         }
