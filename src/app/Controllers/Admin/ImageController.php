@@ -889,10 +889,18 @@ class ImageController extends Controller
                     // v1.5.0-beta.2: 字节数同批入库。总开关关闭时同样留空 ——
                     // 这些行仍留在「待补全」集合里，重新开启后可被补全工具收走。
                     $thumbBytesValue = $genReason === 'disabled' ? '' : \App\Models\Image::encodeThumbBytes($thumbUp['bytes']);
-                    $upd = $pdo->prepare(
-                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `thumbs` = ?, `thumb_bytes` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ?"
+                    // v1.5.0-beta.3: 处理状态同批写入。推导口径与补全工具**共用同一个函数**
+                    // （Image::deriveThumbMeta），避免两个入口各判一套、给出互相矛盾的状态。
+                    // 总开关关闭时 thumbs 留空 → 状态为 pending，重新开启后可被补全工具收走。
+                    $stateValue = \App\Models\Image::withProcessingState(
+                        null,                                   // 新行，尚无其它处理项
+                        \App\Models\Image::ITEM_THUMB_META,
+                        \App\Models\Image::deriveThumbMeta($thumbsValue, (string) $thumbPath, $thumbBytesValue)
                     );
-                    $upd->execute([$url, $thumbPath, $thumbsValue, $thumbBytesValue, $id]);
+                    $upd = $pdo->prepare(
+                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `thumbs` = ?, `thumb_bytes` = ?, `processing_state` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ?"
+                    );
+                    $upd->execute([$url, $thumbPath, $thumbsValue, $thumbBytesValue, $stateValue, $id]);
 
                     // —— 成功后删除临时原图 ——
                     @unlink($incomingFile);
@@ -938,7 +946,10 @@ class ImageController extends Controller
             'processing' => $count("process_status = 'processing'"),
             'done'       => $count("process_status = 'done'"),
             'failed'     => $failedLeft,
-            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbsIncompleteSql()),
+            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaPendingSql()),
+            // v1.5.0-beta.3: 状态为 partial/failed 的行 —— 已离开补全队列但不该被放弃，
+            // 由「重试元数据补全」按 thumbMetaRetryableSql() 定向重跑。
+            'meta_retryable' => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaRetryableSql()),
             'total'      => $total,
         ];
 
@@ -958,7 +969,7 @@ class ImageController extends Controller
     /**
      * POST /admin/images/backfill-thumbs —— 补全历史图片**多尺寸**缩略图（分批，幂等）。
      *
-     * 判据：process_status='done' AND Image::thumbsIncompleteSql()（缺缩略图或缺字节数）
+     * 判据：process_status='done' AND Image::thumbMetaPendingSql()（processing_state.thumb_meta 为 pending）
      * —— 覆盖两类存量行：① 完全无缩略图；② 只有单档 md（本迭代前生成）。
      *
      * 关键：**不改变 process_status**。存量图已在线上展示，若置回 pending 会因
@@ -972,17 +983,33 @@ class ImageController extends Controller
         $this->jsonFatalGuard('backfill-thumbs');   // 同上（同样做 GD 解码）
         $batchSize = max(1, min(10, (int) $request->input('batch', '3')));
 
-        // 环境守卫：无 GD/webp 时直接返回错误（避免逐张失败与前端空转）
-        if (!function_exists('imagecreatetruecolor') || !function_exists('imagewebp')) {
-            $this->json(['success' => false, 'error' => 'PHP GD 或 WebP 支持不可用，无法生成缩略图（请安装/启用 gd 扩展的 webp 支持）'], 500);
+        // v1.5.0-beta.3: 一个端点、两个范围（按 processing_state 区分「补什么」）：
+        //   scope=pending（默认）—— 处理 thumb_meta 为 pending 的行：生成缩略图 / 补字节数；
+        //   scope=retry          —— 处理 thumb_meta 为 partial/failed 的行：**定向重试**。
+        // 后者存在的意义：状态列让「对象长度读不到」的行离开 pending 队列（不阻塞），
+        // 同时把「已试过但没成功」这件事记下来，于是既不会卡住队列、又不会被永久放弃。
+        $scope = (string) $request->input('scope', 'pending');
+        if (!in_array($scope, ['pending', 'retry'], true)) {
+            $this->json(['success' => false, 'error' => '无效的补全范围'], 400);
             return;
         }
+        $isRetry = $scope === 'retry';
 
-        // v1.4.0-beta.2: 总开关关闭时拒绝补全 —— 否则会把所有行标记为"已处理"，
-        // 重新开启后需要人工重置才能再补，得不偿失。
-        if (!self::thumbsEnabled()) {
-            $this->json(['success' => false, 'error' => '缩略图生成已在「系统设置 → 图片与存储」中关闭，请先开启后再补全'], 400);
-            return;
+        // 环境守卫只约束**生成**路径：retry 仅向存储询问对象长度，不解码、不生成、不改 thumbs，
+        // 因此即便总开关关闭或缺 GD 也应放行 —— 否则「读不到长度」的行将永远无法重试。
+        if (!$isRetry) {
+            // 环境守卫：无 GD/webp 时直接返回错误（避免逐张失败与前端空转）
+            if (!function_exists('imagecreatetruecolor') || !function_exists('imagewebp')) {
+                $this->json(['success' => false, 'error' => 'PHP GD 或 WebP 支持不可用，无法生成缩略图（请安装/启用 gd 扩展的 webp 支持）'], 500);
+                return;
+            }
+
+            // v1.4.0-beta.2: 总开关关闭时拒绝补全 —— 否则会把所有行标记为"已处理"，
+            // 重新开启后需要人工重置才能再补，得不偿失。
+            if (!self::thumbsEnabled()) {
+                $this->json(['success' => false, 'error' => '缩略图生成已在「系统设置 → 图片与存储」中关闭，请先开启后再补全'], 400);
+                return;
+            }
         }
 
         try {
@@ -992,29 +1019,63 @@ class ImageController extends Controller
             return;
         }
 
-        // 判据 = thumbs 列空（含"只有 md、缺 sm/lg"的存量行）。选中的行处理完
-        // 会写入非空 JSON（至少 {"ok":1}），因此天然幂等、不会被重复选中。
-        // 判据来自模型（单一来源，见 Image::thumbsIncompleteSql）
-        $missingCond = \App\Models\Image::thumbsIncompleteSql();
-        $total = (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
+        // 目标判据来自模型（单一来源）：pending = 状态缺键/为 pending；retry = partial/failed
+        $targetCond = $isRetry
+            ? \App\Models\Image::thumbMetaRetryableSql()
+            : \App\Models\Image::thumbMetaPendingSql();
+
+        // ★ retry 必须用**扫描游标**推进，不能像 pending 那样按判据重选：
+        //   失败行重试后状态仍是 failed（仍在目标集合里），按判据重选会每轮取到同一批，
+        //   前端 `remaining` 永不归零 → 无限循环（每轮还都真的去打对象存储）。
+        //   pending 模式不需要游标 —— 行处理完状态就变了、自然离开集合。
+        $fromId  = $isRetry ? max(0, (int) $request->input('from', '0')) : 0;
+        $fromSql = $isRetry ? ' AND `id` > ' . (int) $fromId : '';
+
+        $total = $isRetry
+            ? (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$targetCond}")->fetchColumn()
+            : (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
         $remaining = (int) $pdo->query(
-            "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$missingCond}"
+            "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$targetCond}{$fromSql}"
         )->fetchColumn();
 
         $done = 0;
         $failed = 0;
+        $scanned = 0;
+        $lastId = $fromId;
         $results = [];
 
         if ($remaining > 0) {
             $rows = $pdo->query(
-                "SELECT * FROM `images` WHERE process_status = 'done' AND {$missingCond} ORDER BY id ASC LIMIT {$batchSize}"
+                "SELECT * FROM `images` WHERE process_status = 'done' AND {$targetCond}{$fromSql} ORDER BY id ASC LIMIT {$batchSize}"
             )->fetchAll(\PDO::FETCH_ASSOC);
 
             foreach ($rows as $row) {
                 $id = (int) $row['id'];
                 $path = (string) $row['path'];
+                $scanned++;
+                $lastId = max($lastId, $id);
                 $gen = null; // v1.3.2-beta.2: catch 里用于清理未及上传的临时缩略图
                 try {
+                    // ── ① 零网络快速路径（v1.5.0-beta.3）────────────────────────────
+                    // thumbs 与 thumb_bytes 都已完整 ⇒ 状态本就该是 ok，只是**还没被写下来**
+                    // （存量行加列前没有这一列）。这一步不下载、不解码、不请求存储。
+                    //
+                    // 它正是「加列后无需停机回填」成立的原因：存量行第一次被扫到时，
+                    // 只需一次纯 DB 推导就能登记状态，不会白跑一遍网络。
+                    // 顺带还能**自愈**：若某行状态写着 partial 但数据其实已完整（历史不一致），
+                    // 这里会把它纠正回 ok。
+                    $derived = \App\Models\Image::deriveThumbMeta(
+                        $row['thumbs'] !== null ? (string) $row['thumbs'] : null,
+                        (string) $row['thumb_path'],
+                        $row['thumb_bytes'] !== null ? (string) $row['thumb_bytes'] : null
+                    );
+                    if ($derived === \App\Models\Image::STATE_OK) {
+                        $this->stampThumbMetaState($pdo, $id, $row['processing_state'] ?? null, $derived);
+                        $done++;
+                        $results[] = ['id' => $id, 'ok' => true, 'note' => '元数据已完整，仅登记状态'];
+                        continue;
+                    }
+
                     // v1.4.0-beta.2 性能: 走请求内缓存（原先每行查一次 → N+1）
                     $profile = $this->resolveProfile(
                         $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
@@ -1024,9 +1085,10 @@ class ImageController extends Controller
                     }
                     $driver = $profile->driver();
 
-                    // v1.5.0-beta.2: 已有缩略图、只缺字节数 → **只实测，不重做**。
+                    // ── ② 已有缩略图、只缺字节数 → **只实测，不重做** ────────────────
                     // 不重新编码、不覆盖对象（缩略图本身是好的），只问存储要对象长度。
                     // 字节数无法推导（取决于质量设置与 libwebp 版本），但对象长度可以直接问。
+                    // 重编码是**错的**：它产生的数字未必等于已存对象的大小 → 又成了谎报。
                     $haveThumbs = \App\Models\Image::decodeThumbMap(
                         (string) $row['thumbs'],
                         (string) $row['thumb_path']
@@ -1039,18 +1101,37 @@ class ImageController extends Controller
                                 $bytes[$size] = $n;
                             }
                         }
-                        $pdo->prepare("UPDATE `images` SET `thumb_bytes` = ? WHERE `id` = ?")
-                            ->execute([\App\Models\Image::encodeThumbBytes($bytes), $id]);
+                        $bytesJson = \App\Models\Image::encodeThumbBytes($bytes);
+                        // 状态由数据推导：全测到 → ok；部分 → partial；一个都没测到 → failed。
+                        // partial/failed **照样落状态**（于是离开 pending 队列，不再阻塞后面的行），
+                        // 但保留在 retry 集合里，可被「重试元数据补全」定向重跑。
+                        $state = \App\Models\Image::deriveThumbMeta(
+                            (string) $row['thumbs'],
+                            (string) $row['thumb_path'],
+                            $bytesJson
+                        );
+                        $pdo->prepare("UPDATE `images` SET `thumb_bytes` = ?, `processing_state` = ? WHERE `id` = ?")
+                            ->execute([
+                                $bytesJson,
+                                \App\Models\Image::withProcessingState(
+                                    $row['processing_state'] ?? null,
+                                    \App\Models\Image::ITEM_THUMB_META,
+                                    $state
+                                ),
+                                $id,
+                            ]);
                         $done++;
-                        $results[] = [
-                            'id'   => $id,
-                            'ok'   => true,
-                            'note' => '已实测缩略图字节数（' . count($bytes) . '/' . count($haveThumbs) . ' 档）',
-                        ];
+                        $note = '已实测缩略图字节数（' . count($bytes) . '/' . count($haveThumbs) . ' 档）';
+                        if ($state === \App\Models\Image::STATE_FAILED) {
+                            $note .= '；对象长度读不到，状态记为 failed，可稍后「重试元数据补全」';
+                        } elseif ($state === \App\Models\Image::STATE_PARTIAL) {
+                            $note .= '；部分档位读不到长度，可稍后「重试元数据补全」';
+                        }
+                        $results[] = ['id' => $id, 'ok' => true, 'note' => $note];
                         continue;
                     }
 
-                    // —— 从最终存储取回原图字节 ——
+                    // ── ③ 从最终存储取回原图字节 → 生成缩略图 ──────────────────────
                     $localFile = null;
                     $isTemp = false;
                     if ($driver instanceof \App\Storage\LocalDriver) {
@@ -1076,18 +1157,29 @@ class ImageController extends Controller
 
                     // —— 仅回填缩略图（thumb_path 与 thumbs），**状态保持 done** ——
                     // COALESCE 保证未重新生成 md 时不会把已有 thumb_path 抹掉。
+                    $thumbsValue = \App\Models\Image::encodeThumbs($thumbKeys);
+                    $bytesValue  = \App\Models\Image::encodeThumbBytes($thumbUp['bytes']);
+                    // 推导时用「更新后」的 thumb_path（新生成的 md 优先，否则沿用旧值）——
+                    // 否则 md 这一档会在推导里被当成"缺档"，状态被误判成 partial。
+                    $effectiveThumbPath = $thumbKeys['md'] ?? (string) $row['thumb_path'];
+                    $state = \App\Models\Image::deriveThumbMeta($thumbsValue, $effectiveThumbPath, $bytesValue);
                     $pdo->prepare(
-                        "UPDATE `images` SET `thumb_path` = COALESCE(?, `thumb_path`), `thumbs` = ?, `thumb_bytes` = ? WHERE `id` = ?"
+                        "UPDATE `images` SET `thumb_path` = COALESCE(?, `thumb_path`), `thumbs` = ?, `thumb_bytes` = ?, `processing_state` = ? WHERE `id` = ?"
                     )->execute([
                         $thumbKeys['md'] ?? null,
-                        \App\Models\Image::encodeThumbs($thumbKeys),
-                        \App\Models\Image::encodeThumbBytes($thumbUp['bytes']),
+                        $thumbsValue,
+                        $bytesValue,
+                        \App\Models\Image::withProcessingState(
+                            $row['processing_state'] ?? null,
+                            \App\Models\Image::ITEM_THUMB_META,
+                            $state
+                        ),
                         $id,
                     ]);
 
                     if ($thumbKeys === []) {
                         // 源图小于所有档位（合法空操作）/ 过大（内存预检）/ 不可解码
-                        // —— 均已打 ok 标记写入 thumbs，因此不会被重选（幂等）
+                        // —— 状态推导为 skipped，因此不会再被 pending 选中（幂等）
                         $note = match ((string) ($gen['reason'] ?? '')) {
                             'too-large'      => '原图过大，已跳过缩略图（原图不受影响）',
                             'undecodable'    => '源图不可解码，已标记跳过',
@@ -1104,23 +1196,45 @@ class ImageController extends Controller
                 } catch (\Throwable $e) {
                     $this->discardThumbs($gen); // 防临时缩略图泄漏
                     $failed++;
+                    // 硬失败（原图取不到 / 存储不可达 / 无可用实例）**刻意不写状态**：
+                    // 状态保持 pending，于是下次仍会被补全选中（这类失败值得重试）。
+                    // 代价是这类行会一直占批次位置，直到前端 `done===0 && failed>0` 中止 ——
+                    // 既有行为，本次不改动（避免把"重试语义"与"硬失败"混在一起改）。
                     $results[] = ['id' => $id, 'error' => mb_substr($e->getMessage(), 0, 300)];
                 }
             }
 
             $remaining = (int) $pdo->query(
-                "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$missingCond}"
+                "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$targetCond}{$fromSql}"
             )->fetchColumn();
         }
 
         $this->json([
             'success' => true,
+            'scope' => $scope,
             'total' => $total,
             'remaining' => $remaining,
+            // retry 模式靠这两个字段推进（pending 模式忽略即可）
+            'scanned' => $scanned,
+            'next_from' => $lastId,
             'done' => $done,
             'failed' => $failed,
             'results' => $results,
         ]);
+    }
+
+    /**
+     * 写入 thumb_meta 处理状态（**保留** processing_state 里其它处理项的键）。
+     *
+     * 单独抽出来是因为补全工具有三条成功路径都要写状态，各自拼一遍 JSON 迟早走偏。
+     */
+    private function stampThumbMetaState(\PDO $pdo, int $id, ?string $currentJson, string $state): void
+    {
+        $pdo->prepare("UPDATE `images` SET `processing_state` = ? WHERE `id` = ?")
+            ->execute([
+                \App\Models\Image::withProcessingState($currentJson, \App\Models\Image::ITEM_THUMB_META, $state),
+                $id,
+            ]);
     }
 
     /**
@@ -1170,7 +1284,10 @@ class ImageController extends Controller
             'processing' => $count("process_status = 'processing'"),
             'done'       => $count("process_status = 'done'"),
             'failed'     => $count("process_status = 'failed'"),
-            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbsIncompleteSql()),
+            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaPendingSql()),
+            // v1.5.0-beta.3: 状态为 partial/failed 的行 —— 已离开补全队列但不该被放弃，
+            // 由「重试元数据补全」按 thumbMetaRetryableSql() 定向重跑。
+            'meta_retryable' => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaRetryableSql()),
             'total'      => $count(''),
         ];
 
@@ -1274,7 +1391,10 @@ class ImageController extends Controller
             'processing' => $count("process_status = 'processing'"),
             'done'       => $count("process_status = 'done'"),
             'failed'     => $count("process_status = 'failed'"),
-            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbsIncompleteSql()),
+            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaPendingSql()),
+            // v1.5.0-beta.3: 状态为 partial/failed 的行 —— 已离开补全队列但不该被放弃，
+            // 由「重试元数据补全」按 thumbMetaRetryableSql() 定向重跑。
+            'meta_retryable' => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaRetryableSql()),
             'total'      => (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn(),
         ];
 

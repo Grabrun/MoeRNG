@@ -20,6 +20,11 @@ class Image extends Model
         //   （`thumbBytesFor()` 永远返回 null → API 的缩略图 file_size 永远为 null，
         //   而所有"源码里有这段"的断言都照样通过）。由 .dsh/model_fillable_audit.js 守着。
         'thumb_bytes',
+        // v1.5.0-beta.3: 通用「图片处理状态」总控列（JSON，按处理项分键，如
+        //   {"thumb_meta":"partial"}）。**同样必须列入 $fillable** —— 理由与上面的
+        //   thumb_bytes 完全相同：hydrate 按 $fillable 过滤，漏写会让该列在读取时被
+        //   **静默丢弃**（状态永远显示 pending）。改这行前先看 model_fillable_audit 怎么报。
+        'processing_state',
     ];
 
     /**
@@ -34,6 +39,32 @@ class Image extends Model
 
     /** 默认尺寸（无参数调用的回退）。 */
     public const THUMB_DEFAULT = 'md';
+
+    /**
+     * v1.5.0-beta.3: 通用「图片处理状态」—— 处理项名 + 状态取值。
+     *
+     * `images.processing_state` 是 JSON 列，**按处理项分键**：
+     *     {"thumb_meta":"partial"}
+     * 将来新增处理项（WebP 转换 / 布局迁移 / 哈希回填…）只需加一个键，不必再加列。
+     * **键缺失 = 该项从未处理**（视作 pending）⇒ 存量行无需回填即可工作。
+     *
+     * ★ 与 `process_status` 的分工（必须分清，不要混用）：
+     *   - `process_status`   —— 上传处理**流水线**状态（pending/processing/done/failed）。
+     *                          它是 `ENUM` 且**前台只出 `done`** ⇒ 动它就等于动线上可见性；
+     *   - `processing_state` —— 各处理项的**结果**状态，**不参与**任何可见性过滤。
+     */
+    public const ITEM_THUMB_META = 'thumb_meta';
+
+    /** 处理项状态：尚未处理（键缺失时的默认值）。 */
+    public const STATE_PENDING = 'pending';
+    /** 处理项状态：完成且完整。 */
+    public const STATE_OK = 'ok';
+    /** 处理项状态：部分完成（例如只测到部分档位的字节数）。 */
+    public const STATE_PARTIAL = 'partial';
+    /** 处理项状态：该有结果却一个都没拿到 —— 可重试。 */
+    public const STATE_FAILED = 'failed';
+    /** 处理项状态：本来就不需要处理（例如源图小于所有档位、不可解码）。 */
+    public const STATE_SKIPPED = 'skipped';
 
     /**
      * v1.5.0-beta.1 存储结构统一（方案 A：资产为中心）—— 布局解析与键推导。
@@ -178,9 +209,12 @@ class Image extends Model
     /**
      * 编码 尺寸 => key 映射为 `thumbs` 列值（JSON）。
      *
-     * 始终写入 `ok:1` 标记 —— 这样「源图不可解码」或「源图小于所有档位」的
-     * 行也会得到非空 JSON，回填队列据 `thumbs IS NULL OR thumbs=''` 选行时
-     * 不会反复重选同一批行（否则前端进度循环永不收敛）。
+     * 始终写入 `ok:1` 标记 —— 这样「源图不可解码」「源图小于所有档位」与
+     * 「从未处理过」就能区分开（配合 `thumb_bytes` 可推导出 skipped / ok / partial / failed，
+     * 见 deriveThumbMeta）。
+     *
+     * v1.5.0-beta.3：**选行判据已改为 `processing_state` 状态驱动**（thumbMetaPendingSql），
+     * 不再直接看本列 —— 这样「对象长度读不到」的行也能离开队列、同时保留可重试语义。
      */
     public static function encodeThumbs(array $keys): string
     {
@@ -223,10 +257,11 @@ class Image extends Model
     /**
      * 编码 尺寸 => 字节数 为 `thumb_bytes` 列值。
      *
-     * 与 encodeThumbs 同策略：**始终写入 `ok:1` 标记** —— 这样「已处理但一档都没测到」
-     * （源图小于所有档位 / 对象读取失败）的行也会得到非空 JSON，补全工具据
-     * `thumb_bytes IS NULL OR thumb_bytes = ''` 选行时不会反复重选同一批（否则前端
-     * 进度循环永不收敛）。
+     * 与 encodeThumbs 同策略：**始终写入 `ok:1` 标记**，保证列非空。
+     *
+     * v1.5.0-beta.3：本列**不再**是选行判据（那是 `processing_state` 的职责）。保留标记的
+     * 意义变成：与 `thumbs` 一起推导状态时，能区分「处理过但一档都没测到」(failed)
+     * 与「从未处理」(pending) —— 前者可重试，后者是「补全」按钮的职责。
      */
     public static function encodeThumbBytes(array $bytes): string
     {
@@ -239,19 +274,107 @@ class Image extends Model
         return (string) json_encode($payload, JSON_UNESCAPED_SLASHES);
     }
 
-    /**
-     * 「待补全缩略图」的 SQL 判据 —— **唯一来源**。
-     *
-     * v1.5.0-beta.2：此前这段条件在 6 处各写一遍（补全工具 / 三处统计 / 健康检查 /
-     * doctor.php），加一个维度就得改 6 遍 —— 漏掉任何一处，界面就会显示「0 待补全」
-     * 而工具其实还有活干（按钮被禁用、操作员无从触发）。
-     *
-     * 判据 = 缺缩略图 **或** 缺字节数：存量行的 thumbs 早已写好（那时还没记录字节数），
-     * 需要单独补；补完会写入非空 JSON（至少 {"ok":1}），因此天然幂等、不会被重选。
-     */
-    public static function thumbsIncompleteSql(): string
+    /** 解析 `processing_state` JSON 列为 处理项 => 状态（非法值忽略）。 */
+    public static function decodeProcessingState(string $json): array
     {
-        return "(thumbs IS NULL OR thumbs = '' OR thumb_bytes IS NULL OR thumb_bytes = '')";
+        $map = $json !== '' ? json_decode($json, true) : null;
+        if (!is_array($map)) {
+            return [];
+        }
+        $out = [];
+        foreach ($map as $item => $state) {
+            if (is_string($item) && $item !== '' && is_string($state) && $state !== '') {
+                $out[$item] = $state;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * 某处理项的当前状态。
+     *
+     * **键缺失 → `pending`（从未处理）** —— 这条默认值是「存量行无需回填」的全部依据：
+     * 加列时所有旧行的 `processing_state` 都是 NULL，而它们天然应当被视作"还没补过"。
+     */
+    public function processingState(string $item = self::ITEM_THUMB_META): string
+    {
+        return self::decodeProcessingState((string) ($this->attributes['processing_state'] ?? ''))[$item]
+            ?? self::STATE_PENDING;
+    }
+
+    /** 写入某处理项的状态（**保留**其它处理项的键）。 */
+    public static function withProcessingState(?string $json, string $item, string $state): string
+    {
+        $map = self::decodeProcessingState((string) $json);
+        $map[$item] = $state;
+        return (string) json_encode($map, JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * 由现有数据**推导** thumb_meta 的状态 —— 唯一来源。
+     *
+     * 上传路径与补全工具共用本函数，避免两处各判一套（否则同一个行在两个入口会得到
+     * 不同状态，而两边都不会报错）。
+     *
+     * 推导规则（顺序即优先级）：
+     *   ① thumbs 为 NULL 或空串 → `pending`
+     *      —— 从未处理过；或上传时总开关关闭（上传路径刻意写空串，好让它留在待补全集合里）
+     *   ② thumbs 处理过、但解析不出任何档位 → `skipped`
+     *      —— 源图小于所有档位（不放大）/ 不可解码 / 内存预检跳过，属**合法无需处理**
+     *   ③ thumbs 里每一档都有实测字节数 → `ok`
+     *   ④ 只有部分档位有 → `partial`
+     *   ⑤ 一档都没有 → `failed`（该有结果却没拿到，可重试）
+     *
+     * 注意 ③ 与 ④ 的判据是「**thumbs 里列出的**档位」——上传时某档上传失败的行，
+     * 该档根本不在 thumbs 里，因此仍算 `ok`（没有对象 = 无从测量，不是缺陷）。
+     */
+    public static function deriveThumbMeta(?string $thumbsJson, string $thumbPath, ?string $bytesJson): string
+    {
+        $json = (string) $thumbsJson;
+        if ($json === '') {
+            return self::STATE_PENDING;
+        }
+        $keys = self::decodeThumbMap($json, $thumbPath);
+        if ($keys === []) {
+            return self::STATE_SKIPPED;
+        }
+        $bytes = self::decodeThumbBytes((string) $bytesJson);
+        if (array_diff(array_keys($keys), array_keys($bytes)) === []) {
+            return self::STATE_OK;
+        }
+        return $bytes !== [] ? self::STATE_PARTIAL : self::STATE_FAILED;
+    }
+
+    /**
+     * 「待补全」的 SQL 判据 —— **唯一来源**（v1.5.0-beta.3 起由状态列驱动）。
+     *
+     * 为什么改成状态驱动（此前是 `thumbs/thumB_bytes 为空`）：那套判据无法表达
+     * 「已经试过、但对象长度读不到」—— 这样的行要么被反复重选（队列空转，前端因
+     * `remaining` 不归零而无限循环），要么被永久放弃。状态列把「未处理」与
+     * 「处理失败」分开，于是失败行**离开队列**（不阻塞）却**仍可被定向重试**。
+     *
+     * 兼容性：`processing_state` 为 NULL（存量行）/ 非法 JSON / 缺键，一律视作 pending，
+     * 因此**不需要停机回填**。`JSON_VALID` 防护是为了手工改坏的列值不至于让整条 SQL 报错。
+     */
+    public static function thumbMetaPendingSql(): string
+    {
+        $path = '$.' . self::ITEM_THUMB_META;
+        return "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '{$path}')), '"
+            . self::STATE_PENDING . "') = '" . self::STATE_PENDING . "'";
+    }
+
+    /**
+     * 「可重试」的 SQL 判据 —— 唯一来源。
+     *
+     * 只选 `partial` / `failed`：前者表示部分档位读不到长度，后者表示一档都没拿到。
+     * `skipped` 刻意**不在**其中（本来就没有对象，重试多少次都一样）；
+     * `ok` / `pending` 也不在（分别是不需要、以及「补全」按钮的职责）。
+     */
+    public static function thumbMetaRetryableSql(): string
+    {
+        $path = '$.' . self::ITEM_THUMB_META;
+        $col = "JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '{$path}'))";
+        return "{$col} IN ('" . self::STATE_PARTIAL . "', '" . self::STATE_FAILED . "')";
     }
 
     /**

@@ -1466,6 +1466,51 @@ async function runBackfillThumbs(setUI) {
     return { done: totalDone, failed: totalFailed, total: total };
 }
 
+// ── v1.5.0-beta.3: 重试「拿不到对象长度」的元数据项（scope=retry）──────────
+// 状态为 partial/failed 的行已经离开「补全」队列（不再阻塞后面的行），但它们**不是**
+// 被放弃：环境恢复后（网络 / 权限 / 对象存储开始返回 Content-Length）可用本入口重跑。
+//
+// 关键：必须用**扫描游标**推进，不能像补全那样按判据重选：失败行重试后状态仍是 failed
+//   （仍在目标集合里），按判据重选会每轮取到同一批 → remaining 永不归零 → 无限循环，
+//   而且每轮都真的会去打对象存储（烧配额）。所以退出条件是 next_from 不再前进。
+async function runThumbMetaRetry(setUI) {
+    let from = 0, prevFrom = -1, rounds = 0;
+    let retried = 0, scanned = 0, remaining = 0;
+
+    for (;;) {
+        rounds++;
+        const fd = new FormData();
+        fd.append('_csrf_token', getCsrfToken());
+        fd.append('scope', 'retry');
+        fd.append('batch', '10');
+        fd.append('from', String(from));
+
+        const r = await fetch('/admin/images/backfill-thumbs', {
+            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const j = await parseJsonResponse(r, '重试元数据补全');
+        if (!j || !j.success) {
+            throw new Error((j && j.error) || '未知错误');
+        }
+
+        const n = Number(j.scanned) || 0;
+        scanned += n;
+        retried += Number(j.done) || 0;
+        remaining = Number(j.remaining) || 0;
+        setUI(remaining === 0 ? 1 : Math.min(0.95, scanned / Math.max(1, scanned + remaining)),
+            '重试元数据补全… 已扫描 ' + scanned + ' 行',
+            '已重试 ' + retried + ' 行' + (remaining > 0 ? ' · 游标之后仍有 ' + remaining + ' 行' : ''));
+
+        const next = Number(j.next_from) || 0;
+        if (n === 0 || next <= prevFrom) break;   // 到表尾 / 位置未推进 → 收敛
+        prevFrom = next;
+        from = next;
+        if (rounds > 500) break;
+    }
+
+    return { retried: retried, scanned: scanned, rounds: rounds };
+}
+
 // ── v1.5.0-beta.1: 存储结构统一（方案 A）—— 存量对象迁移 ────────────────
 // dry-run 只返回计划（不写对象、不改库）；apply 逐资产原子：复制并校验 → 改库记录 →
 // 最后删旧对象，因此迁移过程可随时中断，图片始终可访问。
@@ -1732,7 +1777,7 @@ function initOriginalConversion() {
                 + res.scanned + ' 行）'
                 + (res.done + res.skipped > 0 ? '。示例：' + describe(res) : ' —— 没有需要转换的原图。')
                 + '候选 ≠ 必然更小：执行时逐张判定，不划算的保留原图并计入跳过。'
-                + (res.firstError ? '　⚠ ' + res.firstError : '');
+                + (res.firstError ? '　注意：' + res.firstError : '');
             setUI(1, '检查完成', '可转候选 ' + res.done + ' 张 · 扫描 ' + res.scanned + ' 行');
             if (runBtn) runBtn.disabled = res.done === 0;
             showToast('干跑完成：扫描 ' + res.scanned + ' 行，可转候选 ' + res.done + ' 张', 'success', 7000);
@@ -1825,7 +1870,10 @@ function initStorageCleanup() {
             if (res.planned > 0) {
                 if (verdictEl) verdictEl.textContent = '→ ' + (d.verdict || '');
             } else if (verdictEl) {
-                verdictEl.textContent = (d.can_wipe_thumbs ? '✓ ' : '✗ ') + (d.verdict || '');
+                // 结论用**颜色**表达（text-success / text-danger 均为设计系统既有类），
+                // 不用对勾/叉号字符 —— 两者都落在 P0-1 的 emoji 检测范围内。
+                verdictEl.className = d.can_wipe_thumbs ? 'batch-stat text-success' : 'batch-stat text-danger';
+                verdictEl.textContent = d.verdict || '';
             }
             const sample = describe(res.samples);
             if (sample && res.planned > 0) statEl.textContent += '。示例：' + sample;
@@ -2154,6 +2202,7 @@ function initQueuePage() {
                 if (startBtn) startBtn.disabled = Number(s2.pending) === 0;
                 if (requeueBtn) requeueBtn.disabled = Number(s2.failed) === 0;
                 if (thumbBtn) thumbBtn.disabled = Number(s2.no_thumb) === 0;
+                if (retryMetaBtn) retryMetaBtn.disabled = Number(s2.meta_retryable) === 0;
             }
         } else if (t.phase === 'inflight' && last.stats) {
             // 请求在途：服务端此刻正把至多 batch 行置为 processing —— 如实显示
@@ -2194,6 +2243,7 @@ function initQueuePage() {
 
     // 补全历史缩略图（不改变处理状态，图片始终可见）
     const thumbBtn = document.getElementById('queue-backfill-thumbs');
+    const retryMetaBtn = document.getElementById('queue-retry-meta');
     thumbBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
         uploading = true;
@@ -2210,6 +2260,34 @@ function initQueuePage() {
             if (thumbBtn) thumbBtn.disabled = false;
             if (box) setTimeout(() => box.classList.add('hidden'), 1200);
             // v1.4.0-beta.2: 同上 —— 重新取快照后按真实状态刷新按钮
+            await refreshStats();
+            refreshButtons();
+        }
+    });
+
+    // v1.5.0-beta.3: 重试「拿不到对象长度」的元数据项
+    retryMetaBtn?.addEventListener('click', async function() {
+        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
+        uploading = true;
+        if (retryMetaBtn) retryMetaBtn.disabled = true;
+        if (box) { box.classList.remove('hidden'); setUI(0, '重试元数据补全…', ''); }
+        const before = Number((last.stats && last.stats.meta_retryable) || 0);
+        try {
+            const res = await runThumbMetaRetry(setUI);
+            await refreshStats();
+            const after = Number((last.stats && last.stats.meta_retryable) || 0);
+            const fixed = Math.max(0, before - after);
+            showToast('元数据重试完成：扫描 ' + res.scanned + ' 行，已重试 ' + res.retried + ' 行'
+                + '，补齐 ' + fixed + ' 张' + (after > 0 ? '，仍有 ' + after + ' 张读不到对象长度' : ''),
+                after > 0 ? 'error' : 'success', 9000);
+            // 有行仍读不到时**不刷新页面** —— 否则操作员看不到刚才的提示语；
+            // 统计卡片已由 refreshStats() 就地更新。
+            if (after === 0) setTimeout(() => window.location.reload(), 1500);
+        } catch (e) {
+            showToast('元数据重试异常: ' + e.message, 'error', 10000);
+        } finally {
+            uploading = false;
+            if (box) setTimeout(() => box.classList.add('hidden'), 1200);
             await refreshStats();
             refreshButtons();
         }
@@ -2258,12 +2336,14 @@ function initQueuePage() {
             if (startBtn) startBtn.disabled = uploading;
             if (requeueBtn) requeueBtn.disabled = uploading;
             if (thumbBtn) thumbBtn.disabled = uploading;
+            if (retryMetaBtn) retryMetaBtn.disabled = uploading;
             if (clearBtn) clearBtn.disabled = uploading;
             return;
         }
         if (startBtn) startBtn.disabled = uploading || Number(s.pending) === 0;
         if (requeueBtn) requeueBtn.disabled = uploading || Number(s.failed) === 0;
         if (thumbBtn) thumbBtn.disabled = uploading || Number(s.no_thumb) === 0;
+        if (retryMetaBtn) retryMetaBtn.disabled = uploading || Number(s.meta_retryable) === 0;
         if (clearBtn) clearBtn.disabled = uploading || (Number(s.pending) + Number(s.failed) === 0);
     }
 

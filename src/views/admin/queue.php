@@ -23,6 +23,8 @@ $queryBase = 'status=' . urlencode($status) . '&q=' . urlencode($search);
         <button class="btn btn-primary btn-sm" id="queue-start" <?= $stats['pending'] === 0 ? 'disabled' : '' ?>><?= icon('loader', 16) ?> 开始处理</button>
         <button class="btn btn-outline btn-sm" id="queue-requeue" <?= $stats['failed'] === 0 ? 'disabled' : '' ?>><?= icon('refresh', 16) ?> 重试全部失败</button>
         <button class="btn btn-outline btn-sm" id="queue-backfill-thumbs" <?= $stats['no_thumb'] === 0 ? 'disabled' : '' ?>><?= icon('image', 16) ?> 补全缩略图</button>
+        <?php /* v1.5.0-beta.3: 定向重试「读到缩略图存在、但拿不到对象长度」的行（状态 partial/failed） */ ?>
+        <button class="btn btn-outline btn-sm" id="queue-retry-meta" <?= $stats['meta_retryable'] === 0 ? 'disabled' : '' ?>><?= icon('refresh', 16) ?> 重试元数据补全</button>
     </div>
 </div>
 
@@ -54,6 +56,12 @@ $queryBase = 'status=' . urlencode($status) . '&q=' . urlencode($search);
 <?php if ($stats['no_thumb'] > 0): ?>
 <div class="card mb-3">
     <p class="queue-note mb-0">另有 <strong><?= number_format($stats['no_thumb']) ?></strong> 张已完成的图片没有缩略图，点击「补全缩略图」生成三档 WebP（不影响前台展示，处理期间图片始终可见）。</p>
+</div>
+<?php endif; ?>
+
+<?php if ($stats['meta_retryable'] > 0): ?>
+<div class="card mb-3">
+    <p class="queue-note mb-0">另有 <strong><?= number_format($stats['meta_retryable']) ?></strong> 张图片的缩略图<strong>已存在、但拿不到对象长度</strong>（状态记为待重试）。它们<strong>不会阻塞</strong>上面的补全队列，图片本身也照常显示；点击「重试元数据补全」可重跑 —— 网络、访问权限或对象存储开始返回 <code>Content-Length</code> 之后通常即可补齐。</p>
 </div>
 <?php endif; ?>
 
