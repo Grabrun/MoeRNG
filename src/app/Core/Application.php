@@ -11,7 +11,7 @@ class Application
      *
      * **新增迁移时务必递增此值**，否则老站点不会执行新迁移。
      */
-    private const SCHEMA_VERSION = '2026-09-11';
+    private const SCHEMA_VERSION = '2026-09-23';
 
     /**
      * v1.5.0-beta.1: 本地媒体根布局版本。站点迁到 `storage/uploads`（web 根之外）
@@ -502,7 +502,8 @@ class Application
         }
 
         foreach (['storage', 'storage_provider', 'file_hash', 'file_sha256',
-                  'process_status', 'thumb_path', 'process_error', 'thumbs'] as $col) {
+                  'process_status', 'thumb_path', 'process_error', 'thumbs',
+                  'thumb_bytes', 'processing_state'] as $col) {
             if (!$this->columnExists($db, 'images', $col)) {
                 $needed[] = $col;
             }
@@ -528,6 +529,12 @@ class Application
             // v1.3.2-beta.2 迭代: 多尺寸缩略图映射（JSON: 尺寸 => 存储 key）。
             // md 仍写 thumb_path（兼容），本列存 sm/lg 等附加尺寸。
             'thumbs'           => "VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`",
+            // v1.5.0-beta.3 迭代: 各档缩略图实测字节数（JSON: 尺寸 => bytes）+ 按处理项
+            // 的补全状态（JSON: 处理项 => pending/partial/failed/ok/skipped）。
+            // 2026-09-23 补入自迁移清单（此前只在 schema.sql / 健康检查修复清单里，
+            // 老站点升级后这两列缺失 → 队列统计直接 500，见 docs/audit/2026-09-23）。
+            'thumb_bytes'      => "VARCHAR(255) NULL DEFAULT NULL AFTER `thumbs`",
+            'processing_state' => "JSON NULL DEFAULT NULL AFTER `thumb_bytes`",
         ];
 
         $errors = [];

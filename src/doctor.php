@@ -164,7 +164,7 @@ if (!is_file($autoloaderFile)) {
         $relDir = \App\Storage\LocalDriver::defaultRelDir();
         check('Storage layout constant', $relDir === 'storage/uploads',
             'LocalDriver::defaultRelDir() = ' . $relDir
-            . ($relDir === 'storage/uploads' ? ' ✓' : ' ← 与 doctor 预期不一致，请核对'));
+            . ($relDir === 'storage/uploads' ? ' [OK]' : ' ← 与 doctor 预期不一致，请核对'));
     }
 
     // Every class declared under app/ must be autoloadable.
@@ -375,7 +375,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 && str_starts_with($realDir . DIRECTORY_SEPARATOR, $docRoot . DIRECTORY_SEPARATOR);
             check('媒体根不在 web 根之内', !$inWebRoot, $inWebRoot
                 ? $dir . ' ← 位于 web 根 ' . $docRoot . ' 之内：文件可被静态直读，签名机制形同虚设，建议迁到 storage/uploads'
-                : ($realDir !== '' ? $realDir . '（web 根之外 ✓）' : $dir . '（目录尚未创建）'), true);
+                : ($realDir !== '' ? $realDir . '（web 根之外 [OK]）' : $dir . '（目录尚未创建）'), true);
 
             $urlOk = $url !== '' && str_starts_with($url, '/');
             check('Public URL prefix', $urlOk, $urlOk ? $url : 'EMPTY - image URLs would 404');
@@ -443,6 +443,9 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 ['images', 'thumb_path',         "ADD COLUMN `thumb_path` VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`"],
                 ['images', 'process_error',      "ADD COLUMN `process_error` VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`"],
                 ['images', 'thumbs',             "ADD COLUMN `thumbs` VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`"],
+                // v1.5.0-beta.3 迭代: 缩略图实测字节数 + 按处理项补全状态（与自迁移/健康检查四处一致）
+                ['images', 'thumb_bytes',        "ADD COLUMN `thumb_bytes` VARCHAR(255) NULL DEFAULT NULL AFTER `thumbs`"],
+                ['images', 'processing_state',   "ADD COLUMN `processing_state` JSON NULL DEFAULT NULL AFTER `thumb_bytes`"],
                 ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
                 ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
                 ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],

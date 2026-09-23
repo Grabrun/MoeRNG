@@ -163,7 +163,7 @@ admin_header('系统设置', 'page-settings');
         <details class="batch-help">
             <summary>能力边界与「待清理 0 项」的含义</summary>
             <p>
-                ⚠️ 记录已被删除的孤立对象（例如用过「清空队列」的那些）<strong>无法</strong>被本工具发现 ——
+                [注意] 记录已被删除的孤立对象（例如用过「清空队列」的那些）<strong>无法</strong>被本工具发现 ——
                 存储接口没有列举能力，需到对象存储控制台按前缀人工清理。
             </p>
             <p>

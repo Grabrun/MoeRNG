@@ -2,6 +2,82 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.5.0-beta.3] - 2026-09-22
+
+> 深度审计（2026-09-21）驱动的收口迭代：API 缩略图选择、缩略图字节数落库、按处理项补全状态与定向重试。
+
+### ✨ 新功能
+
+- 随机图片 API 缩略图选择：`size=sm|md|lg|original` 四档位，在线测试器接线（ADR-001）
+- API 响应只返回请求的图片：单 URL + 短 size 语义（不再混返回多档位）
+
+### ✨ 增强
+
+- 缩略图生成时记录实际字节数（`thumb_bytes`），存量库一键回填
+- `processing_state` 列：逐图记录处理状态，支持定向重试失败项
+
+### 🔧 修复
+
+- `Image::$fillable` 补 `thumb_bytes` —— 此前该字段在 hydrate 时被静默丢弃
+- 全站 18 项原生 harness 基线 + 4 项工具缺陷修复（syntax_check SKIP、verify_autoload 路径、audit_data_security 补列、p0_scan 范围收敛）
+- 空 catch 补 best-effort 降级说明；doctor / 设置页输出符号改为纯文本（P0 纪律对齐）
+
+### 📄 文档
+
+- docs/audit/2026-09-23-deep-audit.md 深度审计报告（基线 18 绿 + 4 工具缺陷 + P1/P2/P3 发现清单）
+- docs/MAINTAINER-GUIDE.md 接管基线、docs/DEV-PLAN.md 开发计划
+
+## [1.5.0-beta.2] - 2026-09-14
+
+> WebP 化 + 全站排版与页面节奏统一。
+
+### ✨ 新功能
+
+- 原图转 WebP：新上传默认转换 + 存量库批量转换工具
+
+### 🎨 视觉
+
+- 全站排版层级、页面节奏与表格密度统一；系统设置页 header 节奏 / 双栏网格 / 批量面板收拢
+
+### 🐛 修复
+
+- convert 干跑返回空 500：fatal 守卫 + 单图内存预算；imagewebp 需全画布缓冲，重校内存预算
+- cleanup 干跑只扫一个批次（“0 items” 其实是没查全）
+- 首页 hero 统计标签基线对齐，数字规则单一来源
+
+## [1.5.0-beta.1] - 2026-09-13
+
+> 统一资产中心布局 + 本地媒体根迁出 Web 根 —— 打开 1.5.0 测试线。
+
+### ✨ 新功能
+
+- 统一资产中心布局（asset-centric object keys）+ 原子迁移工具：老站点一键升级，迁移失败写入 `migration_last_error` 由 doctor 回显
+- 本地媒体根迁出 Web 根（`storage/uploads`）；本地图片 URL 改为可缓存读路径
+- cleanup 工具：清理升级残留 + 死代码 / 死 CSS / 多余产物
+
+### 🚀 性能
+
+- 读路径缓存存储 profile 与 driver（每请求一次解析）
+
+## [1.4.0] - 2026-09-12
+
+> 测试线 v1.4.0-beta.1 收口为正式版：处理队列重做 + 设置页补齐 + 性能热点清除。
+
+### ✨ 新功能
+
+- 处理队列重做：pending + failed 合并为可筛选列表，单行重试、失败详情面板、实时统计轮询
+- 「清空队列」移到队列卡片右上角 popover；处理页去杂乱（按钮不换行、折叠文档与破坏性操作）
+- 图片与存储设置 tab 补全（此前为空页）
+
+### 🔧 修复
+
+- 设置页卡死按钮（事件委托失效）；文件名 XSS 修复
+- 全站三个每请求/每页热点清除（全站速度扫描）
+
+### 📄 文档
+
+- 统一存储布局提案（asset-centric 对象键）；部署文档同步
+
 ## [1.3.1-beta.1] - 2026-09-07
 
 > v1.3.0 正式版之后的首个测试线：前台多页导航、公开图库页、资源缓存戳根治与性能优化。

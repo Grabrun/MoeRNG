@@ -34,6 +34,7 @@ reference/
 
 # ── Local-only tooling (release scripts never ship to the repo) ──────
 /tools/
+node_modules/
 
 # ── Brand design assets (local source art only) ──────────────────────
 /assets/

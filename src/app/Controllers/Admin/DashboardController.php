@@ -29,7 +29,10 @@ class DashboardController extends Controller
             foreach ($rows as $r) {
                 $countsByCat[(int) $r['category_id']] = (int) $r['c'];
             }
-        } catch (\Throwable) {}
+        } catch (\Throwable) {
+            // best-effort — 分类统计失败时降级为空数组（分类分布显示全 0），
+            // 统计查询绝不允许阻断仪表盘本身。
+        }
 
         $categoryStats = [];
         foreach (Category::getFlatTree() as $cat) {
