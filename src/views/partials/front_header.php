@@ -50,6 +50,7 @@ $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。基于 RESTful �
     <!-- preload LCP banner so the hero paints immediately -->
     <link rel="preload" as="image" href="/assets/banner.webp" fetchpriority="high">
     <?php endif; ?>
+    <link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>">
 </head>
 <body>

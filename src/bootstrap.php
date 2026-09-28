@@ -25,8 +25,9 @@ define('MOERNG_ROOT', __DIR__);
 // v2.0.0-beta.2: 前台服务可用性实装（近 7 天 API 请求成功率 + api_stats.fail 列）。
 // v2.0.0-beta.3: 图片/读取架构审计 —— finfo 提循环、大图流式下载、基线余量常量化、删死函数 e()。
 // v2.0.0-beta.4: 后台设置排版与 UI 优化 —— 标签行 pill 化、分组卡标题强调条、设置项 hover、健康结果状态徽标、保存提示警告色。
+// v2.0.0-beta.5: M2 晴空画册视觉重设计 —— 暖米白/炭紫黑双主题 token、珊瑚粉+鼠尾草青+蜜橘、思源宋体 display、思源黑体正文、圆角收敛去霓虹、前台 hero kicker、CSS 90KB 预算瘦身合并、CSP font-src 放行。
 if (!defined('APP_VERSION')) {
-    define('APP_VERSION', '2.0.0-beta.4');
+    define('APP_VERSION', '2.0.0-beta.5');
 }
 
 // v1.3.1 修复: 资源缓存戳 = APP_VERSION + 静态资源 mtime。此前 ?v= 只跟版本号，

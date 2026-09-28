@@ -10,6 +10,7 @@
             <!-- 左栏：品牌 banner + 文案 + CTA + 统计 -->
             <div class="hero-left">
                 <!--: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
+                <span class="hero-kicker">自托管 · 真随机 · 治愈感</span>
                 <picture class="hero-banner-wrap">
                     <source srcset="/assets/banner.webp" type="image/webp">
                     <img class="hero-banner" src="/assets/banner.png" width="1400" height="466" alt="<?= h($siteName) ?>随机二次元图片 API 服务" fetchpriority="high">
