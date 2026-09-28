@@ -1,4 +1,4 @@
-# ── Deploy-time generated / sensitive ────────────────────────────────
+# 鈹€鈹€ Deploy-time generated / sensitive 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 src/config/database.php          # DB credentials (written by the installer)
 src/config/signing_key.php        # HMAC signing key (auto-generated on first use)
 src/public/uploads/              # uploaded images (legacy root; branding logo remains)
@@ -8,23 +8,23 @@ src/var/                        # rate-limit counters
 backups/                        # backup archives
 src/debug_session.php           # server-diagnostics tool (dev only)
 
-# ── Third-party SDKs (shipped inside release ZIPs, not the repo) ──────
+# 鈹€鈹€ Third-party SDKs (shipped inside release ZIPs, not the repo) 鈹€鈹€鈹€鈹€鈹€鈹€
 # Object-storage SDKs are bundled at release time via tools/_package.py;
 # committing 67MB of vendor code bloats the repo for no reason.
 src/sdk/
 
-# ── Build artifacts / packaging ───────────────────────────────────────
+# 鈹€鈹€ Build artifacts / packaging 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 releases/
 *.zip
 
-# ── DSH agent memory (deployment & credential discussion) ─────────────
+# 鈹€鈹€ DSH agent memory (deployment & credential discussion) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 .dsh/
-# 本地代理工作数据（日志/记忆/验证 harness）—— 同 .dsh/，不得进公开仓库；
-# release.py 用 `git add -A`，若不忽略会把本地记忆一起提交
+# 鏈湴浠ｇ悊宸ヤ綔鏁版嵁锛堟棩蹇?璁板繂/楠岃瘉 harness锛夆€斺€?鍚?.dsh/锛屼笉寰楄繘鍏紑浠撳簱锛?
+# release.py 鐢?`git add -A`锛岃嫢涓嶅拷鐣ヤ細鎶婃湰鍦拌蹇嗕竴璧锋彁浜?
 .workbuddy/
 
 
-# ── OS / editor cruft ─────────────────────────────────────────────────
+# 鈹€鈹€ OS / editor cruft 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 nul
 Thumbs.db
 .DS_Store
@@ -32,10 +32,11 @@ Thumbs.db
 tools/__pycache__/
 reference/
 
-# ── Local-only tooling (release scripts never ship to the repo) ──────
+# 鈹€鈹€ Local-only tooling (release scripts never ship to the repo) 鈹€鈹€鈹€鈹€鈹€鈹€
 /tools/
 node_modules/
 
-# ── Brand design assets (local source art only) ──────────────────────
+# 鈹€鈹€ Brand design assets (local source art only) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 /assets/
-design/_shots/          # html skill 自检截图目录（非交付物）
+# html skill 鑷鎴浘鐩綍锛堥潪浜や粯鐗╋級
+design/_shots/
