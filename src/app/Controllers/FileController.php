@@ -51,6 +51,14 @@ class FileController extends Controller
             'svg' => 'image/svg+xml', 'avif' => 'image/avif',
         ][$ext] ?? 'application/octet-stream';
 
+        // v2.0.0-beta.3: 媒体文件跳过输出缓冲 —— Application::run() 对启用 gzip 的
+        // 站点会挂 ob_start('ob_gzhandler')，readfile() 会先把**整个文件**读进缓冲再
+        // gzip（图片本已压缩，压缩纯浪费 CPU，且大图下载内存翻倍、流式失效）。
+        // 清掉缓冲后恢复真流式输出：Content-Length 已知，readfile 走内核管道。
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
         header('Content-Type: ' . $mime);
         header('Cache-Control: private, max-age=60');
         header('Content-Length: ' . (string) filesize($real));

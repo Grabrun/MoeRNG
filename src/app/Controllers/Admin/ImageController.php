@@ -203,6 +203,7 @@ class ImageController extends Controller
 
     /** 原图转码额外余量（编码器内部缓冲 + 收尾；比缩略图那套宽松，因为原图更大）。 */
     private const CONVERT_MEMORY_HEADROOM = 16777216; // 16 MiB
+    private const MEMORY_BASELINE_HEADROOM = 16777216; // v2.0.0-beta.3: 解码/转码基线余量（原裸数字两处）
 
     /**
      * 原图转码预算的安全边际：估算值必须 ≤ 可用内存 × 该系数才放行。
@@ -411,7 +412,7 @@ class ImageController extends Controller
         if ($limit === PHP_INT_MAX) {
             return null;   // 无内存限制 → 交给解码器
         }
-        $available = $limit - memory_get_usage(true) - 16777216;   // 再留 16 MiB 基线余量
+        $available = $limit - memory_get_usage(true) - self::MEMORY_BASELINE_HEADROOM;   // 再留 16 MiB 基线余量
         if ($available <= 0 || $need > (int) ($available * self::MEMORY_SAFETY_FACTOR)) {
             return [
                 'code' => 'memory-budget',
@@ -556,7 +557,7 @@ class ImageController extends Controller
         if ($limit === PHP_INT_MAX) {
             return null;   // 无内存限制 → 交给解码器
         }
-        $available = $limit - memory_get_usage(true) - 16777216;   // 再留 16 MiB 基线余量
+        $available = $limit - memory_get_usage(true) - self::MEMORY_BASELINE_HEADROOM;   // 再留 16 MiB 基线余量
         if ($need > $available) {
             return sprintf(
                 '图像过大（%d×%d，解码约需 %.0f MiB，当前可用 %.0f MiB）',
@@ -2148,6 +2149,8 @@ class ImageController extends Controller
         $batchHashes = [];
 
         $fileCount = count($files['tmp_name']);
+        // v2.0.0-beta.3: finfo 每次循环重建是纯浪费 —— 提到循环外创建一次。
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
         for ($i = 0; $i < $fileCount; $i++) {
             $tmpName = $files['tmp_name'][$i];
             $originalName = $files['name'][$i];
@@ -2171,10 +2174,8 @@ class ImageController extends Controller
                 continue;
             }
 
-            // Validate MIME
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            // Validate MIME（finfo 在循环外打开，见上传循环起点）
             $detectedMime = finfo_file($finfo, $tmpName);
-            finfo_close($finfo);
 
             if (!in_array($detectedMime, $this->allowedMimeTypes, true)) {
                 $errors[] = "{$originalName}: Invalid file type ({$detectedMime})";

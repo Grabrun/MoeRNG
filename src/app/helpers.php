@@ -11,12 +11,6 @@ if (!function_exists('h')) {
     }
 }
 
-if (!function_exists('e')) {
-    function e(string $str): string {
-        return htmlspecialchars($str, ENT_QUOTES, 'UTF-8');
-    }
-}
-
 if (!function_exists('config')) {
     function config(string $key, mixed $default = null): mixed {
         return \App\Core\Config::get($key, $default);
