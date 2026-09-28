@@ -350,11 +350,15 @@ class Application
             return implode(' | ', $errors);
         }
 
-        // Backfill existing rows with the current global driver/provider so
+        // Backfill existing rows with the default profile's driver/provider so
         // historically-stored files keep resolving after a driver switch.
+        // v2.0.0-beta.1: storage_profiles is the single source of truth — the
+        // legacy settings keys (settings.storage_driver / storage_s3_provider)
+        // are no longer read or written anywhere.
         try {
-            $driver = (string) \App\Core\Config::get('settings.storage_driver', 'local');
-            $provider = (string) \App\Core\Config::get('settings.storage_s3_provider', 'cos');
+            $profile = \App\Models\StorageProfile::defaultProfile();
+            $driver = $profile !== null ? $profile->driver : 'local';
+            $provider = $profile !== null ? (string) $profile->provider : '';
             $db->exec(
                 "UPDATE `images` SET `storage` = " . $db->quote($driver)
                 . " WHERE `storage` = '' OR `storage` IS NULL"

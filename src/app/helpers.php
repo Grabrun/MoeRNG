@@ -76,13 +76,3 @@ if (!function_exists('json_response')) {
     }
 }
 
-if (!function_exists('dd')) {
-    function dd(mixed ...$args): never {
-        echo '<pre style="background:#1a1a2e;color:#e8e8f0;padding:16px;border-radius:8px;font-size:13px;line-height:1.6;overflow:auto;max-height:80vh;">';
-        foreach ($args as $arg) {
-            echo htmlspecialchars(print_r($arg, true));
-        }
-        echo '</pre>';
-        exit;
-    }
-}
