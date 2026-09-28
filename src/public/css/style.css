@@ -1791,3 +1791,12 @@ body.modal-open { overflow: hidden; }
     .hero .stats .num,
     .hero .stats .stat-value { font-size: 2.2rem; }
 }
+
+/* Settings UI v2.0.0-beta.4 */
+.settings-tab{font-weight:600;border-radius:var(--radius-pill);padding:7px 16px}.settings-tab:not(.btn-primary):hover{background:var(--bg-card-hover);border-color:var(--primary);color:var(--primary)}.settings-tab.btn-primary{background:linear-gradient(135deg,var(--primary),var(--accent-dark));border:none;box-shadow:0 4px 14px rgba(195,137,232,.35)}
+.settings-toolbar{flex-wrap:wrap;align-items:center}.settings-toolbar .form-control{flex:1 1 200px;min-width:140px}
+.settings-group .card h3{position:relative;padding-left:14px}.settings-group .card h3::before{content:"";position:absolute;left:0;top:.18em;bottom:.18em;width:4px;border-radius:var(--radius-pill);background:linear-gradient(180deg,var(--primary),var(--accent))}.settings-group .card>.setting-group-desc{padding-left:14px;margin-bottom:16px}
+.setting-item{padding:10px 12px;border-radius:var(--radius-sm)}.setting-item:hover{background:var(--bg-card-hover)}.setting-label{font-weight:600}
+.batch-panel h3{display:flex;align-items:center;gap:8px}.batch-panel h3::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--primary)}
+#health-results{display:flex;flex-direction:column;gap:6px}#health-results .health-ok,#health-results .health-bad{display:inline-block;padding:2px 10px;border-radius:var(--radius-pill);font-size:.78rem;font-weight:700}#health-results .health-ok{background:rgba(79,211,168,.14);color:var(--success)}#health-results .health-bad{background:rgba(255,122,156,.14);color:var(--danger)}
+.save-hint{color:var(--warning);font-weight:600}

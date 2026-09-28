@@ -2,6 +2,23 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0-beta.4] - 2026-09-28
+
+> 后台「系统设置」排版与 UI 优化（全 CSS 增强，结构/交互挂钩零变动）。
+
+### 🎨 视觉增强
+
+- **设置标签行 pill 化**：active 标签渐变底 + 柔光，非 active 悬停高亮
+- **分组卡片标题左缘强调条**：渐变竖条区分分组层级，描述区留白对齐
+- **设置项 hover 高亮**：浅紫底 + 圆角，label 加粗；输入控件聚焦环已有，整体层级更清晰
+- **批处理面板标题状态点**：统一视觉锚点
+- **健康检查结果状态徽标**：`[ OK ]` 绿 pill / `[待修复]` 红 pill（renderHealth 输出 health-ok/health-bad 类）
+- **保存栏**：未保存提示改为警告色；工具栏窄屏自动换行
+
+### ✅ 约束保持
+
+- design_contract 63 项全过：分组头/工具栏/3×batch-panel/22 个 JS 挂钩 id/关键文案零变动；CSS 92141B < 90KB 预算；CSP 无 inline style
+- scope/click/page_matrix/syntax 全绿；桌面+移动截图自检正常
 ## [2.0.0-beta.3] - 2026-09-28
 
 > 全站代码检查 + 图片处理架构审计：真实性能修复 3 处 + 死代码清理；域服务抽取因 harness 契约锁定暂缓（路径已文档化）。

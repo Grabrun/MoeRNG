@@ -1847,7 +1847,8 @@ const healthBackfillFill = document.getElementById('health-backfill-fill');
 const healthBackfillDetail = document.getElementById('health-backfill-detail');
 
 function renderHealth(checks) {
-    const badge = function(ok) { return ok ? '[ OK ]' : '[待修复]'; };
+    // v2.0.0-beta.4: 结果徽标带状态类（CSS 提供绿/红 pill）
+    const badge = function(ok) { return '<span class="' + (ok ? 'health-ok' : 'health-bad') + '">' + (ok ? '[ OK ]' : '[待修复]') + '</span>'; };
     healthResults.innerHTML = Object.keys(checks).map(function(k) {
         const c = checks[k];
         const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', image_queue: '图片处理队列', thumb_backfill: '历史缩略图', hash_backfill: '历史图片哈希' };
