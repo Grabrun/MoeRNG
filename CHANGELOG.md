@@ -2,6 +2,24 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0-beta.6] - 2026-09-28
+
+> 空库 404 优雅化：无图/分类无图时的 API 与测试页表现从「裸 404」改为可读引导。
+
+### ✨ 改进
+
+- **`/api/v1/random` 空库响应**：图库或所选分类为空时仍返回 HTTP 404，但 body 为结构化 JSON —— `error` 保持英文机器码 `No images found`（既有调用方零破坏），新增 `code: NO_IMAGES_AVAILABLE` 与中文引导 `message`（「图库暂无可用图片…请先在管理后台上传」）；分类为用户可控输入，插入前已 HTML 转义
+- **在线测试页错误渲染**：JSON 分支对非 2xx 响应优雅化 —— 响应体是 JSON 时直接展示服务端 `message`/`error`；响应体非 JSON（nginx 默认错误页等）时提示「网关/伪静态（URL Rewrite）未配置，请求未到达应用层」并保留原始响应供诊断，不再裸显示 `404 Not Found / nginx`
+- **API 文档**：补充空库行为说明（404 + JSON 错误体语义）
+
+### ⚠️ 部署提示
+
+- 若线上请求 `/api/v1/random` 仍见 nginx 默认 404 页，根因是 Web 服务器未启用伪静态（URL Rewrite）：`src/nginx.conf.example` 已注明，`location /api { try_files $uri /api.php$is_args$args; }` 未配置时请求不会到达应用层（与图库是否为空无关）
+
+### ✅ 回归
+
+- syntax 2912/2912；API 契约 67 项、design_contract 63 项、hero_stats 36 项、page_matrix / click_matrix / scope / click / xref 全绿
+
 ## [2.0.0-beta.5] - 2026-09-28
 
 > M2「晴空画册」视觉重设计落地：全站换肤 + 前台/后台关键结构增强（按已评审设计提案 `design/ui-redesign.html` 执行）。

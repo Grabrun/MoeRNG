@@ -55,7 +55,8 @@
                                     <code>file_size</code>）<strong>都描述这一张图</strong>。
                                     <strong>取值非法时返回 <code>400</code></strong>（不静默回退，否则调用方会误以为拿到了指定尺寸）；
                                     该尺寸尚未生成时按 <code>请求尺寸 → md → 原图</code> 回退（绝不返回 404），
-                                    响应里的 <code>size</code> 字段如实回报<strong>实际生效</strong>的尺寸，回退也能被察觉</td>
+                                    响应里的 <code>size</code> 字段如实回报<strong>实际生效</strong>的尺寸，回退也能被察觉。
+                                    图库或所选分类为空时返回 <code>404</code> 与 JSON 错误体（<code>message</code> 含中文引导，<code>error</code> 保持英文机器码）</td>
                             </tr>
                         </tbody>
                     </table>

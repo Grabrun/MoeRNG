@@ -271,10 +271,26 @@ function initApiTester() {
                 let pretty;
                 try { pretty = JSON.stringify(JSON.parse(text), null, 2); }
                 catch (e) { pretty = text; }
-                resultBox.innerHTML = '<pre>' + pretty + '</pre>';
-                showMeta(resp.status, resp.statusText || (resp.ok ? 'OK' : 'Error'), ms);
-                saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
-                resolveRequest();
+                // v2.0.0-beta.5: 非 2xx 响应优雅化 —— JSON 错误体直接展示服务端 message
+                // （空库引导等）；非 JSON 体（nginx 默认错误页等）说明网关/伪静态未配置，
+                // 请求根本没到应用层，给可读提示而不是裸「404 Not Found / nginx」。
+                if (!resp.ok) {
+                    let hint = '';
+                    try { const j = JSON.parse(text); hint = (j && (j.message || j.error)) || ''; }
+                    catch (e2) { /* non-JSON body */ }
+                    resultBox.innerHTML =
+                        '<pre style="color:var(--danger)">请求失败（HTTP ' + resp.status + '）'
+                        + (hint ? '\n' + hint : '\n接口返回了非 JSON 错误体 —— 多为网关/伪静态（URL Rewrite）未配置，请求未到达应用层。')
+                        + '\n\n原始响应：\n' + pretty + '</pre>';
+                    showMeta(resp.status, resp.statusText || 'Error', ms);
+                    saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
+                    resolveRequest();
+                } else {
+                    resultBox.innerHTML = '<pre>' + pretty + '</pre>';
+                    showMeta(resp.status, resp.statusText || 'OK', ms);
+                    saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
+                    resolveRequest();
+                }
             }
 
             await requestDone;

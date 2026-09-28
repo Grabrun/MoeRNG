@@ -171,10 +171,15 @@ class ApiController extends Controller
         $image = Image::random($categoryId);
 
         if (!$image) {
+            // v2.0.0-beta.5: 空库 404 优雅化 —— error 字段保持英文机器码（兼容既有调用方），
+            // message 换为中文引导；category 为用户可控输入，插入 message 前必须 HTML 转义。
             $this->json([
                 'success' => false,
                 'error' => 'No images found',
-                'message' => 'No images available' . ($category ? " in category '{$category}'" : '') . '.',
+                'code' => 'NO_IMAGES_AVAILABLE',
+                'message' => '图库暂无可用图片'
+                    . ($category ? '（分类 ' . htmlspecialchars($category, ENT_QUOTES, 'UTF-8') . ' 下暂无图片）' : '')
+                    . '，请先在管理后台「图片管理」上传图片。',
             ], 404);
         }
 
