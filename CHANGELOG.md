@@ -2,6 +2,25 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0-beta.2] - 2026-09-28
+
+> 前台「服务可用性」实装：从静态字面量 99.9% 变为近 7 天 API 请求成功率（SLA 口径），随真实请求流量变化。
+
+### ✨ 新功能
+
+- **服务可用性实装**（首页 hero 第三个统计）：`api_stats` 新增 `fail` 列；`api.php` 未捕获异常（5xx）单独记失败（`Stats::bumpFail`），正常响应（含 4xx 业务校验失败——服务正常响应即「可用」）仍走成功计数；`Stats::availability()` 计算近 7 天成功率，首页动态渲染
+- **无样本兜底**：新装 / 尚无流量时 `availability = null`，前台显示默认宣传值 99.9%；有样本后显示真实值（1 位小数，如 100.0% / 97.3%）
+- 首页统计注释与 hero_stats 契约测试同步（第三个数字为动态值语义，`data-count` 仍仅前两项）
+
+### 🔧 维护
+
+- 深度审计（2026-09-28）：`Application.php` backfill 改为从默认 profile 推导（移除旧设置键 `storage_driver` / `storage_s3_provider` 读取）；`helpers.php` 删除死调试函数 `dd()`；全量 19 项 harness + 语法 2912/2912 全绿
+- `SCHEMA_VERSION` 升至 `2026-09-28-2`（api_stats.fail 幂等迁移：SHOW COLUMNS probe → ALTER，权限被拒时降级不破坏站点）
+
+### ✅ 回归
+
+- hero_stats_contract（35）/ layout（125）/ thumbs（118）/ design（63）/ perf（74）/ queue（143）/ api（67）/ convert（71）/ memory_guard（46）/ click_matrix / page_matrix / scope / click / ref_check / xref_audit / php_undef / sdk_integrity / verify_autoload / model_fillable 全部通过
+
 ## [2.0.0-beta.1] - 2026-09-28
 
 > **破坏性变更**（用户指令「取消对之前的所有兼容与迁移，使用新版本方案」）：强制统一资产中心方案（v2 布局 + 本地媒体根 storage/uploads），拆除旧布局 / 旧根 / 旧凭据的全部兼容层与迁移工具。升级前务必阅读 src/docs/STORAGE-LAYOUT.md 与 src/docs/BT-DEPLOY.md 的升级注意。

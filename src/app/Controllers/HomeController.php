@@ -58,9 +58,13 @@ class HomeController extends Controller
         // 走索引很快，直接查询即可，不引入文件系统依赖。
         $data['totalImages'] = 0;
         $data['totalCategories'] = 0;
+        $data['availability'] = null; // null = 无样本 → 视图显示默认 99.9%
         try {
             $data['totalImages'] = Image::count("status = 'active'");
             $data['totalCategories'] = Category::count();
+            // v2.0.0-beta.2: 前台服务可用性 —— 近 7 天 API 请求成功率（4xx 视为可用、
+            // 5xx 计失败）。内部已 best-effort，DB 不可用时保持 null。
+            $data['availability'] = \App\Core\Stats::availability();
         } catch (\Throwable) {
             // DB may not be available
         }

@@ -33,7 +33,9 @@
                         <!-- 三个统计数字必须挂同一套类：此前这一项只挂了 num、没有 stat-value，
                              于是拿不到统一下来的 line-height，行盒比另两项高约 16px，
                              把它的标签「服务可用性」顶得偏低（2026-09-14 对齐修复）。 -->
-                        <div class="num stat-value">99.9%</div>
+                        <!-- v2.0.0-beta.2: 服务可用性实装 —— 近 7 天 API 请求成功率
+                             （4xx 视为可用、5xx 计失败）；无样本（新装/无流量）显示默认 99.9%。 -->
+                        <div class="num stat-value" title="近 7 天 API 请求成功率"><?= $availability === null ? '99.9%' : number_format($availability * 100, 1) . '%' ?></div>
                         <div class="label">服务可用性</div>
                     </div>
                 </div>

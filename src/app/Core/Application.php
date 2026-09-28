@@ -11,7 +11,7 @@ class Application
      *
      * **新增迁移时务必递增此值**，否则老站点不会执行新迁移。
      */
-    private const SCHEMA_VERSION = '2026-09-28';
+    private const SCHEMA_VERSION = '2026-09-28-2';
 
     private static ?self $instance = null;
     private Router $router;
@@ -496,9 +496,24 @@ class Application
     {
         $sql = "CREATE TABLE IF NOT EXISTS `api_stats` (
             `day` DATE PRIMARY KEY,
-            `count` INT UNSIGNED NOT NULL DEFAULT 0
+            `count` INT UNSIGNED NOT NULL DEFAULT 0,
+            `fail` INT UNSIGNED NOT NULL DEFAULT 0
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         $db->exec($sql);
+        
+        // v2.0.0-beta.2: 可用性统计需要失败计数列。老库由运行时迁移补齐
+        // （SHOW COLUMNS probe → ALTER，吞 duplicate-column）；新库建表已带。
+        // ALTER 权限被拒时降级为「只有成功计数」（fail 恒 0），站点不受影响。
+        try {
+            $colProbe = $db->query("SHOW COLUMNS FROM `api_stats` LIKE 'fail'");
+            $hasFail = $colProbe !== false && $colProbe->fetch() !== false;
+            if (!$hasFail) {
+                $db->exec("ALTER TABLE `api_stats` ADD COLUMN `fail` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `count`");
+            }
+        } catch (\Throwable $e) {
+            // ALTER-permission denial on a hosted account — availability degrades
+            // to success-only (fail stays 0); site still works.
+        }
 
         $sql = "CREATE TABLE IF NOT EXISTS `visit_stats` (
             `day` DATE PRIMARY KEY,
