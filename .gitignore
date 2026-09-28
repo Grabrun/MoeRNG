@@ -1,6 +1,6 @@
 # 鈹€鈹€ Deploy-time generated / sensitive 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-src/config/database.php          # DB credentials (written by the installer)
-src/config/signing_key.php        # HMAC signing key (auto-generated on first use)
+src/config/database.php
+src/config/signing_key.php
 src/public/uploads/              # uploaded images (legacy root; branding logo remains)
 src/storage/uploads/             # uploaded images (v1.5.0-beta.1 media root, outside web root)
 src/storage/incoming/            # pending uploads (staging)
@@ -42,3 +42,4 @@ node_modules/
 design/_shots/
 
 design/m2-preview/
+src/config/*.php

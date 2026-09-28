@@ -21,6 +21,10 @@ for dp, dns, fns in os.walk(SRC):
     for fn in fns:
         p = os.path.join(dp, fn)
         arc = os.path.relpath(p, SRC).replace(os.sep, '/')
+        # 覆盖安装修复: config/*.php 是安装器生成的本地状态（installed 标志/凭据），
+        # 归档若携带 installed=false 的 app.php，覆盖部署会把安装状态重置回安装向导。
+        if arc.startswith('config/') and arc.endswith('.php'):
+            continue
         entries.append((p, arc))
 entries.sort(key=lambda x: x[1])
 

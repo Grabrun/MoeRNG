@@ -27,8 +27,9 @@ define('MOERNG_ROOT', __DIR__);
 // v2.0.0-beta.4: 后台设置排版与 UI 优化 —— 标签行 pill 化、分组卡标题强调条、设置项 hover、健康结果状态徽标、保存提示警告色。
 // v2.0.0-beta.5: M2 晴空画册视觉重设计 —— 暖米白/炭紫黑双主题 token、珊瑚粉+鼠尾草青+蜜橘、思源宋体 display、思源黑体正文、圆角收敛去霓虹、前台 hero kicker、CSS 90KB 预算瘦身合并、CSP font-src 放行。
 // v2.0.0-beta.6: 空库 404 优雅化 —— /api/v1/random 空库/分类空返回 JSON 错误体（中文引导 + error 保持英文兼容）；tester 前端非 2xx 展示服务端 message / 网关提示；文档补充空库行为。
+// v2.0.0-beta.7: 覆盖安装重置修复 —— src/config/*.php 整体移出版本控制（installed 标志/凭据均为安装器生成的本地状态），build_release 归档排除 config/*.php，覆盖部署不再把 installed 重置回安装向导。
 if (!defined('APP_VERSION')) {
-    define('APP_VERSION', '2.0.0-beta.6');
+    define('APP_VERSION', '2.0.0-beta.7');
 }
 
 // v1.3.1 修复: 资源缓存戳 = APP_VERSION + 静态资源 mtime。此前 ?v= 只跟版本号，

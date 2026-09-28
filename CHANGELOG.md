@@ -2,6 +2,20 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0-beta.7] - 2026-09-28
+
+> 覆盖安装重置修复：发布包与仓库不再携带 `config/app.php`（`installed=false`），覆盖部署不再把已安装站点重置回安装向导。
+
+### 🐛 修复
+
+- **覆盖安装重置根因**：`src/config/app.php` 被 git 跟踪且被打进 release 归档——该文件由安装器写入（安装完成 `installed=true`），仓库/归档里的 `installed=false` 版本在覆盖部署时把安装状态覆盖重置，导致每次覆盖后重新显示安装界面
+- **修复措施**：① `src/config/*.php` 整体移出版本控制（`git rm --cached` + `.gitignore`；database.php / signing_key.php 两条旧规则同步清理尾随注释——本项目 git 会把行中 `#` 及之后当作模式内容，带注释的规则静默失效）；② `build_release.py` 归档排除 `config/*.php`，仅保留 `config/.htaccess`（防目录列出的安全文件）
+- 全新部署仍正常：归档无 config/ 时 `Config::load()` 自愈生成默认 `app.php`（`installed=false`）供安装向导引导，安装完成写盘 `installed=true`；此后任何覆盖（解压 release / git pull）都不会再触碰该文件
+
+### ✅ 回归
+
+- syntax 2912/2912；API 契约 67 项、design_contract 63 项、page_matrix 全绿；归档校验：`config/` 仅含 `.htaccess`，无 `*.php`
+
 ## [2.0.0-beta.6] - 2026-09-28
 
 > 空库 404 优雅化：无图/分类无图时的 API 与测试页表现从「裸 404」改为可读引导。
