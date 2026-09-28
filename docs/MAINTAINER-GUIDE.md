@@ -11,7 +11,7 @@
 | 技术栈 | PHP 8.4（PSR-4 自研框架，无 Composer 运行时）+ MySQL + Redis（session） |
 | 部署形态 | 宝塔 Nginx + PHP-FPM；**doc-root = 项目根（非 public/）**；线上 images.grabrun.top |
 | GitHub | https://github.com/Grabrun/MoeRNG（public, main；身份 Grabrun） |
-| 当前版本线 | 代码 `APP_VERSION = 1.5.0-beta.1`（bootstrap.php 唯一定义处）；迭代记录已到 beta.3，**未发布** |
+| 当前版本线 | 代码 `APP_VERSION = 2.0.0-beta.1`（bootstrap.php 唯一定义处） |
 | 稳定版 | v1.4.0（tag v1.4.0）；上一稳定版 v1.3.2 |
 
 ## 2. 架构分层与请求链
@@ -29,7 +29,7 @@
 
 - **框架核心** `src/app/Core/`：Application（装配 + 安全头 + 运行时自迁移）、Router（静态表）、Config、Database（PDO）、Session（Redis）、Request/Response、Model（fillable/hydrate 过滤）、RateLimiter、CredentialCipher（AES-256-GCM）、SignedUrl、CspNonce、Stats、Mailer、BackupService、Captcha。
 - **中间件**：Auth / ApiKeyAuth / Csrf / RateLimit（fail-closed）。
-- **存储抽象** `src/app/Storage/`：`StorageInterface`（upload/delete/url/exists/size + 静态 configFields/name 六方法铁律）→ `LocalDriver`（签名 `/files`，媒体根默认 `storage/uploads` 在 web 根之外）→ `S3Driver`（纯调度器，委托 6 家官方 SDK：cos/oss/aws/obs/upyun/qiniu，`src/sdk/` 不进 git）。
+- **存储抽象** `src/app/Storage/`：`StorageInterface`（upload/delete/url/exists/size + 静态 `providerFieldDefs` 配置定义）→ `LocalDriver`（签名 `/files`，媒体根默认 `storage/uploads` 在 web 根之外）→ `S3Driver`（纯调度器，委托 6 家官方 SDK：cos/oss/aws/obs/upyun/qiniu，`src/sdk/` 不进 git）。v2.0.0-beta.1 起 `configFields`/`name` 死 API 已移除。
 - **数据**：MySQL（schema.sql 新装基线 + Application 运行时自迁移）+ Redis session + 文件系统；`storage_profiles` 是存储唯一配置来源。
 
 ## 3. 关键机制（改了必读对应契约测试）
@@ -41,7 +41,7 @@
 | API 载荷 | 单一 `url` 字段 = 按 `size` 解析后那张图（sm/md/lg/original，**缺省 original**）+ 极短 `size` 如实回报；所有字段描述 url 指向那张图；`/random` 必须 `no-store`，`/images` 允许 `private, max-age=30` | api_contract |
 | 缩略图尺寸 | `Image::thumbDimensions()` 唯一实现，生成端与读取端共用；兜底链只在 `displayUrlWithSize()`（请求→md→原图） | thumbs_contract |
 | 运行时自迁移 | `SCHEMA_VERSION` 门控；`SHOW COLUMNS` 探测 + ALTER 吞 1060 幂等；best-effort 不静默吞错（写 migration_last_error） | audit_data_security |
-| 存储解析 | `StorageProfile::find()/driverForImage()` 请求内缓存；`/files` 默认根→历史根→实例表 快/慢路径；本地签名 URL 60s 窗口对齐 | perf_contract |
+| 存储解析 | `StorageProfile::find()/driverForImage()` 请求内缓存；`/files` 默认根先行（**v2.0.0 起不再回退历史根**）→ 实例表 快/慢路径；本地签名 URL 60s 窗口对齐 | perf_contract |
 | 内存预算 | GD 解码前 `decodeWouldExceedMemory()`；转码分阶段峰值（解码 / 编码 / EXIF 旋转取最大）+25%+16MiB；OOM 不可捕获 → 重型端点必须 `jsonFatalGuard` | memory_guard / convert_contract |
 
 ## 4. 维护工作流（Doubao 接管后固定执行）
@@ -64,10 +64,10 @@
 
 | 级别 | 事项 | 证据 |
 |---|---|---|
-| P1 | `thumb_bytes` + `processing_state` 两列**不在** Application 自动迁移列清单（`ensureImageColumns`），`SCHEMA_VERSION` 仍 `2026-09-11`；schema.sql / 健康检查修复清单 / `$fillable` 均已有 → **存量覆盖部署后不自动补列**，processQueue / backfillThumbs / 定向重试 / doctor 缩略图检查会失效（需手动去健康检查修复）。`audit_data_security.js` 的识别列清单同样未跟上（报绿但漏检） | Application.php ensureImageColumns；commit 65aa0f5 未含 Application.php |
-| P2 | CHANGELOG.md 停在 1.3.1-beta.1，缺 1.4.0 正式版与 1.5.0 线条目 | CHANGELOG.md git log |
-| P3 | 分类页两个死按钮（cat-collapse-all / cat-expand-all，无 JS 接线）待拍板 | docs/decisions/OPEN-DECISIONS.md |
-| P4 | 死 API（StorageInterface::configFields/name、Controller::isPost、Request::isPost、StorageProfile::defaultDriver）；ImageController 2897 行单文件过大 | docs/audit/2026-09-21-deep-audit.md §三 |
+| ~~P1~~ | ~~`thumb_bytes` + `processing_state` 两列不在 Application 自动迁移列清单~~ → **已解决（2026-09-23 M1）**：两列补入 `ensureImageColumns`，`SCHEMA_VERSION` 升至 `2026-09-28`（本轮），存量覆盖部署自动补列 | Application.php ensureImageColumns |
+| ~~P2~~ | ~~CHANGELOG.md 停在 1.3.1-beta.1~~ → **已解决**：已补 1.4.0 / 1.5.0 各线；本轮追加 2.0.0-beta.1 | CHANGELOG.md git log |
+| ~~P3~~ | ~~分类页两个死按钮（cat-collapse-all / cat-expand-all）~~ → **已复核（2026-09-28）**：真实有 JS 接线（cat-children/cat-grandchildren 联动），非死按钮，保留 | 本轮探查 |
+| ~~P4~~ | ~~死 API（StorageInterface::configFields/name、Controller::isPost、Request::isPost、StorageProfile::defaultDriver）~~ → **已解决（v2.0.0-beta.1）**：全部移除并过 xref/ref_check；ImageController 2897 行单文件过大仍待拆分 | docs/audit/2026-09-21-deep-audit.md §三 |
 | P5 | 开发机无 PHP CLI → 一切 PHP 行为验证靠 Node/Python 工具链（既有实践，延续） | 本机 php 不存在 |
 
 ## 7. 决策与文档位置

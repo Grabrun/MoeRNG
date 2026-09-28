@@ -2,6 +2,36 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0-beta.1] - 2026-09-28
+
+> **破坏性变更**（用户指令「取消对之前的所有兼容与迁移，使用新版本方案」）：强制统一资产中心方案（v2 布局 + 本地媒体根 storage/uploads），拆除旧布局 / 旧根 / 旧凭据的全部兼容层与迁移工具。升级前务必阅读 src/docs/STORAGE-LAYOUT.md 与 src/docs/BT-DEPLOY.md 的升级注意。
+
+### 💥 破坏性变更
+
+- **存储布局唯一化**：只认 v2 {yyyy}/{mm}/{uuid}/original.{ext} + thumb-{size}.webp；Image::assetParts() 不再识别 v1 形态（返回 null），thumbKey() 对非 v2 路径抛 RuntimeException
+- **迁移工具整体移除**：POST /admin/images/migrate-layout 路由、「系统设置 → 存储结构与迁移」面板、app.js::runLayoutMigration/initLayoutMigration 全部删除
+- **本地媒体根收口**：/files 读取不再回退 public/uploads 历史根（仅默认根 storage/uploads + 存储实例自定义根）；LocalDriver::legacyUploadDir() / LEGACY_REL_DIR 删除；升级前仍留在 public/uploads 的媒体需手工迁根
+- **旧凭据迁移链删除**：migrateProviderCredentials() / migrateLegacyToProfiles() / insertProfile() / hasDefaultProfile() 移除，storage_profiles 是唯一配置来源；doctor 孤儿键检查清单仅保留真正无引用的键
+- **清理工具收窄**：cleanupStorage 只保留 storage/incoming 暂存清理（删旧布局对象 / 历史根残留两类分支与统计）
+
+### 🧹 死 API 收口
+
+- StorageInterface::configFields()/name() 声明与 8 个驱动实现（LocalDriver/CosSdkDriver/ObsSdkDriver/AwsSdkDriver/OssSdkDriver/S3Driver/UpyunSdkDriver/QiniuSdkDriver）删除；providerFieldDefs() 保留
+- Controller::isPost()、Request::isPost()、StorageProfile::defaultDriver() 删除（全库零调用，xref/ref_check 双验证）
+- Application.php 删除整条本地根迁移链（runLocalRootMigration/migrateLocalMediaRoot/rollbackMedia/moveMediaEntry/rewriteLocalProfilePaths/revertLocalProfilePaths）与 LOCAL_ROOT_LAYOUT 门禁；DB 结构自迁移（runStorageMigration + ensure*）保留为部署机制，SCHEMA_VERSION 升至 2026-09-28
+
+### 📄 文档
+
+- src/docs/STORAGE-LAYOUT.md 重写为「仅 v2 布局」单一方案（删除兼容/迁移章节）
+- docs/MAINTAINER-GUIDE.md 同步（存储抽象 / 读取快路径 / 已知缺口收口）
+- src/docs/BT-DEPLOY.md 升级注意补 v2.0.0 迁根提示
+- docs/PLAN-CANCEL-COMPAT-2026-09-28.md 拆除计划（范围表 + A-H 分层 + 验收标准）
+
+### ✅ 回归
+
+- 全量 harness 更新并全绿：layout_contract（125）/ thumbs_contract（118）/ click_matrix / design_contract（63）/ perf_contract（74）按 v2 语义同步；syntax 2912/2912；queue 143 / api 67 / convert 71 / memory_guard 46 / ref_check / scope_check / xref_audit / sdk_integrity / php_undef 全部通过
+- 修复 Application.php 常量误删回归（SCHEMA_VERSION 使用未定义 → 补回声明）
+
 ## [1.5.0-beta.3] - 2026-09-22
 
 > 深度审计（2026-09-21）驱动的收口迭代：API 缩略图选择、缩略图字节数落库、按处理项补全状态与定向重试。

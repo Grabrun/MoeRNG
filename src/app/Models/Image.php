@@ -28,12 +28,13 @@ class Image extends Model
     ];
 
     /**
-     * v1.3.2-beta.2 迭代: 多尺寸缩略图 —— 尺寸名 => 最大边像素（单一事实来源）。
+     * v2.0.0-beta.1 迭代: 多尺寸缩略图 —— 尺寸名 => 最大边像素（单一事实来源）。
      *
-     * 存储 key 约定（md 保持历史路径以复用已生成的缩略图，不产生孤儿文件）：
-     *   sm => thumbs/sm/{相对路径}.webp   （列表/网格用，320）
-     *   md => thumbs/{相对路径}.webp      （卡片/预览用，640；= thumb_path 列）
-     *   lg => thumbs/lg/{相对路径}.webp   （灯箱/大图用，1280）
+     * 存储 key 约定（v2 资产中心布局，同一资产全部对象同处一个前缀）：
+     *   sm => {dir}/thumb-sm.webp   （列表/网格用，320）
+     *   md => {dir}/thumb-md.webp   （卡片/预览用，640；= thumb_path 列）
+     *   lg => {dir}/thumb-lg.webp   （灯箱/大图用，1280）
+     * （v1.5.0-beta.1 之前的 `thumbs/…` 旧树已随「取消兼容与迁移」整体移除。）
      */
     public const THUMB_SIZES = ['sm' => 320, 'md' => 640, 'lg' => 1280];
 
@@ -67,34 +68,30 @@ class Image extends Model
     public const STATE_SKIPPED = 'skipped';
 
     /**
-     * v1.5.0-beta.1 存储结构统一（方案 A：资产为中心）—— 布局解析与键推导。
+     * v2.0.0-beta.1 存储结构（资产中心布局，唯一方案）—— 布局解析与键推导。
      *
-     * 两种布局并存，**按 images.path 自身的形态判定**（无需额外标志列），
-     * 因此读取端零改动（DB 里已存具体键），迁移工具也能对任意行推导目标键：
+     * 自本版本起**只认 v2 布局**，按 `images.path` 自身的形态判定（无需标志列）：
      *
-     *   新（v2）：{yyyy}/{mm}/{uuid}/original.{ext}
-     *            {yyyy}/{mm}/{uuid}/thumb-{sm|md|lg}.webp
-     *   旧（v1）：{yyyy}/{mm}/{uuid}.{ext}                      ← 原图
-     *            thumbs/{yyyy}/{mm}/{uuid}.webp                 ← md（无尺寸段）
-     *            thumbs/{sm|lg}/{yyyy}/{mm}/{uuid}.webp
+     *   唯一布局（v2）：{yyyy}/{mm}/{uuid}/original.{ext}
+     *                   {yyyy}/{mm}/{uuid}/thumb-{sm|md|lg}.webp
      *
-     * 设计要点：一个资产的全部对象同处一个前缀（{yyyy}/{mm}/{uuid}/），
-     * 删除/统计/迁移都成为前缀操作；档位命名统一，md 特例只保留在旧布局分支。
+     * 读取端不依赖本解析（`thumbs` JSON / `thumb_path` 列是权威登记），
+     * 因此历史存量行仍可读取；解析仅用于**生成端键推导**（新上传必为 v2）。
      */
     public const LAYOUT_V2 = 'v2';
-    public const LAYOUT_V1 = 'v1';
 
     /**
      * 解析相对路径为资产各部分。
      *
-     * @return array{layout: string, dir: string, ext: string, uuid: string}
-     *   layout=v2/v1（v1 同时覆盖任何无法识别形态的历史路径）
+     * @return ?array{layout: string, dir: string, ext: string, uuid: string}
+     *   仅识别 v2 形态；无法识别（历史 v1 布局等）返回 null —— 生成端遇 null
+     *   抛错，绝不静默回退到旧规则。
      */
-    public static function assetParts(string $path): array
+    public static function assetParts(string $path): ?array
     {
         $p = ltrim(str_replace('\\', '/', trim($path)), '/');
 
-        // 新布局：{yyyy}/{mm}/{uuid}/original.{ext}
+        // 唯一布局：{yyyy}/{mm}/{uuid}/original.{ext}
         if (preg_match('#^(\d{4})/(\d{2})/([0-9a-zA-Z]{8,64})/(original)\.([a-zA-Z0-9]+)$#', $p, $m)) {
             return [
                 'layout' => self::LAYOUT_V2,
@@ -104,15 +101,7 @@ class Image extends Model
             ];
         }
 
-        // 旧布局：{yyyy}/{mm}/{uuid}.{ext}（含任何其它历史形态 → 一律按旧规则处理）
-        $ext = (string) pathinfo($p, PATHINFO_EXTENSION);
-        $base = $ext !== '' ? substr($p, 0, -(strlen($ext) + 1)) : $p;
-        return [
-            'layout' => self::LAYOUT_V1,
-            'dir'    => $base,
-            'ext'    => strtolower($ext),
-            'uuid'   => basename($base),
-        ];
+        return null;
     }
 
     /** 新布局下的原图相对路径（上传时调用；目录名用随机串，扩展名保留）。 */
@@ -125,23 +114,18 @@ class Image extends Model
     /**
      * 由原图相对路径推导某尺寸缩略图的存储 key（与生成端共用同一约定）。
      *
-     * v1.5.0: 按 path 布局自动选择规则 —— 新布局统一 `{dir}/thumb-{size}.webp`，
-     * 旧布局保持历史规则不变（`md` 无尺寸段），二者互不干扰。
+     * v2.0.0-beta.1: 唯一布局规则 `{dir}/thumb-{size}.webp`；非 v2 形态（历史
+     * v1 布局）无法推导 —— 抛错暴露，不做旧规则回退。
      */
     public static function thumbKey(string $size, string $path): string
     {
         $parts = self::assetParts($path);
-
-        if ($parts['layout'] === self::LAYOUT_V2) {
-            return $parts['dir'] . '/' . self::thumbVariant($size) . '.webp';
+        if ($parts === null) {
+            throw new \RuntimeException(
+                '无法按 v2 布局推导缩略图键（历史 v1 布局已不受支持）：' . $path
+            );
         }
-
-        // —— 旧布局（历史规则，保持兼容，勿改）——
-        $rel = ltrim((string) preg_replace('/\.[a-z0-9]+$/i', '.webp', $path), '/');
-        if ($size === 'md') {
-            return 'thumbs/' . $rel;
-        }
-        return 'thumbs/' . $size . '/' . $rel;
+        return $parts['dir'] . '/' . self::thumbVariant($size) . '.webp';
     }
 
     /** 缩略图文件名（不含扩展名）：thumb-{size}。 */

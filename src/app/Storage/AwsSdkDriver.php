@@ -218,15 +218,4 @@ class AwsSdkDriver implements StorageInterface
         }
         return $ok;
     }
-
-    /** Required by StorageInterface; field defs are shared via S3Driver. */
-    public static function configFields(): array
-    {
-        return S3Driver::providerFieldDefs();
-    }
-
-    public static function name(): string
-    {
-        return '对象存储 (AWS S3)';
-    }
 }

@@ -38,3 +38,4 @@ node_modules/
 
 # ── Brand design assets (local source art only) ──────────────────────
 /assets/
+design/_shots/          # html skill 自检截图目录（非交付物）

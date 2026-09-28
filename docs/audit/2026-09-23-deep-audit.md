@@ -39,9 +39,9 @@
 
 | # | 事项 | 证据 |
 |---|---|---|
-| 1 | 死 API：`StorageInterface::configFields()` + 8 个驱动实现、`Controller::isPost`（Core/Controller.php:110）、`Request::isPost`（:74）、`StorageProfile::defaultDriver`（:246） | 本轮全库引用扫描：**均零调用**（`->x(` / `::x(` / callable 数组 / 路由字符串全搜） |
+| 1 | ~~死 API：`StorageInterface::configFields()` + 8 个驱动实现、`Controller::isPost`（Core/Controller.php:110）、`Request::isPost`（:74）、`StorageProfile::defaultDriver`（:246）~~ → **已收口（v2.0.0-beta.1）**：全部删除，xref/ref_check 双验证零悬空 | 本轮全库引用扫描：**均零调用**（`->x(` / `::x(` / callable 数组 / 路由字符串全搜） |
 | 2 | `ImageController.php` **3017 行**（上轮 2897，2 天 +120 行，持续增长）、`app.js` 2906 行 | 单文件过大，结构债非 bug |
-| 3 | `StorageProfile::defaultDriver` 注释「used by Image::getStorageDriver」过时（该方法已不存在） | grep 无 `getStorageDriver` |
+| 3 | ~~`StorageProfile::defaultDriver` 注释「used by Image::getStorageDriver」过时~~ → **已收口（v2.0.0-beta.1）**：方法删除，过时注释随方法消失 | grep 无 `getStorageDriver` |
 
 ---
 

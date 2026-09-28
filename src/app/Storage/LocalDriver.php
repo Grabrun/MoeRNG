@@ -6,18 +6,17 @@ namespace App\Storage;
 class LocalDriver implements StorageInterface
 {
     /**
-     * v1.5.0-beta.1: 本地媒体根默认在 **web 根之外**（`storage/uploads`）。
+     * v2.0.0-beta.1: 本地媒体根**唯一**默认在 **web 根之外**（`storage/uploads`）。
      *
-     * 此前默认是 `public/uploads`（web 根之下）：即便 MoeRNG 自己的 URL 早已
-     * 走短时签名端点（见 url()），文件仍能被 Web 服务器按静态路径直接读到，
-     * 签名机制形同虚设；同时 `public/` 目录语义被媒体文件污染。
+     * v1.5.0-beta.1 之前默认是 `public/uploads`（web 根之下）：即便 MoeRNG 自己的
+     * URL 早已走短时签名端点（见 url()），文件仍能被 Web 服务器按静态路径直接
+     * 读到，签名机制形同虚设；同时 `public/` 目录语义被媒体文件污染。
+     * 「取消兼容与迁移」后，`public/uploads` 历史根不再作为读取回退（见
+     * FileController），历史根文件需在升级前迁移至本目录。
      */
     private const DEFAULT_REL_DIR = 'storage/uploads';
 
-    /** 历史默认根（v1.5.0-beta.1 之前）——仅用于一次性迁移与读取回退。 */
-    public const LEGACY_REL_DIR = 'public/uploads';
-
-    /** 品牌 logo 目录：站点静态资源（非用户媒体），**不参与**迁根。 */
+    /** 品牌 logo 目录：站点静态资源（非用户媒体），与媒体根无关。 */
     public const BRANDING_REL_DIR = 'public/uploads/logo';
 
     private string $uploadDir;
@@ -53,15 +52,11 @@ class LocalDriver implements StorageInterface
     /**
      * Informational prefix for locally stored files (displayed by doctor.php).
      *
-     * v1.5.0-beta.1: 本地文件的**实际**读取路径始终是签名端点（见 url()），
+     * v2.0.0-beta.1: 本地文件的**实际**读取路径始终是签名端点（见 url()），
      * 所以这里只回答一个问题 —— 这个目录**能不能被 Web 服务器静态直读**：
      *   1. 配了 CDN 域名         → 该域名（文件由 CDN 回源，仍需回源映射）
      *   2. 目录位于 web 根之下    → 该静态路径（可直读 —— 签名形同虚设，建议迁出）
      *   3. 目录在 web 根之外      → '/files'（只能走短时签名，默认布局即此）
-     *
-     * 历史实现在拿不到 doc root 时会用「相对项目根」猜一个静态路径，并硬回退到
-     * `/public/uploads`；迁根后这两个值都会误导（`storage/` 在 Nginx 里是 deny 的），
-     * 因此这里改为只返回真实可用的形态。
      */
     private function resolveBaseUrl(): string
     {
@@ -101,7 +96,7 @@ class LocalDriver implements StorageInterface
         return dirname(__DIR__, 2) . '/' . trim(str_replace('\\', '/', $dir), '/');
     }
 
-    /** 默认媒体根（绝对路径）—— 单测/迁移/备份共用同一来源。 */
+    /** 默认媒体根（绝对路径）—— 单测/备份共用同一来源。 */
     public static function defaultUploadDir(): string
     {
         return self::resolveDir('');
@@ -111,12 +106,6 @@ class LocalDriver implements StorageInterface
     public static function defaultRelDir(): string
     {
         return self::DEFAULT_REL_DIR;
-    }
-
-    /** 历史媒体根（绝对路径 v1.5.0-beta.1 之前），仅迁移与回退用。 */
-    public static function legacyUploadDir(): string
-    {
-        return self::resolveDir(self::LEGACY_REL_DIR);
     }
 
     private static function isAbsolutePath(string $path): bool
@@ -223,17 +212,5 @@ class LocalDriver implements StorageInterface
     public function servingMode(): string
     {
         return $this->cdnOverride !== '' ? 'cdn' : 'signed';
-    }
-
-    public static function configFields(): array
-    {
-        return [
-            'storage_local_path' => ['label' => '本地存储路径', 'type' => 'text', 'default' => self::DEFAULT_REL_DIR, 'placeholder' => '相对于项目根目录；默认 storage/uploads（web 根之外，走签名端点）'],
-        ];
-    }
-
-    public static function name(): string
-    {
-        return '本地存储';
     }
 }

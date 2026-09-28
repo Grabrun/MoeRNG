@@ -149,20 +149,4 @@ class QiniuSdkDriver implements StorageInterface
             return false;
         }
     }
-
-    public static function configFields(): array
-    {
-        return [
-            'key'    => ['label' => 'Access Key', 'type' => 'text', 'placeholder' => ''],
-            'secret' => ['label' => 'Secret Key', 'type' => 'password', 'placeholder' => ''],
-            'region' => ['label' => '区域 (Region)', 'type' => 'text', 'placeholder' => 'z0(华东) / z1(华北) / z2(华南) / z3(华东2) / as0(新加坡) / na0(北美)'],
-            'bucket' => ['label' => '空间名 (Bucket)', 'type' => 'text', 'placeholder' => ''],
-            'cdn'    => ['label' => 'CDN 下载域名（可选）', 'type' => 'text', 'placeholder' => 'https://cdn.example.com（建议配置，否则回退 qiniudns.com）'],
-        ];
-    }
-
-    public static function name(): string
-    {
-        return '对象存储 · 七牛云 Kodo';
-    }
 }

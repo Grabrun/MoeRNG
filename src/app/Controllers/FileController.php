@@ -31,14 +31,11 @@ class FileController extends Controller
             $this->abort(410); // Gone / expired link
         }
 
-        // v1.5.0-beta.1: 按优先级在候选根中解析，任一命中即可 —— 迁根期间、多实例
-        // 或自定义路径都不会 404。**先试零查询的默认根/历史根**（覆盖绝大多数
-        // 请求），只有都没命中才去查存储实例表；此前每张图都要查 2 条实例查询。
+        // v2.0.0-beta.1: 唯一本地根 `storage/uploads` 优先（零查询），未命中再查
+        // 存储实例表（自定义路径 / 多实例）。v1.5.0-beta.1 的历史根 `public/uploads`
+        // 已随「取消兼容与迁移」移除 —— 不再回退。
         $relative = ltrim(str_replace('\\', '/', $path), '/');
-        $real = self::locateIn(
-            [LocalDriver::defaultUploadDir(), LocalDriver::legacyUploadDir()],
-            $relative
-        );
+        $real = self::locateIn([LocalDriver::defaultUploadDir()], $relative);
         if ($real === false) {
             $real = self::locateIn(self::profileRoots(), $relative);
         }
@@ -112,7 +109,7 @@ class FileController extends Controller
                 $roots[] = LocalDriver::resolveDir((string) ($cfg['path'] ?? ''));
             }
         } catch (\Throwable) {
-            // 默认根/历史根已试过，这里失败只意味着自定义路径不可用
+            // 默认根已试过，这里失败只意味着自定义路径不可用
         }
 
         return array_values(array_unique($roots));

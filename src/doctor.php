@@ -401,23 +401,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             check('本地图片 URL 稳定性', true, '稳定 —— 签名按 60s 窗口对齐，同一窗口内 URL 完全一致，可命中浏览器缓存', true);
         }
 
-        // 迁根收尾检查：历史根里若仍有媒体（迁移未执行 / 失败），文件仍可读（不影响
-        // 站点），所以只做提示；首个请求会自动迁移，失败原因见「本地媒体根迁移」。
-        if (class_exists(\App\Storage\LocalDriver::class)) {
-            $legacyDir = \App\Storage\LocalDriver::legacyUploadDir();
-            if (is_dir($legacyDir)) {
-                $brandingName = basename(\App\Storage\LocalDriver::BRANDING_REL_DIR);
-                $leftover = 0;
-                foreach (scandir($legacyDir) ?: [] as $entry) {
-                    if ($entry !== '.' && $entry !== '..' && $entry !== $brandingName) {
-                        $leftover++;
-                    }
-                }
-                check('历史媒体根已清空', $leftover === 0, $leftover === 0
-                    ? $legacyDir . '（仅品牌 logo，符合预期）'
-                    : $legacyDir . ' 仍有 ' . $leftover . ' 个顶层条目（会自动迁移；若反复出现请看下一节的迁移错误）', true);
-            }
-        }
     } catch (Throwable $e) {
         check('LocalDriver init', false, $e->getMessage());
     }
@@ -596,15 +579,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             if ($merr !== false && $merr !== null && $merr !== '') {
                 check('Storage migration', false, 'last error: ' . $merr);
             }
-            // v1.5.0-beta.1: 本地媒体根迁移是独立门禁（文件操作），单独上报。
-            $lre = $pdo->query("SELECT `value` FROM `settings` WHERE `key` = 'local_root_error'")->fetchColumn();
-            if ($lre !== false && $lre !== null && $lre !== '') {
-                check('本地媒体根迁移', false, 'last error: ' . $lre);
-            }
-            $lrLayout = $pdo->query("SELECT `value` FROM `settings` WHERE `key` = 'local_root_layout'")->fetchColumn();
-            check('本地媒体根布局', true, ($lrLayout === '2' || $lrLayout === 2)
-                ? 'storage/uploads（已迁出 web 根）'
-                : '仍为历史布局 —— 首个请求会自动迁移；若长期不变请看上面的迁移错误', true);
         } catch (Throwable) {
             // settings table shape differs / unavailable — ignore
         }
@@ -724,48 +698,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
     }
 } else {
     check('Storage driver class', false, 'App\\Storage\\LocalDriver not found');
-}
-
-// v1.0.34-beta.2: detect orphan storage_* keys in `settings` once profiles
-// exist. The settings JSON map + storage_s3_* keys are the legacy single-key
-// store that v1.0.33 migrated into storage_profiles; once profiles are
-// populated, these become dead weight (and still include sensitive secrets).
-// The cleanup is intentionally a manual script (tools/_purge_storage_settings.php)
-// so the operator sees exactly what gets deleted before clicking --commit.
-$ORPHAN_KEYS = [
-    'storage_providers',
-    'storage_s3_access_key', 'storage_s3_secret_key',
-    'storage_s3_region',     'storage_s3_bucket',
-    'storage_s3_endpoint',   'storage_s3_provider',
-    'storage_driver',        'storage_default_provider',
-    'storage_local_path',
-];
-try {
-    // $pdo is doctor's own connection (built from config/database.php above);
-    // never rely on $db here — that variable holds the config ARRAY.
-    if (!isset($pdo)) {
-        check('Settings orphan keys', false, 'no DB connection available — skipped', true);
-    } else {
-        $place = implode(',', array_fill(0, count($ORPHAN_KEYS), '?'));
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM settings WHERE `key` IN ($place)");
-        $stmt->execute($ORPHAN_KEYS);
-        $orphanCount = (int) $stmt->fetchColumn();
-        if ($orphanCount > 0 && $profiles) {
-            check('Settings orphan keys', false,
-                $orphanCount . ' legacy storage_* key(s) still present in `settings` '
-                . '(storage_profiles is the source of truth). Run '
-                . 'tools/_purge_storage_settings.php --commit to clean up.',
-                true);
-        } elseif ($orphanCount > 0) {
-            check('Settings orphan keys', true,
-                $orphanCount . ' legacy storage_* key(s) — kept because storage_profiles is empty',
-                true);
-        } else {
-            check('Settings orphan keys', true, 'no legacy storage_* keys (clean)', true);
-        }
-    }
-} catch (Throwable $e) {
-    check('Settings orphan keys', false, 'cannot inspect settings: ' . $e->getMessage());
 }
 
 // v1.2.0 迭代: signed links — local files now go through the /files endpoint;

@@ -138,8 +138,8 @@ class BackupService
             $zip = new \ZipArchive();
             if ($zip->open($zipFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true) {
                 $zip->addFile($sqlFile, 'moe-rng-' . $stamp . '.sql');
-                // v1.5.0-beta.1: 媒体根已迁到 storage/uploads（web 根之外）；同时
-                // 收拢历史根里可能仍存在的媒体与品牌 logo，保证备份“能原样恢复”。
+                // v2.0.0-beta.1: 媒体根为 storage/uploads（web 根之外），备份收拢
+                // 当前媒体与品牌 logo，保证备份“能原样恢复”。
                 foreach (self::mediaRoots() as $spec) {
                     if (is_dir($spec['dir']) && self::hasFiles($spec['dir'], $spec['exclude'])) {
                         self::zipDir($zip, $spec['dir'], $spec['label'], $spec['exclude']);
@@ -158,24 +158,21 @@ class BackupService
     }
 
     /**
-     * v1.5.0-beta.1: 备份要收拢的媒体目录。
+     * v2.0.0-beta.1: 备份要收拢的媒体目录（v1.5.0 的 uploads-legacy 项已随
+     * 「取消兼容与迁移」移除 —— 旧根不再存在）。
      *
-     *  - `uploads/`        当前媒体根（storage/uploads，web 根之外）
-     *  - `uploads-legacy/` 历史根 public/uploads —— 仅在仍有媒体时收集（迁根
-     *                      未执行或失败），并跳过品牌 logo（避免与下一条重复）
-     *  - `branding/`       站点 logo（public/uploads/logo）—— 站点资源，恢复要用
+     *  - `uploads/`  当前媒体根（storage/uploads，web 根之外）
+     *  - `branding/` 站点 logo（public/uploads/logo）—— 站点资源，恢复要用
      *
      * @return list<array{label: string, dir: string, exclude: list<string>}>
      */
     private static function mediaRoots(): array
     {
-        $legacy = \App\Storage\LocalDriver::legacyUploadDir();
         $branding = \App\Storage\LocalDriver::BRANDING_REL_DIR;
         $brandingName = basename($branding);
 
         return [
             ['label' => 'uploads', 'dir' => \App\Storage\LocalDriver::defaultUploadDir(), 'exclude' => []],
-            ['label' => 'uploads-legacy', 'dir' => $legacy, 'exclude' => [$brandingName]],
             ['label' => 'branding', 'dir' => \App\Storage\LocalDriver::resolveDir($branding), 'exclude' => []],
         ];
     }

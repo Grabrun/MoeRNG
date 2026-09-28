@@ -21,8 +21,9 @@ if (!defined('MOERNG_START')) {
 define('MOERNG_ROOT', __DIR__);
 
 // Release version — surfaced in the footer and the /api/v1/stats endpoint.
+// v2.0.0-beta.1: 取消 v1.5.0 的兼容与迁移（唯一 v2 布局 + storage/uploads 媒体根）。
 if (!defined('APP_VERSION')) {
-    define('APP_VERSION', '1.5.0-beta.1');
+    define('APP_VERSION', '2.0.0-beta.1');
 }
 
 // v1.3.1 修复: 资源缓存戳 = APP_VERSION + 静态资源 mtime。此前 ?v= 只跟版本号，

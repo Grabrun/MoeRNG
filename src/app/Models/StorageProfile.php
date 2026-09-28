@@ -242,20 +242,6 @@ class StorageProfile extends Model
         return self::$defaultCache = null;
     }
 
-    /** The default upload driver (used by Image::getStorageDriver). */
-    public static function defaultDriver(): StorageInterface
-    {
-        $profile = self::defaultProfile();
-        if ($profile !== null) {
-            return $profile->driver();
-        }
-        // v1.0.35: profiles are the single source of truth — there is NO
-        // settings fallback anymore. No usable profile means no storage.
-        throw new \RuntimeException(
-            '未配置任何启用的存储实例。请到后台「存储管理」新增存储实例并设为默认。'
-        );
-    }
-
     /** Upload driver for an image row, honouring the remembered profile. */
     public static function driverForImage(array $row): StorageInterface
     {

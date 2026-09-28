@@ -107,11 +107,6 @@ abstract class Controller
         };
     }
 
-    protected function isPost(): bool
-    {
-        return $_SERVER['REQUEST_METHOD'] === 'POST';
-    }
-
     /**
      * Whether the caller expects JSON rather than a redirect.
      *

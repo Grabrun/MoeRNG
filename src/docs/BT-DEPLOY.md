@@ -53,6 +53,8 @@ location /       { try_files $uri /index.php$is_args$args; }
 
 每次升级对照 `CHANGELOG.md` 检查伪静态是否有新增 deny 路径/后缀/缓存规则。**v1.5.0-beta.1 的关键一条：第 1 行必须包含 `storage`** —— 媒体根迁到 `storage/uploads` 后，若缺这条，文件会被 web 服务器按静态路径直接读到，`/files` 的短时签名形同虚设（旧版伪静态没有 `storage`，**务必按上面整段替换**）。
 
+**v2.0.0-beta.1 的升级注意**：`/files` 读取**不再回退 `public/uploads` 历史根**（取消兼容与迁移，见 CHANGELOG）。若站点此前一直使用本地存储且媒体还在 `public/uploads`，**升级前**请把历史媒体手工移到 `storage/uploads`（保持 `{yyyy}/{mm}/{uuid}/…` 目录形态），否则升级后旧文件将不可经 `/files` 读取。
+
 ### 图片加载慢？先看这一条（v1.5.0-beta.1）
 
 图片是本项目最大的带宽消耗，**能不能被浏览器缓存**直接决定"翻一页要不要重下 20 张图"：

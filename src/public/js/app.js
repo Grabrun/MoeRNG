@@ -1511,94 +1511,22 @@ async function runThumbMetaRetry(setUI) {
     return { retried: retried, scanned: scanned, rounds: rounds };
 }
 
-// ── v1.5.0-beta.1: 存储结构统一（方案 A）—— 存量对象迁移 ────────────────
-// dry-run 只返回计划（不写对象、不改库）；apply 逐资产原子：复制并校验 → 改库记录 →
-// 最后删旧对象，因此迁移过程可随时中断，图片始终可访问。
-async function runLayoutMigration(setUI) {
-    let migrated = 0, failed = 0, skipped = 0, total = 0, firstError = '';
-    for (;;) {
-        const fd = new FormData();
-        fd.append('_csrf_token', getCsrfToken());
-        fd.append('mode', 'apply');
-        fd.append('batch', '3');
-
-        const r = await fetch('/admin/images/migrate-layout', {
-            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        const j = await parseJsonResponse(r, '存储迁移');
-        if (!j || !j.success) {
-            throw new Error((j && j.error) || '未知错误');
-        }
-
-        if (total === 0) total = Number(j.legacy_total) || 0;
-        migrated += Number(j.migrated) || 0;
-        failed += Number(j.failed) || 0;
-        skipped += Number(j.skipped) || 0;
-        if (!firstError) {
-            const bad = (j.results || []).find(x => x && x.error);
-            if (bad) firstError = bad.error;
-        }
-
-        const remaining = Number(j.remaining) || 0;
-        const done = Math.max(0, total - remaining);
-        setUI(total > 0 ? done / total : 1,
-            '迁移中… ' + done + '/' + total,
-            '已迁移 ' + migrated + ' 个资产'
-                + (failed ? '，失败 ' + failed + ' 个' : '')
-                + (skipped ? '，跳过 ' + skipped + ' 个（未处理完成）' : ''));
-
-        if (remaining === 0) break;
-        // 本批没有任何资产完成迁移（存储不可达 / 全是未处理完成的行）→ 收敛退出，
-        // 避免无限空转；剩余数量如实显示在结果里。
-        if ((Number(j.migrated) || 0) === 0) {
-            return { migrated: migrated, failed: failed, skipped: skipped, total: total, remaining: remaining, firstError: firstError };
-        }
-    }
-    return { migrated: migrated, failed: failed, skipped: skipped, total: total, remaining: 0, firstError: firstError };
-}
-
 // ── v1.5.0-beta.1: 存储残留清理（干跑优先）────────────────────────────
-// 三类残留：① 旧布局对象 ② storage/incoming 暂存垃圾 ③ public/uploads 无引用文件。
-// 干跑只跑一轮并返回清单；执行清理按批循环直到 remaining 收敛。
-function sumCleanupResponse(j) {
-    const agg = { deleted: 0, planned: 0, failed: 0, skipped: 0, scanned: 0, remaining: 0, samples: [] };
-    for (const key of ['objects', 'staging', 'legacy_root']) {
-        const part = j[key] || {};
-        agg.deleted += Number(part.deleted) || 0;
-        agg.planned += Number(part.planned) || 0;
-        agg.failed += Number(part.failed) || 0;
-        agg.skipped += Number(part.skipped) || 0;
-        agg.scanned += Number(part.scanned) || 0;
-        agg.remaining += Number(part.remaining) || 0;
-        const list = part.samples || [];
-        for (const item of list) {
-            if (agg.samples.length < 8) agg.samples.push(item);
-        }
-    }
-    return agg;
-}
-
+// ── v2.0.0-beta.1: 暂存目录清理（干跑优先）────────────────────────────
+// 只清 storage/incoming 里不再属于「在办」行的临时文件。干跑单轮出全量清单；
+// 执行清理按批循环，直到 remaining 收敛（服务端每轮重扫目录，剩余数递减）。
 async function runStorageCleanup(mode, setUI) {
     const apply = mode === 'apply';
     let done = 0, planned = 0, failed = 0, skipped = 0, scanned = 0, rounds = 0;
-    let keysChecked = 0, keysExisting = 0;
-    let diag = null, firstError = '';
+    let firstError = '';
     const samples = [];
-
-    // 干跑从表头开始 → **全表扫描**（此前只扫一批，会给出"待清理 0 项"的错误结论）；
-    // 执行清理首轮不带 from，服务端同样从表头开始。
-    let from = apply ? null : 0;
-    let prevFrom = apply ? -1 : 0;
 
     for (;;) {
         rounds++;
         const fd = new FormData();
         fd.append('_csrf_token', getCsrfToken());
         fd.append('mode', apply ? 'apply' : 'dry-run');
-        fd.append('batch', '10');
-        // 本地目录（暂存 / 历史根）与行游标无关 —— 只在首轮请求，避免重复计数
-        fd.append('scope', rounds === 1 ? 'all' : 'objects');
-        if (from !== null) fd.append('from', String(from));
+        fd.append('batch', apply ? '10' : '1000');
 
         const r = await fetch('/admin/images/cleanup-storage', {
             method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -1608,53 +1536,36 @@ async function runStorageCleanup(mode, setUI) {
             throw new Error((j && j.error) || '未知错误');
         }
 
-        const o = j.objects || {};
-        const a = sumCleanupResponse(j);
-        if (j.diagnostics) diag = j.diagnostics;
-        for (const item of a.samples) {
+        const s = j.staging || {};
+        scanned += Number(s.scanned) || 0;
+        done += apply ? (Number(s.deleted) || 0) : (Number(s.planned) || 0);
+        planned += Number(s.planned) || 0;
+        failed += Number(s.failed) || 0;
+        skipped += Number(s.skipped) || 0;
+        for (const item of s.samples || []) {
             if (samples.length < 8) samples.push(item);
         }
 
-        scanned += Number(o.scanned) || 0;
-        done += apply ? (Number(o.deleted) || 0) : (Number(o.planned) || 0);
-        planned += Number(o.planned) || 0;
-        failed += a.failed;
-        skipped += a.skipped;
-        keysChecked += Number(o.keys_checked) || 0;
-        keysExisting += Number(o.keys_existing) || 0;
-
-        const remaining = Number(o.remaining) || 0;
-        const total = diag && Number(diag.new_layout_rows) > 0 ? Number(diag.new_layout_rows) : 0;
-        const pct = remaining === 0 ? 1 : (total > 0 ? Math.min(0.95, scanned / total) : 0.5);
-        setUI(pct, (apply ? '清理中… 已删除 ' : '检查中… 待清理 ') + done + ' 项',
-            '已扫描 ' + scanned + ' 行 · 探测旧键 ' + keysChecked + '（存在 ' + keysExisting + '）'
-            + (remaining > 0 ? ' · 剩余 ' + remaining + ' 行' : ''));
+        const remaining = Number(s.remaining) || 0;
+        setUI(remaining === 0 ? 1 : Math.min(0.95, scanned / Math.max(1, scanned + remaining)),
+            (apply ? '清理中… 已删除 ' : '检查中… 待清理 ') + done + ' 项',
+            '已扫描 ' + scanned + ' 个文件' + (remaining > 0 ? ' · 剩余 ' + remaining + ' 个' : ''));
 
         if (remaining === 0) break;
-        const nextFrom = Number(o.next_from) || 0;
-        if (nextFrom <= prevFrom) {
-            firstError = '扫描位置未推进，已中止（数据在扫描期间被改动？）';
+        if (!apply) break;  // 干跑单轮出全量清单（重扫会重复计数）
+        if ((Number(s.deleted) || 0) === 0) {
+            firstError = '目录无推进（文件被占用？），已中止';
             break;
         }
-        prevFrom = nextFrom;
-        from = nextFrom;
         if (rounds > 500) {
             firstError = '达到轮次上限（500），已中止';
             break;
         }
     }
 
-    return {
-        done: done, planned: planned, failed: failed, skipped: skipped, scanned: scanned,
-        keysChecked: keysChecked, keysExisting: keysExisting, diag: diag,
-        samples: samples, firstError: firstError, rounds: rounds,
-    };
-}
-
-// ── v1.5.0-beta.1: 历史原图批量转 WebP（干跑优先）────────────────────
-// 服务端逐行「取字节 → 转码 → 上传新键 → 校验 → 改库 → 删旧」，任一步失败即回滚该行。
-// 干跑只跑一轮；执行时按批循环，直到 remaining 收敛（游标由服务端在 apply 时推进）。
-async function runOriginalConversion(mode, setUI) {
+    return { done: done, planned: planned, failed: failed, skipped: skipped,
+        scanned: scanned, samples: samples, firstError: firstError, rounds: rounds };
+}async function runOriginalConversion(mode, setUI) {
     const apply = mode === 'apply';
     let done = 0, skipped = 0, failed = 0, orphan = 0, scanned = 0, rounds = 0;
     let firstRemaining = -1, firstError = '';
@@ -1738,7 +1649,6 @@ async function runOriginalConversion(mode, setUI) {
 
     return { done, skipped, failed, orphan, scanned, notes, samples, firstError, rounds };
 }
-
 function initOriginalConversion() {
     const checkBtn = document.getElementById('convert-check');
     const runBtn = document.getElementById('convert-run');
@@ -1806,7 +1716,7 @@ function initOriginalConversion() {
         try {
             const res = await runOriginalConversion('apply', setUI);
             statEl.textContent = '已转换 ' + res.done + ' 张（跳过 ' + res.skipped + '，失败 ' + res.failed + '）'
-                + (res.orphan ? '，另有 ' + res.orphan + ' 个旧对象未删成功（已成孤立对象，可稍后用「清理存储残留」处理）' : '')
+                + (res.orphan ? '，另有 ' + res.orphan + ' 个旧对象未删成功（已成孤立对象，可稍后用「清理暂存残留」处理）' : '')
                 + (res.firstError ? '。' + res.firstError : '。');
             setUI(1, '转换完成', '已转换 ' + res.done + ' 张');
             showToast('转换完成：' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''),
@@ -1821,13 +1731,13 @@ function initOriginalConversion() {
     });
 }
 
+
 function initStorageCleanup() {
     const checkBtn = document.getElementById('cleanup-check');
     const runBtn = document.getElementById('cleanup-run');
     if (!checkBtn && !runBtn) return;
 
     const statEl = document.getElementById('cleanup-stat');
-    const verdictEl = document.getElementById('cleanup-verdict');
     const box = document.getElementById('cleanup-progress');
     const fill = document.getElementById('cleanup-fill');
     const text = document.getElementById('cleanup-text');
@@ -1839,47 +1749,28 @@ function initStorageCleanup() {
         if (detail && d !== undefined) detail.textContent = d;
     };
 
-    // 清单里挑前几条人话描述（键 / 路径 / 跳过原因）
+    // 清单里挑前几条人话描述（路径 / 跳过原因）
     function describe(found) {
         const parts = [];
         for (const item of found) {
             if (!item) continue;
-            if (item.key) parts.push('#' + item.id + ' ' + item.key);
-            else if (item.path) parts.push(item.path);
+            if (item.path) parts.push(item.path);
             else if (item.note) parts.push(item.note);
             if (parts.length >= 3) break;
         }
         return parts.join('；');
     }
 
-    // 把"扫了多少、看了什么、结论是什么"讲清楚 —— 只报一个 0 会让操作员无从判断
-    function counterLine(res) {
-        const d = res.diag || {};
-        return '已扫描 ' + res.scanned + ' 行 · 探测旧键 ' + res.keysChecked + ' 个（其中存在 '
-            + res.keysExisting + ' 个） · 仍引用 thumbs/ 的行 ' + (d.refs_thumbs_prefix ?? '—')
-            + ' · 未迁移行 ' + (d.legacy_layout_rows ?? '—');
-    }
-
     checkBtn?.addEventListener('click', async function () {
         checkBtn.disabled = true;
-        if (verdictEl) verdictEl.textContent = '';
         try {
             const res = await runStorageCleanup('dry-run', setUI);
-            const d = res.diag || {};
-            statEl.textContent = '待清理 ' + res.planned + ' 项 · ' + counterLine(res);
-            if (res.planned > 0) {
-                if (verdictEl) verdictEl.textContent = '→ ' + (d.verdict || '');
-            } else if (verdictEl) {
-                // 结论用**颜色**表达（text-success / text-danger 均为设计系统既有类），
-                // 不用对勾/叉号字符 —— 两者都落在 P0-1 的 emoji 检测范围内。
-                verdictEl.className = d.can_wipe_thumbs ? 'batch-stat text-success' : 'batch-stat text-danger';
-                verdictEl.textContent = d.verdict || '';
-            }
+            statEl.textContent = '待清理 ' + res.planned + ' 项 · 扫描 ' + res.scanned + ' 个文件';
             const sample = describe(res.samples);
             if (sample && res.planned > 0) statEl.textContent += '。示例：' + sample;
-            setUI(1, '检查完成', '待清理 ' + res.planned + ' 项 · 扫描 ' + res.scanned + ' 行');
+            setUI(1, '检查完成', '待清理 ' + res.planned + ' 项 · 扫描 ' + res.scanned + ' 个文件');
             if (runBtn) runBtn.disabled = res.planned === 0;
-            showToast('干跑完成：扫描 ' + res.scanned + ' 行，待清理 ' + res.planned + ' 项', 'success', 7000);
+            showToast('干跑完成：扫描 ' + res.scanned + ' 个文件，待清理 ' + res.planned + ' 项', 'success', 7000);
         } catch (e) {
             statEl.textContent = '检查失败：' + e.message;
             showToast('干跑失败: ' + e.message, 'error', 8000);
@@ -1888,7 +1779,7 @@ function initStorageCleanup() {
         }
     });
 
-    // 两段式确认：执行清理会真正删除对象/文件
+    // 两段式确认：执行清理会真正删除暂存文件
     const label = runBtn ? runBtn.textContent : '';
     let armed = false, timer = null;
     runBtn?.addEventListener('click', async function () {
@@ -1905,8 +1796,7 @@ function initStorageCleanup() {
         try {
             const res = await runStorageCleanup('apply', setUI);
             statEl.textContent = '已删除 ' + res.done + ' 项（失败 ' + res.failed + '，跳过 ' + res.skipped
-                + '，扫描 ' + res.scanned + ' 行）' + (res.firstError ? '。' + res.firstError : '。');
-            if (verdictEl) verdictEl.textContent = '建议再点一次「干跑检查」确认剩余情况。';
+                + '，扫描 ' + res.scanned + ' 个文件）' + (res.firstError ? '。' + res.firstError : '。');
             setUI(1, '清理完成', '已删除 ' + res.done + ' 项');
             showToast('清理完成：删除 ' + res.done + ' 项'
                 + (res.failed ? '，失败 ' + res.failed + ' 项' : ''), res.failed ? 'error' : 'success', 8000);
@@ -1916,96 +1806,6 @@ function initStorageCleanup() {
             showToast('清理失败: ' + e.message, 'error', 9000);
         } finally {
             runBtn.disabled = false;
-        }
-    });
-}
-
-function initLayoutMigration() {
-    const checkBtn = document.getElementById('layout-check');
-    const migrateBtn = document.getElementById('layout-migrate');
-    if (!checkBtn && !migrateBtn) return;
-
-    const statEl = document.getElementById('layout-stat');
-    const box = document.getElementById('layout-progress');
-    const fill = document.getElementById('layout-fill');
-    const text = document.getElementById('layout-text');
-    const detail = document.getElementById('layout-detail');
-    const setUI = function (pct, t, d) {
-        if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
-        if (text && t) text.textContent = t;
-        if (detail && d !== undefined) detail.textContent = d;
-    };
-
-    // 只读检查（dry-run）：给出新旧对象数量与一条示例映射
-    async function check() {
-        if (statEl) statEl.textContent = '正在检查…';
-        const fd = new FormData();
-        fd.append('_csrf_token', getCsrfToken());
-        fd.append('mode', 'dry-run');
-        fd.append('batch', '3');
-        const r = await fetch('/admin/images/migrate-layout', {
-            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        const j = await parseJsonResponse(r, '结构检查');
-        if (!j || !j.success) {
-            if (statEl) statEl.textContent = '检查失败：' + ((j && j.error) || '未知错误');
-            return null;
-        }
-        const legacy = Number(j.legacy_total) || 0;
-        const fresh = Number(j.new_total) || 0;
-        let line = '旧布局 ' + legacy + ' 个资产，新布局 ' + fresh + ' 个';
-        if (legacy === 0) {
-            line += ' —— 已全部为新布局，无需迁移。';
-        } else if (j.plan && j.plan.length && j.plan[0].from && j.plan[0].from.length) {
-            line += '。示例：' + j.plan[0].from[0] + ' → ' + j.plan[0].to[0];
-        } else {
-            line += '。';
-        }
-        if (statEl) statEl.textContent = line;
-        if (migrateBtn) migrateBtn.disabled = legacy === 0;
-        return { legacy: legacy, fresh: fresh };
-    }
-
-    checkBtn?.addEventListener('click', function () { check(); });
-
-    // 两段式确认（迁移会改动对象与记录，属破坏性操作）
-    let armed = false, timer = null;
-    migrateBtn?.addEventListener('click', async function () {
-        if (!armed) {
-            armed = true;
-            migrateBtn.textContent = '再次点击确认迁移';
-            timer = setTimeout(function () {
-                armed = false;
-                migrateBtn.textContent = '开始迁移';
-            }, 5000);
-            return;
-        }
-        clearTimeout(timer);
-        armed = false;
-        migrateBtn.textContent = '开始迁移';
-
-        migrateBtn.disabled = true;
-        if (checkBtn) checkBtn.disabled = true;
-        if (box) { box.classList.remove('hidden'); setUI(0, '准备迁移…', ''); }
-        try {
-            const res = await runLayoutMigration(setUI);
-            let msg = '迁移完成：成功 ' + res.migrated + ' 个资产'
-                + (res.failed ? '，失败 ' + res.failed + ' 个' : '')
-                + (res.skipped ? '，跳过 ' + res.skipped + ' 个（未处理完成）' : '');
-            if (res.remaining > 0) {
-                msg += '；仍有 ' + res.remaining + ' 个旧布局资产待迁移（可在处理队列清空后再执行）';
-            }
-            setUI(res.remaining > 0 ? (res.total > 0 ? (res.total - res.remaining) / res.total : 0) : 1,
-                res.remaining > 0 ? '迁移部分完成' : '迁移完成',
-                msg + (res.firstError ? '（首个错误：' + res.firstError + '）' : ''));
-            showToast(msg, (res.failed || res.remaining > 0) ? 'error' : 'success', 10000);
-        } catch (e) {
-            setUI(0, '迁移中止', e.message);
-            showToast('迁移异常: ' + e.message, 'error', 9000);
-        } finally {
-            migrateBtn.disabled = false;
-            if (checkBtn) checkBtn.disabled = false;
-            await check();
         }
     });
 }
@@ -2492,7 +2292,6 @@ document.addEventListener('DOMContentLoaded', function() {
     initImageGrid();
     initHealthPanel();
     initQueuePage();
-    initLayoutMigration();
     initStorageCleanup();
     initOriginalConversion();
     initApiKeys();

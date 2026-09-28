@@ -52,9 +52,8 @@ $router->group('/admin', function ($router) {
     $router->post('/images/requeue-one', [$images, 'requeueOne']);
     // v1.4.0-beta.2 增强: 清空处理队列（按范围删除未完成记录 + 清理临时原图）
     $router->post('/images/queue-clear', [$images, 'queueClear']);
-    // v1.5.0-beta.1: 存量对象迁移到统一存储布局（方案 A；dry-run 默认，apply 逐资产原子）
-    $router->post('/images/migrate-layout', [$images, 'migrateLayout']);
-    // v1.5.0-beta.1: 清理旧布局对象 / 暂存垃圾 / 历史媒体根残留（干跑优先）
+    // v2.0.0-beta.1: 清理 storage/incoming 暂存残留（干跑优先）；
+    // v1.5.0-beta.1 的 migrate-layout / 旧布局清理已随「取消兼容与迁移」移除
     $router->post('/images/cleanup-storage', [$images, 'cleanupStorage']);
     // v1.5.0-beta.1: 历史原图批量转 WebP（干跑优先，逐行回滚）
     $router->post('/images/convert-originals', [$images, 'convertOriginals']);

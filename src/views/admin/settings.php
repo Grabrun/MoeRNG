@@ -131,35 +131,11 @@ admin_header('系统设置', 'page-settings');
     </form>
 
     <?php if ($gid === 'media'): ?>
-    <!-- v1.5.0-beta.1: 存储结构统一（方案 A）—— 存量对象迁移面板 -->
+    <!-- v2.0.0-beta.1: 清理暂存目录残留（干跑优先） -->
     <div class="card mb-3 batch-panel">
-        <h3>存储结构与迁移</h3>
-        <p class="batch-summary">新上传的图片已使用统一布局（一个资产的全部对象同处一个前缀）；历史对象仍是旧布局，二者可长期并存，迁移是<strong>可选</strong>的增量操作。</p>
-        <details class="batch-help">
-            <summary>迁移是怎么做的（可中断，图片始终可访问）</summary>
-            <p>
-                新布局为 <code>{年}/{月}/{uuid}/original.{ext}</code> 与同目录的 <code>thumb-{尺寸}.webp</code>；
-                历史布局为 <code>{年}/{月}/{uuid}.{ext}</code> 与 <code>thumbs/…</code>。
-                迁移逐个资产进行：先把对象复制到新键并校验存在，然后才切换记录，最后才删除旧对象 ——
-                因此迁移过程中图片始终可访问，随时可以中断。
-            </p>
-        </details>
-        <p class="batch-stat" id="layout-stat">点击「检查当前结构」查看新旧对象的数量。</p>
-        <div class="batch-actions">
-            <button type="button" class="btn btn-outline btn-sm" id="layout-check">检查当前结构</button>
-            <button type="button" class="btn btn-primary btn-sm" id="layout-migrate">开始迁移</button>
-        </div>
-        <div id="layout-progress" class="hidden">
-            <div class="health-progress-text" id="layout-text">准备迁移…</div>
-            <div class="health-progress-track"><div id="layout-fill" class="health-progress-fill"></div></div>
-            <div class="health-progress-detail" id="layout-detail"></div>
-        </div>
-    </div>
-
-    <!-- v1.5.0-beta.1: 清理历次更新留下的存储残留（干跑优先） -->
-    <div class="card mb-3 batch-panel">
-        <h3>清理存储残留</h3>
-        <p class="batch-summary">清理三类<strong>能被确定性判定</strong>的残留：已迁移记录的<strong>旧布局对象</strong>、<code>storage/incoming</code> 里不在办的<strong>临时文件</strong>、<code>public/uploads</code> 下<strong>没有任何记录引用</strong>的文件。默认<strong>干跑</strong>只出清单。</p>
+        <h3>清理暂存残留</h3>
+        <p class="batch-summary">清理 <code>storage/incoming</code> 里不再属于「在办」行的临时文件
+        （致命错误、清空队列等留下的）。默认<strong>干跑</strong>只出清单。</p>
         <details class="batch-help">
             <summary>能力边界与「待清理 0 项」的含义</summary>
             <p>
@@ -167,15 +143,11 @@ admin_header('系统设置', 'page-settings');
                 存储接口没有列举能力，需到对象存储控制台按前缀人工清理。
             </p>
             <p>
-                提示：干跑是<strong>全表扫描</strong>（逐批推进，行数多时需要等一会儿），并会如实报告
-                「扫描了多少行 / 探测了多少个旧键」—— 所以「待清理 0 项」是真的看过了，而不是没看。
-                另外，<strong>仍被记录引用的对象不会出现在清单里</strong>：那是正在使用的文件（例如尚未迁移到
-                新布局的行，其缩略图仍在 <code>thumbs/</code> 下）。想确认能否在对象存储控制台整删某个前缀，
-                看干跑给出的<strong>结论</strong>。
+                「待清理 0 项」是真的看过了（扫描数如实报告），而不是没看；仍处于
+                pending/processing/failed 的行对应的暂存文件会保留（可能正在处理）。
             </p>
         </details>
         <p class="batch-stat" id="cleanup-stat">点击「干跑检查」查看待清理清单。</p>
-        <p class="batch-stat" id="cleanup-verdict"></p>
         <div class="batch-actions">
             <button type="button" class="btn btn-outline btn-sm" id="cleanup-check">干跑检查</button>
             <button type="button" class="btn btn-danger btn-sm" id="cleanup-run">执行清理</button>

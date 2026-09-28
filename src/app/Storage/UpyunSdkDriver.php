@@ -136,19 +136,4 @@ class UpyunSdkDriver implements StorageInterface
             return false;
         }
     }
-
-    public static function configFields(): array
-    {
-        return [
-            'service'  => ['label' => '服务名 (Service Name = Bucket)', 'type' => 'text', 'placeholder' => '如 mybucket'],
-            'operator' => ['label' => '操作员名 (Operator)', 'type' => 'text', 'placeholder' => ''],
-            'password' => ['label' => '操作员密码 (Password)', 'type' => 'password', 'placeholder' => ''],
-            'cdn'      => ['label' => 'CDN 加速域名（可选）', 'type' => 'text', 'placeholder' => 'https://cdn.example.com'],
-        ];
-    }
-
-    public static function name(): string
-    {
-        return '对象存储 · 又拍云 USS';
-    }
 }

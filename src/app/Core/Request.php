@@ -71,11 +71,6 @@ class Request
         return str_contains($accept, 'application/json');
     }
 
-    public function isPost(): bool
-    {
-        return $this->method === 'POST';
-    }
-
     public function validate(array $rules): array
     {
         $errors = [];

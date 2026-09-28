@@ -43,7 +43,7 @@ interface StorageInterface
     public function hashFile(string $remotePath): ?string;
 
     /**
-     * v1.5.0-beta.2: 实测远程对象的字节数。
+     * v1.5.0-beta.3 迭代: 各档缩略图实测字节数。
      *
      * 用途：缩略图的字节数在生成时入库（`thumb_bytes` 列），**存量行**需要补全，
      * 而字节数无法从其它数据推导（取决于质量设置与 libwebp 版本）→ 只能实测。
@@ -52,18 +52,4 @@ interface StorageInterface
      * **绝不能当成 0**（否则接口会把「不知道」谎报成「空文件」）。
      */
     public function size(string $remotePath): ?int;
-
-
-
-    /**
-     * Get driver configuration for display
-     * @return array
-     */
-    public static function configFields(): array;
-
-    /**
-     * Get driver name
-     * @return string
-     */
-    public static function name(): string;
 }

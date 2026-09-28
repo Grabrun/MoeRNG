@@ -481,15 +481,4 @@ class S3Driver implements StorageInterface
             'cdn'      => ['label' => 'CDN 加速域名（可选）', 'type' => 'text', 'placeholder' => 'https://cdn.example.com'],
         ];
     }
-
-    /** Required by StorageInterface; returns the per-provider field defs. */
-    public static function configFields(): array
-    {
-        return self::providerFieldDefs();
-    }
-
-    public static function name(): string
-    {
-        return '对象存储 (S3/OSS/COS)';
-    }
 }
