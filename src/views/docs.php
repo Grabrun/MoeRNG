@@ -165,7 +165,7 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
                         需要长期稳定的直链，请给存储实例配置 CDN 域名。
                     </p>
                     <p class="text-muted text-small">
-                        另外：<code>/random</code> 的响应带 <code>Cache-Control: no-store</code>。这不是保守设置而是**功能性要求** ——
+                        另外：<code>/random</code> 的响应带 <code>Cache-Control: no-store</code>。这不是保守设置而是<strong>功能性要求</strong> ——
                         该接口的 URL 固定、语义却是「每次换一张」，一旦被缓存，随机性会在缓存期内整体失效。
                     </p>
 

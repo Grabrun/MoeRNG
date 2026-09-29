@@ -40,7 +40,7 @@
                         <div class="label">服务可用性</div>
                     </div>
                 </div>
-                <p class="stats-note">以上为实时统计，图片与分类数据随后台更新</p>
+                <p class="stats-note">实时统计 · 图片与分类随后台更新</p>
             </div>
 
             <!-- 右栏：抽图舞台（hero-stage 卡片化，设计核心交互） -->

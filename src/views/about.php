@@ -27,7 +27,7 @@
                     <?php if (!empty($githubUrl)): ?>
                     <a href="<?= h($githubUrl) ?>" target="_blank" rel="noopener nofollow" class="btn btn-sm btn-outline"><?= icon('external-link', 16) ?> GitHub 仓库</a>
                     <?php else: ?>
-                    <p class="text-muted text-small">仓库地址可在「系统设置 → 站点信息 → GitHub 仓库地址」中配置。</p>
+                    <p class="text-muted text-small">GitHub 仓库地址暂未公开，可在后台「系统设置 → 站点信息」中配置。</p>
                     <?php endif; ?>
                 </div>
             </div>

@@ -30,7 +30,7 @@ define('MOERNG_ROOT', __DIR__);
 // v2.0.0-beta.7: 覆盖安装重置修复 —— src/config/*.php 整体移出版本控制（installed 标志/凭据均为安装器生成的本地状态），build_release 归档排除 config/*.php，覆盖部署不再把 installed 重置回安装向导。
 // v2.0.0-beta.8: 字体 CSP 修复 —— miaoda.feishu.cn 字体 CSS 入口的 @font-face 实际指向 sf3-scmcdn-cn.feishucdn.com 分片（两跳分离），font-src 放行字体文件域名，思源字体恢复正常加载。
 if (!defined('APP_VERSION')) {
-    define('APP_VERSION', '2.0.0-beta.13');
+    define('APP_VERSION', '2.0.0-beta.14');
 }
 
 // v1.3.1 修复: 资源缓存戳 = APP_VERSION + 静态资源 mtime。此前 ?v= 只跟版本号，

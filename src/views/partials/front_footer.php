@@ -7,7 +7,7 @@
     <!-- Footer -->
     <footer class="footer">
             <p><?= h($siteName) ?> <?= h($copyright) ?></p>
-            <p class="mt-1">MoeRNG v<?= APP_VERSION ?> &mdash; Open-source under MIT License</p>
+            <p class="mt-1">MoeRNG v<?= APP_VERSION ?> &middot; 开源项目（MIT License）</p>
             <?php if (!empty($icpNumber)): ?>
             <p class="mt-1"><a href="https://beian.miit.gov.cn/" target="_blank" rel="nofollow noopener" class="footer-link"><?= h($icpNumber) ?></a></p>
             <?php endif; ?>

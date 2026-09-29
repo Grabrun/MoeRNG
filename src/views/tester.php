@@ -21,7 +21,7 @@
                         <label for="test-type">返回格式</label>
                         <select class="form-control" id="test-type">
                             <option value="json">JSON</option>
-                            <option value="redirect">Redirect (图片直出)</option>
+                            <option value="redirect">重定向（直接输出图片）</option>
                         </select>
                     </div>
                     <!-- v1.5.0-beta.2: 图片尺寸。首项 value="" 表示**不传 size** ——
@@ -38,7 +38,7 @@
                         </select>
                     </div>
                     <div class="tester-actions">
-                        <button class="btn btn-primary" id="test-run">Send Request</button>
+                        <button class="btn btn-primary" id="test-run">发送请求</button>
                     </div>
                 </div>
                 <p class="text-muted text-small">
@@ -57,7 +57,7 @@
                     <button type="button" class="copy-btn copy-btn-inline" data-copy="test-curl" aria-label="复制 cURL" title="复制 cURL"><?= icon('copy', 14) ?></button>
                 </p>
                 <div class="preview-box" id="test-result">
-                    <span class="text-muted">点击「Send Request」查看结果</span>
+                    <span class="text-muted">点击「发送请求」查看结果</span>
                 </div>
                 <div class="test-meta hidden" id="test-meta">
                     <span id="test-status" class="badge"></span>
