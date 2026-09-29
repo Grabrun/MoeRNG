@@ -48,6 +48,9 @@ class Application
 
         // v1.2.1 security: baseline security headers on every response.
         // CSP uses nonce for script-src and style-src (see CspNonce).
+        // v2.0.0-beta.8: font-src 放行 sf3-scmcdn-cn.feishucdn.com —— miaoda.feishu.cn 的
+        // css2 入口返回的 @font-face 实际指向 feishucdn.com 的 woff2 分片（两跳分离），
+        // 此前仅放行入口域名导致所有字体被 CSP 拦截（控制台批量报错、回退系统字体）。
         // Inline theme JS and <style> blocks carry the nonce so they are
         // allowed while the CSP otherwise blocks all untrusted scripts/styles.
         // Re-sent after DB load with storage CDN domains (see below).
@@ -131,7 +134,7 @@ class Application
             }
         }
         $nonce = \App\Core\CspNonce::token();
-        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}'; style-src 'self' 'nonce-{$nonce}' https://miaoda.feishu.cn; font-src 'self' https://miaoda.feishu.cn; img-src {$imgSrc}; connect-src 'self'; frame-ancestors 'self'");
+        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}'; style-src 'self' 'nonce-{$nonce}' https://miaoda.feishu.cn; font-src 'self' https://miaoda.feishu.cn https://sf3-scmcdn-cn.feishucdn.com; img-src {$imgSrc}; connect-src 'self'; frame-ancestors 'self'");
     }
 
     /**

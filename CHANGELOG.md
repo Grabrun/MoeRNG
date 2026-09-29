@@ -2,6 +2,19 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0-beta.8] - 2026-09-29
+
+> 字体 CSP 修复：思源宋体/黑体恢复正常加载（此前被内容安全策略批量拦截，页面回退系统字体）。
+
+### 🐛 修复
+
+- **字体加载被 CSP 拦截**：M2 引入的字体镜像 `miaoda.feishu.cn` 的 `css2` 入口返回的 `@font-face` 实际指向 `sf3-scmcdn-cn.feishucdn.com` 的 woff2 分片（入口与字体文件两跳分离）；CSP `font-src` 此前仅放行入口域名，导致全部 505 个字体分片被浏览器阻止（控制台批量报错 `violates font-src 'self' https://miaoda.feishu.cn`，页面回退系统字体）
+- **修复**：`font-src 'self' https://miaoda.feishu.cn https://sf3-scmcdn-cn.feishucdn.com` —— 放行实测唯一的字体文件域名（精确最小化，未使用宽泛子域通配）
+
+### ✅ 回归
+
+- syntax 2912/2912；API 契约 67 项、design_contract 63 项、page_matrix / hero_stats 全绿
+
 ## [2.0.0-beta.7] - 2026-09-28
 
 > 覆盖安装重置修复：发布包与仓库不再携带 `config/app.php`（`installed=false`），覆盖部署不再把已安装站点重置回安装向导。
