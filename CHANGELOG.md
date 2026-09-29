@@ -2,6 +2,11 @@
 
 本文件记录 MoeRNG 各版本的变更。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+> **版本谱系说明**：`v1.5.0-beta.1` 是 2026-09-13 开启的开发线（本地媒体根移出 web 根、WebP 转换、
+> 缩略图字节回填、API 尺寸选择等能力均在此线实装），开线提交 `b91204e` 明确「发布仍等待许可」；
+> 随后该线被 v2 重构取代（`c888590` 取消全部 v1.5 兼容与迁移）——**v1.5 系列从未正式发版**，
+> 无 tag / 无 GitHub Release，其能力已并入 v2.0.0-beta 系列。
+
 ## [2.0.0-beta.8] - 2026-09-29
 
 > 字体 CSP 修复：思源宋体/黑体恢复正常加载（此前被内容安全策略批量拦截，页面回退系统字体）。
