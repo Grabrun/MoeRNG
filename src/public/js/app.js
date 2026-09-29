@@ -1991,9 +1991,9 @@ function initQueuePage() {
                 // 完成后同步按钮可用性（无需等 reload 才变灰）
                 const s2 = last.stats;
                 if (startBtn) startBtn.disabled = Number(s2.pending) === 0;
-                if (requeueBtn) requeueBtn.disabled = Number(s2.failed) === 0;
+                // v2.0.0-beta.13: 「重试失败项」合并主图失败 + 缩略图元数据失败
+                if (requeueBtn) requeueBtn.disabled = Number(s2.failed) === 0 && Number(s2.meta_retryable) === 0;
                 if (thumbBtn) thumbBtn.disabled = Number(s2.no_thumb) === 0;
-                if (retryMetaBtn) retryMetaBtn.disabled = Number(s2.meta_retryable) === 0;
             }
         } else if (t.phase === 'inflight' && last.stats) {
             // 请求在途：服务端此刻正把至多 batch 行置为 processing —— 如实显示
@@ -2034,7 +2034,6 @@ function initQueuePage() {
 
     // 补全历史缩略图（不改变处理状态，图片始终可见）
     const thumbBtn = document.getElementById('queue-backfill-thumbs');
-    const retryMetaBtn = document.getElementById('queue-retry-meta');
     thumbBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
         uploading = true;
@@ -2051,34 +2050,6 @@ function initQueuePage() {
             if (thumbBtn) thumbBtn.disabled = false;
             if (box) setTimeout(() => box.classList.add('hidden'), 1200);
             // v1.4.0-beta.2: 同上 —— 重新取快照后按真实状态刷新按钮
-            await refreshStats();
-            refreshButtons();
-        }
-    });
-
-    // v1.5.0-beta.3: 重试「拿不到对象长度」的元数据项
-    retryMetaBtn?.addEventListener('click', async function() {
-        if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
-        uploading = true;
-        if (retryMetaBtn) retryMetaBtn.disabled = true;
-        if (box) { box.classList.remove('hidden'); setUI(0, '重试元数据补全…', ''); }
-        const before = Number((last.stats && last.stats.meta_retryable) || 0);
-        try {
-            const res = await runThumbMetaRetry(setUI);
-            await refreshStats();
-            const after = Number((last.stats && last.stats.meta_retryable) || 0);
-            const fixed = Math.max(0, before - after);
-            showToast('元数据重试完成：扫描 ' + res.scanned + ' 行，已重试 ' + res.retried + ' 行'
-                + '，补齐 ' + fixed + ' 张' + (after > 0 ? '，仍有 ' + after + ' 张读不到对象长度' : ''),
-                after > 0 ? 'error' : 'success', 9000);
-            // 有行仍读不到时**不刷新页面** —— 否则操作员看不到刚才的提示语；
-            // 统计卡片已由 refreshStats() 就地更新。
-            if (after === 0) setTimeout(() => window.location.reload(), 1500);
-        } catch (e) {
-            showToast('元数据重试异常: ' + e.message, 'error', 10000);
-        } finally {
-            uploading = false;
-            if (box) setTimeout(() => box.classList.add('hidden'), 1200);
             await refreshStats();
             refreshButtons();
         }
@@ -2127,14 +2098,13 @@ function initQueuePage() {
             if (startBtn) startBtn.disabled = uploading;
             if (requeueBtn) requeueBtn.disabled = uploading;
             if (thumbBtn) thumbBtn.disabled = uploading;
-            if (retryMetaBtn) retryMetaBtn.disabled = uploading;
             if (clearBtn) clearBtn.disabled = uploading;
             return;
         }
         if (startBtn) startBtn.disabled = uploading || Number(s.pending) === 0;
-        if (requeueBtn) requeueBtn.disabled = uploading || Number(s.failed) === 0;
+        // v2.0.0-beta.13: 「重试失败项」= 主图失败项 + 缩略图元数据失败项
+        if (requeueBtn) requeueBtn.disabled = uploading || (Number(s.failed) === 0 && Number(s.meta_retryable) === 0);
         if (thumbBtn) thumbBtn.disabled = uploading || Number(s.no_thumb) === 0;
-        if (retryMetaBtn) retryMetaBtn.disabled = uploading || Number(s.meta_retryable) === 0;
         if (clearBtn) clearBtn.disabled = uploading || (Number(s.pending) + Number(s.failed) === 0);
     }
 
@@ -2253,26 +2223,48 @@ function initQueuePage() {
         if (s && (Number(s.pending) > 0 || Number(s.processing) > 0)) startPolling();
     })();
 
+    // v2.0.0-beta.13: 「重试失败项」= 主图失败项重新入队 + 处理 + 缩略图元数据失败项定向重试
     requeueBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
         uploading = true;
+        if (requeueBtn) requeueBtn.disabled = true;
+        if (box) { box.classList.remove('hidden'); setUI(0, '重试失败项…', ''); }
         try {
+            // ① 主图失败项（process_status='failed'）重新入队
             const fd = new FormData();
             fd.append('_csrf_token', getCsrfToken());
             const r = await fetch('/admin/images/requeue-failed', {
                 method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
             });
-            const j = await parseJsonResponse(r);
-            if (!j || !j.success) { showToast('重试失败: ' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
-            if (j.requeued === 0) { showToast('没有可重试的失败项', 'success', 5000); return; }
-            showToast('已重新入队 ' + j.requeued + ' 张，开始处理…', 'success', 4000);
+            const j = await parseJsonResponse(r, '重试失败项');
+            if (!j || !j.success) throw new Error((j && j.error) || '未知错误');
+
+            // 快路径：主图失败与元数据失败都为空时无事可做
+            if (Number(j.requeued) === 0 && (!last.stats || Number(last.stats.meta_retryable) === 0)) {
+                showToast('没有需要重试的失败项', 'success', 4000);
+                uploading = false;
+                return;
+            }
+
+            // ② 处理队列（含刚入队的失败项；进度条 + 统计联动）
+            const res = await runProcessQueue(setUI, onTick);
+            // ③ 缩略图元数据失败项（partial/failed）定向重试
+            const mres = await runThumbMetaRetry(setUI);
+            showToast('重试失败项完成：已重新处理 ' + res.done + ' 张'
+                + (res.failed ? '，仍失败 ' + res.failed + ' 张' : '')
+                + (mres.retried ? '；元数据补齐 ' + mres.retried + ' 张' : ''),
+                res.failed ? 'error' : 'success', 9000);
+            setTimeout(() => window.location.reload(), 1500);
         } catch (e) {
-            showToast('重试请求异常: ' + e.message, 'error', 8000);
+            showToast('重试失败项异常: ' + e.message, 'error', 10000);
+        } finally {
             uploading = false;
-            return;
+            if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+            await refreshStats();
+            refreshButtons();
+            const sAfter = last.stats;
+            if (sAfter && (Number(sAfter.pending) > 0 || Number(sAfter.processing) > 0)) startPolling();
         }
-        uploading = false;
-        runQueue('重试处理中…');
     });
 }
 
