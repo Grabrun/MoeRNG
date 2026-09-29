@@ -126,7 +126,7 @@ function initApiTester() {
     runBtn.addEventListener('click', async function() {
         // v1.2.1-beta.3: 守卫式禁用 + 视觉 Loading 反馈（防止用户在异步完成前重复点击）
         runBtn.disabled = true;
-        runBtn.textContent = 'Loading...';
+        runBtn.textContent = '加载中…';
         resultBox.innerHTML = '<div class="spinner"></div>';
         if (metaBox) metaBox.classList.add('hidden');
 
@@ -154,7 +154,7 @@ function initApiTester() {
                 // CORS for the <img> render path, and correctly reports
                 // load/error so the tester reflects real-world usability.
                 const tester = new Image();
-                tester.alt = 'Random Image';
+                tester.alt = '随机图片';
                 tester.style.cssText = 'max-width:100%;max-height:400px;object-fit:contain;';
                 tester.onload = function() {
                     const ms = performance.now() - t0;
@@ -162,8 +162,8 @@ function initApiTester() {
                     tester.style.cssText = 'max-width:100%;max-height:400px;object-fit:contain;display:block;margin:0 auto;';
                     resultBox.innerHTML = '';
                     resultBox.appendChild(tester);
-                    showMeta(200, 'OK', ms);
-                    saveTestHistory(apiPath, '302 → 图片 (200 OK, ' + formatDuration(ms) + ')');
+                    showMeta(200, '成功', ms);
+                    saveTestHistory(apiPath, '302 → 图片（200 成功，' + formatDuration(ms) + '）');
                     resolveRequest();
                 };
                 tester.onerror = function() {
@@ -174,8 +174,8 @@ function initApiTester() {
                         + '浏览器 fetch 在跨域时会拦截（Failed to fetch）。'
                         + '\n本测试改用 img 探测，已绕开此限制。'
                         + '\n\n请求 URL：' + apiPath + '</pre>';
-                    showMeta(0, 'Failed', ms);
-                    saveTestHistory(apiPath, '加载失败 (' + formatDuration(ms) + ')');
+                    showMeta(0, '失败', ms);
+                    saveTestHistory(apiPath, '加载失败（' + formatDuration(ms) + '）');
                     resolveRequest();
                 };
                 // v1.2.1-beta.3 修复: 重复点击无请求 —— 服务器 redirect 响应未带
@@ -203,12 +203,12 @@ function initApiTester() {
                         '<pre style="color:var(--danger)">请求失败（HTTP ' + resp.status + '）'
                         + (hint ? '\n' + hint : '\n接口返回了非 JSON 错误体 —— 多为网关/伪静态（URL Rewrite）未配置，请求未到达应用层。')
                         + '\n\n原始响应：\n' + pretty + '</pre>';
-                    showMeta(resp.status, resp.statusText || 'Error', ms);
+                    showMeta(resp.status, resp.statusText || '错误', ms);
                     saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
                     resolveRequest();
                 } else {
                     resultBox.innerHTML = '<pre>' + pretty + '</pre>';
-                    showMeta(resp.status, resp.statusText || 'OK', ms);
+                    showMeta(resp.status, resp.statusText || '成功', ms);
                     saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
                     resolveRequest();
                 }
@@ -217,15 +217,15 @@ function initApiTester() {
             await requestDone;
         } catch(e) {
             const ms = performance.now() - t0;
-            resultBox.innerHTML = '<pre style="color:var(--danger)">Error: ' + e.message + '</pre>';
-            showMeta(0, 'Network Error', ms);
-            saveTestHistory(apiPath, 'Error: ' + e.message);
+            resultBox.innerHTML = '<pre style="color:var(--danger)">错误：' + e.message + '</pre>';
+            showMeta(0, '网络错误', ms);
+            saveTestHistory(apiPath, '错误：' + e.message);
             // v1.2.1-beta.3 修复: 异常分支也要 resolve，否则 await requestDone 永远挂起 → 按钮卡 Loading
             resolveRequest();
         }
 
         runBtn.disabled = false;
-        runBtn.textContent = 'Send Request';
+        runBtn.textContent = '发送请求';
     });
 }
 
@@ -346,7 +346,7 @@ function initRandomDemo() {
         // 统一按「含 query 即临时签名链接」判断。
         const isSigned = url.includes('?') || url.includes('&');
         if (metaEl) {
-            metaEl.textContent = (isSigned ? '临时签名链接' : '永久链接') + (category ? ' · 分类: ' + category : '');
+            metaEl.textContent = (isSigned ? '临时签名链接' : '永久链接') + (category ? ' · 分类：' + category : '');
             metaEl.classList.remove('hidden');
         }
         // v1.2.1-beta.3 迭代: gacha 抽卡动效 — 霓虹边框闪动 + 过冲弹入（可关）。
