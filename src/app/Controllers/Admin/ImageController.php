@@ -789,7 +789,7 @@ class ImageController extends Controller
         $this->validateCsrf();
         $this->jsonFatalGuard('process-queue');   // 致命错误 → 合法 JSON（而非空响应）
 
-        $batchSize = max(1, min(10, (int) $request->input('batch', '3')));
+        $batchSize = max(1, min(10, (int) $request->input('batch', '10')));
 
         try {
             $pdo = \App\Core\Database::getInstance();
@@ -829,7 +829,27 @@ class ImageController extends Controller
             // 注意：processing 行对前台不可见（前台只出 process_status='done'）。
             if ($rows !== []) {
                 $ids = array_map(static fn($r) => (int) $r['id'], $rows);
-                $pdo->exec("UPDATE `images` SET `process_status` = 'processing' WHERE `id` IN (" . implode(',', $ids) . ")");
+                // v2.0.0-beta.12: 标记改为条件更新（AND process_status='pending'）——
+                // 并发请求（上传完成 + 手动按钮同点）不会重复拾取同一批。
+                // 若本批已被并发方抢先标记（命中行数 < 本批行数），整体放弃本批，
+                // 下次轮询自然拾取剩余（返回 remaining 让前端继续循环）。
+                $marked = $pdo->exec(
+                    "UPDATE `images` SET `process_status` = 'processing' "
+                    . "WHERE `id` IN (" . implode(',', $ids) . ") AND `process_status` = 'pending'"
+                );
+                if ($marked !== count($ids)) {
+                    $this->json([
+                        'success' => true,
+                        'done' => 0,
+                        'failed' => 0,
+                        'skipped' => 0,
+                        'remaining' => (int) $pdo->query(
+                            "SELECT COUNT(*) FROM `images` WHERE `process_status` = 'pending'"
+                        )->fetchColumn(),
+                        'results' => [],
+                    ]);
+                    return;
+                }
                 // 交给 jsonFatalGuard 的 shutdown 钩子：万一本批中途致命错误，
                 // 它会把这几行标记为 failed（否则队列会永久卡在同一批上）。
                 self::$inflightIds = $ids;
@@ -982,7 +1002,7 @@ class ImageController extends Controller
     {
         $this->validateCsrf();
         $this->jsonFatalGuard('backfill-thumbs');   // 同上（同样做 GD 解码）
-        $batchSize = max(1, min(10, (int) $request->input('batch', '3')));
+        $batchSize = max(1, min(10, (int) $request->input('batch', '10')));
 
         // v1.5.0-beta.3: 一个端点、两个范围（按 processing_state 区分「补什么」）：
         //   scope=pending（默认）—— 处理 thumb_meta 为 pending 的行：生成缩略图 / 补字节数；

@@ -1316,37 +1316,11 @@ var uploading = false;
 // ── v1.3.2 迭代: 哈希回填共享循环 + 系统设置健康检查面板 ──
 // 顶层作用域：图片管理页与设置页共用 runHashBackfill；initHealthPanel
 // 由 DOMContentLoaded 调用（元素不存在时 optional chaining 零副作用）。
-// v1.3.2-beta.2: 图片页加载时静默清处理队列积压（有积压才显示浮层进度条；
-// 管理员浏览图片页即驱动异步管线，无需额外 cron）。
-setTimeout(async function() {
-    if (uploading) return;
-    const qbox = document.getElementById('backfill-progress');
-    const qfill = document.getElementById('backfill-fill');
-    const qtext = document.getElementById('backfill-text');
-    const qdetail = document.getElementById('backfill-detail');
-    const setUI = function(pct, t, d) {
-        if (qfill) qfill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
-        if (qtext) qtext.textContent = t;
-        if (qdetail !== undefined && qdetail) qdetail.textContent = d;
-    };
-    try {
-        uploading = true;
-        if (qbox) qbox.classList.remove('hidden');
-        const res = await runProcessQueue(setUI);
-        if (res.done > 0) {
-            showToast('积压图片处理完成：已入库 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 6000);
-            setTimeout(() => window.location.reload(), 1200);
-        }
-    } catch (e) {
-        // v1.3.3-beta.1 修复: 原先完全静默 —— 一旦此处出错（函数未定义 / 接口异常）
-        // 连控制台都没有线索，线上表现为"图片页什么也没发生"。改为告警。
-        if (window.console) console.warn('process-queue drain failed:', (e && e.message) ? e.message : e);
-    }
-    finally {
-        uploading = false;
-        if (qbox) setTimeout(() => qbox.classList.add('hidden'), 800);
-    }
-}, 1500);
+// v2.0.0-beta.12: 移除「页面加载静默清队列积压」的自动触发。
+// 处理队列只在两个时机消费（见 ImageController::processQueue）：
+//   ① 上传批次完成后自动跑一次（finish → runProcessQueue）；
+//   ② 用户手动触发（图片处理页「处理」按钮 / 图片管理页「重试失败项」）。
+// 历史积压可用 CLI：php src/cli/backfill-thumbs.php（不依赖页面访问）。
 
 
 // ── v1.3.2 迭代: 历史图片哈希回填（管理员，分批轮询 + 进度条）─────────
@@ -1388,7 +1362,7 @@ async function parseJsonResponse(resp, label) {
 // setUI(pct, text, detail) 控制进度条；onTick({phase, stats, ...}) 让调用方实时刷新
 // 状态卡片（phase: start | inflight | batch | done）。
 async function runProcessQueue(setUI, onTick) {
-    const BATCH = 3;
+    const BATCH = 10;   // v2.0.0-beta.12: 3 → 10（与服务端默认对齐，积压轮数减少 2/3）
     let totalDone = 0, totalFailed = 0, totalSkipped = 0;
     let scopeTotal = null;   // 本轮范围（开始时的待处理数），progress 以它为分母
     let lastStats = null;
@@ -1457,7 +1431,7 @@ async function runBackfillThumbs(setUI) {
     for (;;) {
         const fd = new FormData();
         fd.append('_csrf_token', getCsrfToken());
-        fd.append('batch', '3');
+        fd.append('batch', '10');   // v2.0.0-beta.12: 3 → 10（与服务端默认对齐）
         const r = await fetch('/admin/images/backfill-thumbs', {
             method: 'POST', body: fd,
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
