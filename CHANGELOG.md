@@ -7,6 +7,20 @@
 > 随后该线被 v2 重构取代（`c888590` 取消全部 v1.5 兼容与迁移）——**v1.5 系列从未正式发版**，
 > 无 tag / 无 GitHub Release，其能力已并入 v2.0.0-beta 系列。
 
+## [2.0.0-beta.9] - 2026-09-29
+
+### 前端性能优化（不影响功能）
+
+- P1 零感知层：字体 preconnect ×2（miaoda.feishu.cn + sf3-scmcdn-cn.feishucdn.com）与 dns-prefetch；
+  .htaccess 静态资源长缓存（public, max-age=31536000, immutable，ASSET_VER 指纹安全，Apache 对齐 nginx）
+- P2 渲染层：字体 CSS 异步化（media=print + CSP nonce 合规脚本立即切回 all，display=swap 兜底无空白）
+- P3 结构性：前台 JS 拆分 front.js（24.5KB 子集：toast/copyText/API 测试/随机图预览/reveal/统计滚动/动态样式），
+  前台 JS 传输 157KB→56KB（gzip 后约省 30KB+）；后台 app.js 保持原样零回归
+- 维护：layout_contract 版本断言语义化（v2 beta 线，不再写死 beta.2）；新增 docs/scripts/verify_front_runtime.js
+  （front.js 前台 DOM 运行时等价验证）；新增 docs/scripts/patch_m6_perf.py（本次变更的可复现脚本）
+- 回归：syntax 2912/2912、design_contract 63、api_contract 67、hero_stats 36、perf_contract 74、
+  layout_contract 125、page/click/xref/ref 全绿、front.js 运行时链零异常
+
 ## [2.0.0-beta.8] - 2026-09-29
 
 > 字体 CSP 修复：思源宋体/黑体恢复正常加载（此前被内容安全策略批量拦截，页面回退系统字体）。

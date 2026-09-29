@@ -18,7 +18,7 @@
     </div>
 
     <script src="/public/js/helpers.js?v=<?= ASSET_VER ?>"></script>
-    <script src="/public/js/app.js?v=<?= ASSET_VER ?>"></script>
+    <script src="/public/js/front.js?v=<?= ASSET_VER ?>"></script>
 
 </body>
 </html>

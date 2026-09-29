@@ -5,7 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= $csrf_token ?>">
     <title><?= h($title ?? '仪表盘') ?> - MoeRNG Admin</title>
-    <link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+    <link rel="preconnect" href="https://miaoda.feishu.cn" crossorigin>
+    <link rel="preconnect" href="https://sf3-scmcdn-cn.feishucdn.com" crossorigin>
+    <link rel="dns-prefetch" href="https://miaoda.feishu.cn">
+    <link rel="dns-prefetch" href="https://sf3-scmcdn-cn.feishucdn.com">
+    <!-- v2.0.0-beta.9: 字体 CSS 异步化 —— media=print 使其不阻塞首屏渲染，
+        紧随其后的 nonce 脚本立即切回 all（CSP script-src 禁 inline onload，此写法合规）。
+        display=swap 保证字体到达前以系统字体渲染，无空白。 -->
+    <link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" id="font-css" media="print">
+    <script<?= CspNonce::attr() ?>>
+    (function(){var l=document.getElementById('font-css');if(l){l.media='all';}})();
+    </script>
     <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>"></head>
 <body>
     <div class="toast-container"></div>

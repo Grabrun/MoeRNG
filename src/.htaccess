@@ -49,3 +49,15 @@ RewriteRule ^(.*)$ index.php [QSA,L]
     php_value post_max_size 55M
     php_value max_execution_time 120
 </IfModule>
+
+# -----------------------------------------------------------------------------
+# v2.0.0-beta.9 前端性能优化: 静态资源长缓存。
+# 所有 URL 均带 ASSET_VER 指纹（APP_VERSION.mtime），内容不可变，可安全 immutable；
+# 图片缩略图/原图为生成后不可变文件。Apache 部署补齐，nginx 见 nginx.conf.example。
+# 依赖 mod_headers；模块缺失时静默跳过，不影响站点。
+# -----------------------------------------------------------------------------
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|mjs|webp|png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+</IfModule>
