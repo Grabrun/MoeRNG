@@ -134,7 +134,7 @@ class Application
             }
         }
         $nonce = \App\Core\CspNonce::token();
-        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}'; style-src 'self' 'nonce-{$nonce}' https://miaoda.feishu.cn; font-src 'self' https://miaoda.feishu.cn https://sf3-scmcdn-cn.feishucdn.com; img-src {$imgSrc}; connect-src 'self'; frame-ancestors 'self'");
+        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}'; style-src 'self' 'nonce-{$nonce}' https://miaoda.feishu.cn; font-src 'self' https://miaoda.feishu.cn https://sf3-scmcdn-cn.feishucdn.com; img-src {$imgSrc}; connect-src 'self' https://miaoda.feishu.cn https://sf3-scmcdn-cn.feishucdn.com; frame-ancestors 'self'");
     }
 
     /**

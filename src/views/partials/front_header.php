@@ -58,8 +58,8 @@ $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。基于 RESTful �
         紧随其后的 nonce 脚本立即切回 all（CSP script-src 禁 inline onload，此写法合规）。
         display=swap 保证字体到达前以系统字体渲染，无空白。 -->
     <link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" id="font-css" media="print">
-    <script<?= CspNonce::attr() ?>>
-    (function(){var l=document.getElementById('font-css');if(l){l.media='all';}})();
+    <script<?= \App\Core\CspNonce::attr() ?>>
+    try{var l=document.getElementById('font-css');if(l){l.media='all';}}catch(e){}
     </script>
     <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>">
 </head>
