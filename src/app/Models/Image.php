@@ -620,14 +620,41 @@ class Image extends Model
 
     public function delete(): bool
     {
-        // Delete from the storage backend this image actually lives on.
+        // v2.0.0-beta.17 修复: 此前只删除主文件 `path` —— 同前缀的三档缩略图
+        // （thumb-sm/md/lg.webp）残留在对象存储，删除后文件变孤儿。
+        // 现在按 `thumbs` JSON（权威登记，thumb_path 列 = md 冗余）逐 key 删除。
         $storage = self::driverFor($this);
-        try {
-            $storage->delete($this->path);
-        } catch (\Throwable) {
-            // Storage deletion failure should not block DB deletion
+        $failed = [];
+        foreach ($this->allStorageKeys() as $key) {
+            try {
+                if (!$storage->delete($key)) {
+                    $failed[] = $key;
+                }
+            } catch (\Throwable) {
+                $failed[] = $key;
+            }
         }
-        return parent::delete();
+        $deleted = parent::delete();
+        if ($deleted && !empty($failed)) {
+            // 存储删除失败但 DB 已删：文件将成为孤儿，记审计便于排查。
+            \App\Models\AuditLog::record('image_delete_storage_failed', [
+                'id'   => (int) $this->attributes['id'],
+                'paths' => $failed,
+            ]);
+        }
+        return $deleted;
+    }
+
+    /** 主文件 + 全部缩略图的存储 key（去空去重）。 */
+    private function allStorageKeys(): array
+    {
+        $keys = [$this->path];
+        foreach ($this->thumbMap() as $key) {
+            if (is_string($key) && $key !== '') {
+                $keys[] = $key;
+            }
+        }
+        return array_values(array_unique($keys));
     }
 
     /**
