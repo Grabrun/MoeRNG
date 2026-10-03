@@ -10,12 +10,12 @@
             <!-- 左栏：品牌 banner + 文案 + CTA + 统计 -->
             <div class="hero-left">
                 <!--: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
-                <span class="hero-kicker">自托管 · 真随机 · 治愈感</span>
+                <span class="hero-kicker">自托管 · 真随机 · 二次元治愈系</span>
                 <picture class="hero-banner-wrap">
                     <source srcset="/assets/banner.webp" type="image/webp">
                     <img class="hero-banner" src="/assets/banner.png" width="1400" height="466" alt="<?= h($siteName) ?>随机二次元图片 API 服务" fetchpriority="high">
                 </picture>
-                <p class="hero-sub"><?= h($siteSlogan) ?>。真随机取图、多级分类、JSON 与重定向双模式——为二次元爱好者准备的治愈感，为开发者准备的效率感。</p>
+                <p class="hero-sub"><?= h($siteSlogan) ?>。调用一次，随机返回一张治愈系二次元图片：JSON 结构化数据或 302 重定向直出，开发者拿来即用，站主完全自控。</p>
                 <div class="btn-group">
                     <a href="/docs" class="btn btn-primary btn-lg">API 文档</a>
                     <a href="/tester" class="btn btn-outline btn-lg">在线测试</a>
@@ -48,7 +48,7 @@
                 <!-- Random image demo: proves the API works right from the hero -->
                 <div class="random-demo reveal" role="region" aria-label="随机图片生成器">
                     <div class="rd-preview">
-                        <div class="rd-placeholder" id="rd-placeholder">点「试试手气」，从 API 随机取一张图</div>
+                        <div class="rd-placeholder" id="rd-placeholder">点「试试手气」，随机取一张看看效果</div>
                         <img id="rd-image" src="" alt="随机图片（点击查看大图）" class="rd-image-preview hidden">
                         <div class="rd-loading hidden" id="rd-loading"><span class="spinner"></span></div>
                     </div>
@@ -80,27 +80,27 @@
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('dice', 28) ?></div>
                 <h3>真随机算法 <span class="badge badge-primary">核心</span></h3>
-                <p>数据库级 ORDER BY RAND() 确保每次请求独立随机的图片，无缓存无重复规律</p>
+                <p>数据库级 ORDER BY RAND()，每次请求独立取图：无缓存、无队列、无规律可循</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('folder-tree', 28) ?></div>
                 <h3>多级分类 <span class="badge badge-primary">核心</span></h3>
-                <p>无限层级分类树，API 指定分类返回该分类及其子分类下随机图片</p>
+                <p>分类可无限嵌套，指定一个分类，连同它的全部子分类一起参与随机取图</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('zap', 28) ?></div>
                 <h3>高速响应</h3>
-                <p>轻量 PHP 核心，零重型框架，API 平均响应时间 &lt; 50ms</p>
+                <p>轻量 PHP 核心、零重型框架，API 平均响应时间低于 50ms</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('shuffle', 28) ?></div>
                 <h3>双模式返回</h3>
-                <p>JSON 结构化数据或 302 重定向直接输出图片，灵活适配不同场景</p>
+                <p>JSON 结构化数据，或 302 重定向直接输出图片——一套接口适配所有场景</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('shield', 28) ?></div>
                 <h3>速率限制</h3>
-                <p>令牌桶算法限流，分级配额，响应头实时返回剩余请求数</p>
+                <p>令牌桶算法限流、分级配额，剩余额度随响应头实时返回</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('cloud', 28) ?></div>

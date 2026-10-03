@@ -5,13 +5,13 @@
     <div class="container">
         <section id="gallery" class="section reveal">
             <h2 class="section-title">图库</h2>
-            <p class="text-muted mb-3">按分类浏览站内图片 · 每个分类随机展示 12 张，刷新可换一批</p>
+            <p class="text-muted mb-3">按分类浏览站内图片，每类随机展示 12 张——刷新页面，换一批新的。</p>
 
             <?php if (empty($sections)): ?>
             <div class="empty-state">
                 <div class="empty-icon"><?= icon('image', 32) ?></div>
-                <h3>暂无图片</h3>
-                <p class="text-muted">图库还是空的，先到管理后台上传几张吧。</p>
+                <h3>图库还是空的</h3>
+                <p class="text-muted">还没有任何图片——去管理后台上传第一批，这里马上就有内容了。</p>
             </div>
             <?php else: ?>
             <?php foreach ($sections as $section): ?>

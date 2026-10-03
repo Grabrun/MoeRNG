@@ -35,21 +35,21 @@
                                 <td>string</td>
                                 <td>否</td>
                                 <td>-</td>
-                                <td>分类标识(slug)，指定后从该分类及子分类中随机返回</td>
+                                <td>分类标识（slug），指定后从该分类及子分类中随机返回</td>
                             </tr>
                             <tr>
                                 <td><code>type</code></td>
                                 <td>string</td>
                                 <td>否</td>
                                 <td><code>json</code></td>
-                                <td>返回类型：<code>json</code> 返回结构化数据，<code>redirect</code> 302重定向至图片</td>
+                                <td>返回类型：<code>json</code> 返回结构化数据，<code>redirect</code> 302 重定向至图片</td>
                             </tr>
                             <tr>
                                 <td><code>size</code></td>
                                 <td>string</td>
                                 <td>否</td>
                                 <td><code>original</code>（原图）</td>
-                                <td>取图尺寸：<code>sm</code>(320) / <code>md</code>(640) / <code>lg</code>(1280) / <code>original</code>(原图)。
+                                <td>取图尺寸：<code>sm</code>（320）/ <code>md</code>（640）/ <code>lg</code>（1280）/ <code>original</code>（原图）。
                                     <strong>传什么就返回什么</strong>：<code>url</code> 就是该尺寸的直链，
                                     响应里其余字段（<code>width</code> / <code>height</code> / <code>mime_type</code> /
                                     <code>file_size</code>）<strong>都描述这一张图</strong>。
@@ -205,7 +205,7 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
                     <span class="text-muted doc-endpoint-label">分类列表</span>
                 </div>
                 <div class="body">
-                    <p>返回完整分类树结构（嵌套JSON），包含所有分类及其子分类。</p>
+                    <p>返回完整分类树结构（嵌套 JSON），包含所有分类及其子分类。</p>
                 </div>
             </div>
 
