@@ -46,6 +46,15 @@ class Application
         ini_set('display_errors', '0');
         ini_set('log_errors', '1');
 
+        // MR-01: start the session through the hardened entry point FIRST, so
+        // the very first session_start() of any request carries the hardened
+        // cookie params (HttpOnly / SameSite=Lax / Secure). Previously the CSP
+        // path (sendSecurityHeaders -> CspNonce::token -> generate) triggered a
+        // bare session_start(), which bypassed the hardening because
+        // session_set_cookie_params must run before session_start() on the
+        // first call. Session::start() is idempotent (static $started gate).
+        \App\Core\Session::start();
+
         // v1.2.1 security: baseline security headers on every response.
         // CSP uses nonce for script-src and style-src (see CspNonce).
         // v2.0.0-beta.8: font-src 放行 sf3-scmcdn-cn.feishucdn.com —— miaoda.feishu.cn 的

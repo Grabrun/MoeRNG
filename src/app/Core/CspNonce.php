@@ -22,9 +22,7 @@ final class CspNonce
     /** Generate a new 256-bit hex nonce and persist it in the current session. */
     public static function generate(): void
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            session_start();
-        }
+        Session::start();
         $_SESSION[self::SESSION_KEY] = bin2hex(random_bytes(32));
     }
 
@@ -41,9 +39,7 @@ final class CspNonce
      */
     public static function get(): string
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            @session_start();
-        }
+        Session::start();
         if (empty($_SESSION[self::SESSION_KEY])) {
             self::generate();
         }
@@ -89,7 +85,8 @@ final class CspNonce
      */
     public static function requireNonce(): void
     {
-        if (session_status() !== PHP_SESSION_ACTIVE && !session_start()) {
+        Session::start();
+        if (session_status() !== PHP_SESSION_ACTIVE) {
             http_response_code(500);
             exit('CSP nonce unavailable — session could not be started.');
         }

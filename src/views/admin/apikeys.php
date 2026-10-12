@@ -28,17 +28,13 @@
                     $active = $key->status === 'active';
                 ?>
                 <tr data-id="<?= $key->id ?>"
-                    data-key="<?= h($key->key) ?>"
                     data-name="<?= h($key->name) ?>"
                     data-rate-limit="<?= h($key->rate_limit) ?>"
                     data-rate-window="<?= h($key->rate_window) ?>"
                     data-permissions="<?= h(json_encode($perms, JSON_UNESCAPED_UNICODE)) ?>">
                     <td><?= h($key->name) ?></td>
                     <td>
-                        <div class="flex gap-1 align-center">
-                            <code class="text-xs"><?= h(substr($key->key, 0, 16)) ?>...</code>
-                            <button type="button" class="btn btn-outline btn-sm" data-key-action="copy" title="复制完整 Key" aria-label="复制完整 Key"><?= icon('copy', 16) ?></button>
-                        </div>
+                        <code class="text-xs"><?= h($key->key_prefix) ?>...</code>
                     </td>
                     <td>
                         <?php foreach ($perms as $p): ?>

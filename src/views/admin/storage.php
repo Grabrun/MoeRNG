@@ -40,12 +40,21 @@
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($profiles as $p): ?>
+                <?php foreach ($profiles as $p):
+                    // MR-12: 行内 data-config 只下发非凭据字段；secret/key/token_key 类
+                    // 一律不进 HTML（前端编辑时留空=保持原值，见 helpers.js）。
+                    $__pubCfg = [];
+                    foreach ($p->config() as $__pk => $__pv) {
+                        if (!\App\Core\CredentialCipher::isSecretField((string) $__pk)) {
+                            $__pubCfg[$__pk] = $__pv;
+                        }
+                    }
+                ?>
                 <tr data-id="<?= (int) $p->id ?>"
                     data-name="<?= h($p->name) ?>"
                     data-driver="<?= h($p->driver) ?>"
                     data-provider="<?= h($p->provider) ?>"
-                    data-config='<?= h(json_encode($p->config(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?>'
+                    data-config='<?= h(json_encode($__pubCfg, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?>'
                     data-default="<?= $p->isDefault() ? '1' : '0' ?>"
                     data-enabled="<?= $p->isEnabled() ? '1' : '0' ?>"
                     data-usable="<?= $p->isUsable() ? '1' : '0' ?>">
@@ -161,6 +170,11 @@
                     <div class="form-group pv-field" data-field="signed_ttl">
                         <label class="pv-label">签名链接有效期（秒）<span class="pv-req">*</span></label>
                         <input type="text" name="cfg_signed_ttl" id="profile-cfg-signed-ttl" class="form-control" placeholder="300（默认 5 分钟）">
+                    </div>
+                    <!-- MR-04: 又拍云 CDN Token 防盗链密钥（仅 upyun 显示，其他服务商由 applyProvider 隐藏） -->
+                    <div class="form-group pv-field" data-field="token_key">
+                        <label class="pv-label">Token 防盗链密钥<span class="pv-req">*</span></label>
+                        <input type="password" name="cfg_token_key" id="profile-cfg-token-key" class="form-control" placeholder="" autocomplete="new-password">
                     </div>
                 </div>
             </div>

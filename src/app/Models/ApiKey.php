@@ -10,7 +10,7 @@ class ApiKey extends Model
 {
     protected static string $table = 'api_keys';
     protected static array $fillable = [
-        'name', 'key', 'permissions', 'rate_limit', 'rate_window', 'status'
+        'name', 'key_hash', 'key_prefix', 'permissions', 'rate_limit', 'rate_window', 'status'
     ];
 
     public static function generateKey(): string
@@ -18,9 +18,19 @@ class ApiKey extends Model
         return 'mr_' . bin2hex(random_bytes(24));
     }
 
+    /**
+     * SHA-256 of a plaintext key — the only form ever stored/looked up.
+     * Same one-way pattern as User::makeRememberToken() (users.remember_token).
+     */
+    public static function hashKey(string $key): string
+    {
+        return hash('sha256', $key);
+    }
+
     public static function findByKey(string $key): ?self
     {
-        return self::firstWhere('key', $key);
+        // MR-03: never look the plaintext up — the DB only holds its hash.
+        return self::firstWhere('key_hash', self::hashKey($key));
     }
 
     public static function validate(string $key): ?self

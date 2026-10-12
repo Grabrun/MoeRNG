@@ -10,6 +10,8 @@ namespace App\Storage;
  *   运行时 Guzzle/psr7 由 sdk/cos/vendor（Guzzle 7.15.2 / psr7 v2）提供。
  * - 依赖顺序铁律：先 require sdk/cos/vendor/autoload.php，再 require sdk/upyun/autoload.php。
  * - 凭据模型：service_name（=bucket）+ operator（key）+ operator_password（secret），无 region。
+ * - MR-04 修复：CDN Token 防盗链签名改用官方算法 `_upt`（独立 token_key，见 url()），
+ *   不再复用操作员 API 密码，废弃旧的 `_up_t` 自研签名。
  */
 class UpyunSdkDriver implements StorageInterface
 {
@@ -18,10 +20,11 @@ class UpyunSdkDriver implements StorageInterface
     private string $password;
     private string $cdnUrl;
     private string $sourceDomain = '';
+    private string $tokenKey = '';
     private int $signedTtl = 300;
     private ?\Upyun\Upyun $upyun = null;
 
-    public function __construct(string $service, string $operator, string $password, string $cdnUrl = '', int $signedTtl = 300, string $sourceDomain = '')
+    public function __construct(string $service, string $operator, string $password, string $cdnUrl = '', int $signedTtl = 300, string $sourceDomain = '', string $tokenKey = '')
     {
         $this->service = $service;
         $this->operator = $operator;
@@ -29,6 +32,7 @@ class UpyunSdkDriver implements StorageInterface
         $this->cdnUrl = rtrim($cdnUrl, '/');
         $this->sourceDomain = trim($sourceDomain);
         $this->signedTtl = max(1, $signedTtl);
+        $this->tokenKey = $tokenKey;
     }
 
     public static function available(): bool
@@ -113,15 +117,22 @@ class UpyunSdkDriver implements StorageInterface
         if ($this->cdnUrl !== '') {
             return $this->cdnUrl . '/' . rawurlencode($key);
         }
-        // v1.2.0 迭代: 又拍云 USS 防盗链 token 签名（_up_t = {expires}_{md5(operator:password:expires)}），
-        // 私有空间短时链接，不经服务器代理。
-        $expires = time() + $this->signedTtl;
-        $sign = md5("{$this->operator}:{$this->password}:{$expires}");
+        // MR-04 修复：又拍云 CDN Token 防盗链签名按官方规范重写。
+        //   _upt = substr(md5(密钥 & etime & URI), 12, 8) . etime
+        // 密钥取自又拍云控制台独立的「防盗链 Token 密钥」（config.token_key），
+        // 不再复用操作员 API 密码；请求路径 /dir/xxx.ext 参与签名。
+        // 未配置 token_key 时不签名，返回裸 URL（保持存量行为）。
+        $path = '/' . ltrim(str_replace('%2F', '/', rawurlencode($key)), '/');
         // v1.2.1: custom source domain (CNAME bound to the service) replaces
         // the default {service}.b0.upaiyun.com host for the signed URL.
         $host = $this->sourceDomain !== '' ? $this->sourceDomain : $this->service . '.b0.upaiyun.com';
-        $base = 'https://' . $host . '/' . str_replace('%2F', '/', rawurlencode($key));
-        return $base . '?_up_t=' . $expires . '_' . $sign;
+        $base = 'https://' . $host . $path;
+        if ($this->tokenKey === '') {
+            return $base;
+        }
+        $expires = time() + $this->signedTtl;
+        $sign = substr(md5($this->tokenKey . '&' . $expires . '&' . $path), 12, 8) . $expires;
+        return $base . '?_upt=' . $sign;
     }
 
     public function testConnection(): bool

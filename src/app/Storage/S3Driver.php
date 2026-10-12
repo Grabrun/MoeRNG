@@ -33,6 +33,8 @@ class S3Driver implements StorageInterface
     private string $cdnUrl;
     // v1.2.1: COS 自定义源站域名（绑到 bucket 的 CNAME）；签名 URL 会用它。
     private string $sourceDomain = '';
+    // MR-04: 又拍云 CDN Token 防盗链独立密钥（仅 upyun 使用；空=不签名）。
+    private string $tokenKey = '';
     private int $signedTtl = 300;
 
     /**
@@ -89,6 +91,7 @@ class S3Driver implements StorageInterface
         $this->endpoint  = (string) ($cfg['endpoint'] ?? '');
         $this->cdnUrl    = (string) ($cfg['cdn'] ?? '');
         $this->sourceDomain = (string) ($cfg['source_domain'] ?? '');
+        $this->tokenKey  = (string) ($cfg['token_key'] ?? '');
         $this->signedTtl = max(1, (int) ($cfg['signed_ttl'] ?? 300));
         return $this;
     }
@@ -186,8 +189,8 @@ class S3Driver implements StorageInterface
         if (!UpyunSdkDriver::available()) {
             throw $this->sdkMissing('upyun');
         }
-        // 又拍云：service=bucket、operator=key、password=secret
-        return new UpyunSdkDriver($this->bucket, $this->accessKey, $this->secretKey, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
+        // 又拍云：service=bucket、operator=key、password=secret；MR-04 增补 token_key 防盗链密钥
+        return new UpyunSdkDriver($this->bucket, $this->accessKey, $this->secretKey, $this->cdnUrl, $this->signedTtl, $this->sourceDomain, $this->tokenKey);
     }
 
     private function qiniuSdk(): ?QiniuSdkDriver
@@ -479,6 +482,8 @@ class S3Driver implements StorageInterface
             'bucket'   => ['label' => 'Bucket（又拍云=服务名）', 'type' => 'text', 'placeholder' => 'COS 需带 APPID，如 mybucket-1250000000'],
             'endpoint' => ['label' => 'Endpoint（OBS 必填，其他可选）', 'type' => 'text', 'placeholder' => 'OBS: https://obs.cn-north-4.myhuaweicloud.com；COS: 域名后缀；AWS S3 兼容网关如 MinIO 填完整地址'],
             'cdn'      => ['label' => 'CDN 加速域名（可选）', 'type' => 'text', 'placeholder' => 'https://cdn.example.com'],
+            // MR-04: 仅又拍云 Token 防盗链使用；其他服务商留空即可（后台表单按服务商显隐）。
+            'token_key' => ['label' => 'Token 防盗链密钥（仅又拍云可选）', 'type' => 'password', 'placeholder' => '又拍云控制台「防盗链」密钥；留空=不签名'],
         ];
     }
 }

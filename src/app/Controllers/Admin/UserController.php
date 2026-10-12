@@ -27,7 +27,16 @@ class UserController extends Controller
         $email = $request->input('email', '');
         $username = $request->input('username', '');
         $password = $request->input('password', '');
-        $role = $request->input('role', 'admin');
+
+        // MR-02 纵深防御：role 白名单 + 越权降级。
+        // 1) 仅接受 'admin'/'editor'，非法值回落 'editor'；
+        // 2) 只有当前会话本身是 admin 时才允许建 admin 账号；
+        //    非 admin 会话（正常已被 RequireAdminMiddleware 挡在门外）一律强制 editor。
+        $requestedRole = $request->input('role', 'admin');
+        $role = ($requestedRole === 'admin' || $requestedRole === 'editor') ? $requestedRole : 'editor';
+        if (Session::get('user_role') !== 'admin' && $role === 'admin') {
+            $role = 'editor';
+        }
 
         if (empty($email) || empty($username) || empty($password)) {
             Session::flash('error', 'All fields are required.');
@@ -64,7 +73,15 @@ class UserController extends Controller
 
         $user->username = $request->input('username', $user->username);
         $user->email = $request->input('email', $user->email);
-        $user->role = $request->input('role', $user->role);
+
+        // MR-02 纵深防御：与 create 相同的 role 白名单 + 非 admin 会话强制 editor，
+        // 防止任何非 admin 上下文把账号提权为 admin。
+        $requestedRole = $request->input('role', $user->role);
+        $newRole = ($requestedRole === 'admin' || $requestedRole === 'editor') ? $requestedRole : 'editor';
+        if (Session::get('user_role') !== 'admin' && $newRole === 'admin') {
+            $newRole = 'editor';
+        }
+        $user->role = $newRole;
 
         $password = $request->input('password', '');
         if (!empty($password)) {

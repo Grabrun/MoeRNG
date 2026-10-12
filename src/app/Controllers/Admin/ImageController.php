@@ -862,6 +862,11 @@ class ImageController extends Controller
 
                 // v1.3.2-beta.2: 声明在 try 外 —— catch 里用它清理未上传的临时缩略图
                 $gen = null;
+                // MR-05: try 外声明 —— catch 分支按此清单回滚已上传到最终存储的对象
+                // （异常可能发生在 makeThumbnails / uploadThumbs 之前，此时二者未定义）。
+                // $storage 同理：异常可能发生在 resolveProfile/driver() 之前。
+                $uploadedKeys = [];
+                $storage = null;
 
                 try {
                     if (!is_file($incomingFile)) {
@@ -885,6 +890,8 @@ class ImageController extends Controller
 
                     // —— 先上传原图到最终存储（失败即抛，此时尚未生成任何临时文件）——
                     $url = $storage->upload($incomingFile, $path, $mime);
+                    // MR-05: 原图对象已落桶 —— 记入回滚清单，后续步骤失败时回收
+                    $uploadedKeys[] = $path;
 
                     // —— 多尺寸缩略图（一次解码生成 sm/md/lg；GD 不可用或源图
                     //    不可解码时降级为无缩略图，不阻断原图入库）——
@@ -901,6 +908,13 @@ class ImageController extends Controller
                     $thumbUp = $this->uploadThumbs($storage, $gen['thumbs']);
                     $thumbKeys = $thumbUp['keys'];
                     $thumbPath = $thumbKeys['md'] ?? null;
+                    // MR-05: 只有 uploadThumbs 返回 keys 里的档是真正落桶成功的，
+                    // 全部并入回滚清单（失败档本就不在其中，无需再筛）。
+                    foreach ($thumbKeys as $thumbKey) {
+                        if (is_string($thumbKey) && $thumbKey !== '') {
+                            $uploadedKeys[] = $thumbKey;
+                        }
+                    }
 
                     // —— 记录置 done（thumbs 恒非空 → 回填队列不会重复选中该行）——
                     // v1.4.0-beta.2: 例外 —— 当「生成缩略图」总开关关闭时**故意留空**，
@@ -942,6 +956,35 @@ class ImageController extends Controller
                         $pdo->prepare("UPDATE `images` SET `process_status` = 'failed', `process_error` = ? WHERE `id` = ?")
                             ->execute([$err, $id]);
                     } catch (\Throwable) { /* 忽略 */ }
+                    // MR-05: 回滚已落桶的对象（best-effort）。这些对象此刻没有任何 DB
+                    // 记录可指认（url/thumbs 未写入或只写了一半），Image::delete() 主
+                    // 删除链永远不会来收 —— 不在这里删就是云端孤儿。
+                    // 注：清单内的 key 都是刚刚上传成功的对象，delete() 返回 false 即
+                    // 真实失败（不像 queueClear 面对从未上传的 pending 行），故此处
+                    // 不再二次 exists() 探测。
+                    if ($storage !== null && $uploadedKeys !== []) {
+                        $leftKeys = [];
+                        foreach ($uploadedKeys as $uk) {
+                            try {
+                                if (!$storage->delete($uk)) {
+                                    $leftKeys[] = $uk;
+                                }
+                            } catch (\Throwable) {
+                                $leftKeys[] = $uk;
+                            }
+                        }
+                        if ($leftKeys !== []) {
+                            // 残留 key 清单写审计 detail.paths（process_error 只保留原始
+                            // 异常信息，480 字符截断装不下清单）。
+                            try {
+                                \App\Models\AuditLog::record('image_rollback_failed', [
+                                    'id'    => $id,
+                                    'paths' => array_values(array_unique($leftKeys)),
+                                    'stage' => 'queue_process_rollback',
+                                ]);
+                            } catch (\Throwable) { /* 审计失败不再抛 */ }
+                        }
+                    }
                     $results[] = ['id' => $id, 'error' => $err];
                 }
             }
@@ -1911,12 +1954,17 @@ class ImageController extends Controller
      * scope：pending（仅待处理，默认）| failed（仅失败项）| all（两者）
      *
      * 语义是**删除数据库记录**（不是标记状态）。待处理行的原图只存在于服务器
-     * 临时目录（storage/incoming），删除记录后一并清理；**失败行要特别注意**：
-     * 原图在失败前**可能已经上传到最终存储**（上传失败只可能发生在缩略图阶段），
-     * 删除记录会让那份文件成为存储侧的孤立对象，需操作员自行清理 —— 响应里以
-     * orphan_risk 如实报告，前端确认文案也会提示。
+     * 临时目录（storage/incoming），删除记录后一并清理。
      *
-     * 补充（v2.0.0-beta.1）：这类**记录已删**的孤立对象无法被 cleanupStorage()
+     * MR-05（v2.0.x）：删 DB 前先逐行回收已落桶对象 —— failed 行的原图/缩略图
+     * 可能已上传到最终存储（上传失败只可能发生在缩略图阶段），裸删 DB 会留下无
+     * LIST、无 DB 指认的云端孤儿。现在按行的 thumbs JSON（decodeThumbMap 权威）
+     * 收集原图 + 全档缩略图 key，按行解析存储驱动逐 key 删除（best-effort，失败
+     * 容忍并二次 exists 区分「真删失败」与「本就不存在」），全部删完才 DELETE FROM
+     * images。orphan_risk 随之改为「尽力回收后仍删失败的对象个数」（键名兼容），
+     * 非零即写审计 image_delete_storage_failed，需操作员到存储控制台按 key 人工清。
+     *
+     * 补充（v2.0.0-beta.1）：回收失败残留的孤立对象无法被 cleanupStorage()
      * 发现（存储接口没有 LIST 能力），只能到对象存储控制台按前缀人工清理；
      * cleanupStorage() 只负责 storage/incoming 里**可确定性判定**的暂存残留。
      */
@@ -1942,12 +1990,62 @@ class ImageController extends Controller
         };
 
         $rows = $pdo->query(
-            "SELECT `id`, `path`, `process_status` FROM `images` WHERE {$cond}"
+            "SELECT `id`, `path`, `thumbs`, `thumb_path`, `process_status`, "
+            . "`storage_profile_id`, `storage`, `storage_provider` "
+            . "FROM `images` WHERE {$cond}"
         )->fetchAll(\PDO::FETCH_ASSOC);
         if ($rows === []) {
             $this->json(['success' => true, 'scope' => $scope, 'deleted' => 0, 'temp_removed' => 0, 'orphan_risk' => 0]);
             return;
         }
+
+        // MR-05: 删 DB 前先回收已落桶的对象（best-effort）。此前这里是裸 DELETE ——
+        // failed 行的原图/缩略图可能已在最终存储，DB 一删，这些对象就成了无法被
+        // LIST、也无 DB 记录指认的孤儿。顺序必须是：逐行收集 key → 逐 key delete →
+        // **全部完成后**才执行下面的 DELETE FROM images。
+        $residualKeys = [];   // 尽力回收后仍删不掉的对象 key（= orphan_risk 新语义）
+        foreach ($rows as $r) {
+            $keys = [(string) $r['path']];
+            // thumbs JSON 权威解析（与 Image::delete 主链同一入口）；thumb_path 仅作 md 兜底
+            foreach (\App\Models\Image::decodeThumbMap(
+                (string) ($r['thumbs'] ?? ''),
+                (string) ($r['thumb_path'] ?? '')
+            ) as $thumbKey) {
+                if (is_string($thumbKey) && $thumbKey !== '') {
+                    $keys[] = $thumbKey;
+                }
+            }
+            $keys = array_values(array_unique(array_filter($keys, static fn($k) => $k !== '')));
+            if ($keys === []) continue;
+            // 按行的存储归属解析驱动（与 Image::driverFor 同一模式：profile_id 优先，
+            // 老行按 storage/storage_provider 兜底）。
+            try {
+                $driver = \App\Models\StorageProfile::driverForImage($r);
+            } catch (\Throwable) {
+                // 连驱动都解析不出来 → 这行的对象无从回收，全部计入残留
+                foreach ($keys as $k) $residualKeys[] = $k;
+                continue;
+            }
+            foreach ($keys as $key) {
+                try {
+                    $delOk = $driver->delete($key);
+                } catch (\Throwable) {
+                    $delOk = false;
+                }
+                if (!$delOk) {
+                    // MR-40 驱动语义不一致：LocalDriver 对「本就不存在」的文件也返回
+                    // false（云端 delete 对缺 key 幂等返回 true）。区分对待：对象确实
+                    // 还在（真删失败）才计入残留；本就不存在的视为早已无对象，不谎报。
+                    try {
+                        $stillThere = $driver->exists($key);
+                    } catch (\Throwable) {
+                        $stillThere = true; // 探测不到时保守按残留计
+                    }
+                    if ($stillThere) $residualKeys[] = $key;
+                }
+            }
+        }
+        $residualKeys = array_values(array_unique($residualKeys));
 
         $ids = array_map(static fn($r) => (int) $r['id'], $rows);
         try {
@@ -1980,11 +2078,18 @@ class ImageController extends Controller
             }
         }
 
-        $orphanRisk = 0;
-        foreach ($rows as $r) {
-            if ((string) $r['process_status'] === 'failed') {
-                $orphanRisk++;   // 失败行的原图可能已进最终存储 → 删除记录会留下孤立文件
-            }
+        // orphan_risk 新语义（MR-05）：不再按「failed 行数」粗估，而是**尽力回收后
+        // 仍删失败的对象个数**。键名保持兼容（前端 app.js 在读），值语义按此调整 ——
+        // 这些对象确实还留在存储里且 DB 记录已删，需操作员到存储控制台按 key 人工清。
+        $orphanRisk = count($residualKeys);
+        if ($residualKeys !== []) {
+            try {
+                \App\Models\AuditLog::record('image_delete_storage_failed', [
+                    'scope' => $scope,
+                    'paths' => $residualKeys,
+                    'stage' => 'queue_clear_recycle',
+                ]);
+            } catch (\Throwable) { /* 审计失败不再抛 */ }
         }
 
         $this->json([

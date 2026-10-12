@@ -26,14 +26,18 @@ CREATE TABLE IF NOT EXISTS `users` (
 CREATE TABLE IF NOT EXISTS `api_keys` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` VARCHAR(128) NOT NULL,
-    `key` VARCHAR(128) NOT NULL UNIQUE,
+    -- v2.0.0 MR-03: never store the plaintext key. Only its SHA-256 hash is
+    -- kept for lookup (same pattern as users.remember_token); key_prefix is
+    -- the first 16 chars, shown in admin UIs for identification only.
+    `key_hash` CHAR(64) NOT NULL UNIQUE,
+    `key_prefix` VARCHAR(24) NOT NULL DEFAULT '',
     `permissions` JSON,
     `rate_limit` INT NOT NULL DEFAULT 60,
     `rate_window` INT NOT NULL DEFAULT 60,
     `status` ENUM('active', 'disabled') NOT NULL DEFAULT 'active',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_key` (`key`),
+    INDEX `idx_key_hash` (`key_hash`),
     INDEX `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

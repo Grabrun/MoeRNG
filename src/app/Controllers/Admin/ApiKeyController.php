@@ -30,9 +30,15 @@ class ApiKeyController extends Controller
             $this->fail('请填写 API Key 名称。', 422, self::PAGE);
         }
 
+        // MR-03: generate the plaintext exactly once, persist only its hash +
+        // a 16-char display prefix, and hand the plaintext back through the
+        // separate 'plain_key' field (one-time reveal). The DB never sees it.
+        $plainKey = ApiKey::generateKey();
+
         $apiKey = new ApiKey([
             'name' => $name,
-            'key' => ApiKey::generateKey(),
+            'key_hash' => ApiKey::hashKey($plainKey),
+            'key_prefix' => substr($plainKey, 0, 16),
             'permissions' => json_encode($this->normalizePermissions($request), JSON_UNESCAPED_UNICODE),
             'rate_limit' => $this->positiveInt($request->input('rate_limit'), 60),
             'rate_window' => $this->positiveInt($request->input('rate_window'), 60),
@@ -44,12 +50,11 @@ class ApiKeyController extends Controller
         }
 
         // The plaintext key is returned exactly once, right here, so the UI can
-        // show it in a modal with a copy button. (It is also stored in full in
-        // the DB, so this is a UX affordance rather than a secrets-handling
-        // guarantee, but the flow matches what operators expect.)
+        // show it in a modal with a copy button. It is NEVER persisted: only
+        // key_hash (SHA-256) and the 16-char key_prefix are stored.
         $this->ok('API Key 已生成。', [
             'item' => $this->present($apiKey),
-            'plain_key' => (string) $apiKey->key,
+            'plain_key' => $plainKey,
         ], self::PAGE);
     }
 
@@ -147,11 +152,12 @@ class ApiKeyController extends Controller
         // must never carry the full plaintext key — only the 16-char preview.
         // The full value is handed out exactly once, in create(), via the
         // separate 'plain_key' field (one-time reveal, same flow as major
-        // token providers).
+        // token providers). MR-03: the preview now comes from key_prefix
+        // (stored 16-char prefix); the plaintext column no longer exists.
         return [
             'id' => (int) $apiKey->id,
             'name' => (string) $apiKey->name,
-            'key_preview' => substr((string) $apiKey->key, 0, 16) . '...',
+            'key_preview' => (string) $apiKey->key_prefix . '...',
             'permissions' => json_decode((string) ($apiKey->permissions ?: '[]'), true) ?: [],
             'rate_limit' => (int) $apiKey->rate_limit,
             'rate_window' => (int) $apiKey->rate_window,

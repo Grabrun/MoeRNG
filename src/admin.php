@@ -51,15 +51,15 @@ $router->group('/admin', function ($router) {
     $router->get('/images/queue-stats', [$images, 'queueStats']);
     $router->post('/images/requeue-one', [$images, 'requeueOne']);
     // v1.4.0-beta.2 增强: 清空处理队列（按范围删除未完成记录 + 清理临时原图）
-    $router->post('/images/queue-clear', [$images, 'queueClear']);
+    $router->post('/images/queue-clear', [$images, 'queueClear'], [\App\Middleware\RequireAdminMiddleware::class]);
     // v2.0.0-beta.1: 清理 storage/incoming 暂存残留（干跑优先）；
     // v1.5.0-beta.1 的 migrate-layout / 旧布局清理已随「取消兼容与迁移」移除
-    $router->post('/images/cleanup-storage', [$images, 'cleanupStorage']);
+    $router->post('/images/cleanup-storage', [$images, 'cleanupStorage'], [\App\Middleware\RequireAdminMiddleware::class]);
     // v1.5.0-beta.1: 历史原图批量转 WebP（干跑优先，逐行回滚）
-    $router->post('/images/convert-originals', [$images, 'convertOriginals']);
+    $router->post('/images/convert-originals', [$images, 'convertOriginals'], [\App\Middleware\RequireAdminMiddleware::class]);
     $router->post('/images/update', [$images, 'update']);
-    $router->post('/images/delete', [$images, 'delete']);
-    $router->post('/images/batch-delete', [$images, 'batchDelete']);
+    $router->post('/images/delete', [$images, 'delete'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/images/batch-delete', [$images, 'batchDelete'], [\App\Middleware\RequireAdminMiddleware::class]);
     $router->post('/images/batch-categorize', [$images, 'batchCategorize']);
     $router->post('/images/sort', [$images, 'sort']);
 
@@ -71,41 +71,41 @@ $router->group('/admin', function ($router) {
 
     // Settings (site + security + performance + mail + backup; storage on its own board)
     $router->get('/settings', [$settings, 'index']);
-    $router->post('/settings/save', [$settings, 'save']);
+    $router->post('/settings/save', [$settings, 'save'], [\App\Middleware\RequireAdminMiddleware::class]);
     $router->post('/settings/cache-clear', [$settings, 'cacheClear']);
     $router->post('/settings/backup', [$settings, 'backupNow']);
     $router->post('/settings/backup-delete', [$settings, 'backupDelete']);
     // v1.3.2 迭代: 系统健康检查（检查 + 修复）—— 收编 CLI 迁移/回填工具
     $router->get('/settings/health', [$settings, 'health']);
-    $router->post('/settings/health-fix', [$settings, 'healthFix']);
+    $router->post('/settings/health-fix', [$settings, 'healthFix'], [\App\Middleware\RequireAdminMiddleware::class]);
     $router->post('/settings/test-mail', [$settings, 'testMail']);
-    $router->post('/settings/logo-upload', [$settings, 'logoUpload']);
+    $router->post('/settings/logo-upload', [$settings, 'logoUpload'], [\App\Middleware\RequireAdminMiddleware::class]);
     $router->get('/settings/logs', [$settings, 'logs']);
     // v1.2.1 迭代: CSV export of the filtered audit trail.
     $router->get('/settings/logs/export', [$settings, 'logsExport']);
 
     // Storage profiles — top-level board, peer of 图片管理 / 系统设置
     $storageProfiles = \App\Controllers\Admin\StorageProfileController::class;
-    $router->get('/storage', [$storageProfiles, 'index']);
-    $router->post('/storage/profiles/create', [$storageProfiles, 'create']);
-    $router->post('/storage/profiles/update', [$storageProfiles, 'update']);
-    $router->post('/storage/profiles/delete', [$storageProfiles, 'delete']);
-    $router->post('/storage/profiles/toggle', [$storageProfiles, 'toggle']);
-    $router->post('/storage/profiles/default', [$storageProfiles, 'setDefault']);
+    $router->get('/storage', [$storageProfiles, 'index'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/storage/profiles/create', [$storageProfiles, 'create'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/storage/profiles/update', [$storageProfiles, 'update'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/storage/profiles/delete', [$storageProfiles, 'delete'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/storage/profiles/toggle', [$storageProfiles, 'toggle'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/storage/profiles/default', [$storageProfiles, 'setDefault'], [\App\Middleware\RequireAdminMiddleware::class]);
 
     // Users
     $router->get('/users', [$users, 'index']);
-    $router->post('/users/create', [$users, 'create']);
-    $router->post('/users/update', [$users, 'update']);
-    $router->post('/users/toggle-status', [$users, 'toggleStatus']);
-    $router->post('/users/delete', [$users, 'delete']);
+    $router->post('/users/create', [$users, 'create'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/users/update', [$users, 'update'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/users/toggle-status', [$users, 'toggleStatus'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/users/delete', [$users, 'delete'], [\App\Middleware\RequireAdminMiddleware::class]);
 
     // API Keys
-    $router->get('/apikeys', [$apikeys, 'index']);
-    $router->post('/apikeys/create', [$apikeys, 'create']);
-    $router->post('/apikeys/update', [$apikeys, 'update']);
-    $router->post('/apikeys/toggle-status', [$apikeys, 'toggleStatus']);
-    $router->post('/apikeys/delete', [$apikeys, 'delete']);
+    $router->get('/apikeys', [$apikeys, 'index'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/apikeys/create', [$apikeys, 'create'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/apikeys/update', [$apikeys, 'update'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/apikeys/toggle-status', [$apikeys, 'toggleStatus'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/apikeys/delete', [$apikeys, 'delete'], [\App\Middleware\RequireAdminMiddleware::class]);
 
 }, [\App\Middleware\AuthMiddleware::class, \App\Middleware\CsrfMiddleware::class]);
 

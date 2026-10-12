@@ -430,7 +430,9 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
                  region:null, endpoint:null,
                  cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false},
                  source_domain:{l:'自定义源站域名（可选）', p:'又拍云控制台绑定域名后填入', r:false},
-                 signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
+                 signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false},
+                 // MR-04: CDN Token 防盗链密钥（官方 _upt 签名）；可空=不签名。
+                 token_key:{l:'Token 防盗链密钥（可选）', p:'又拍云控制台「防盗链」密钥；留空=不签名', r:false} },
         qiniu: { key:{l:'Access Key', p:'', r:true}, secret:{l:'Secret Key', p:'', r:true},
                  region:{l:'区域（Region）', p:'z0(华东) / z1(华北) / z2(华南) / z3(华东2) / as0(新加坡) / na0(北美)', r:true},
                  bucket:{l:'空间名（Bucket）', p:'mybucket', r:true}, endpoint:null,
@@ -438,6 +440,8 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
                  source_domain:{l:'自定义源站域名（可选）', p:'七牛控制台绑定域名后填入', r:false},
                  signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
     };
+    // MR-12: 凭据类字段 —— 编辑态留空=保留原值（后端按旧 config 补齐），故 update 不做必填校验。
+    const SECRET_FIELDS = { key: 1, secret: 1, token_key: 1 };
 
     function applyProvider(pv) {
         const def = PV_FIELDS[pv] || PV_FIELDS.cos;
@@ -478,8 +482,11 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
         try { cfg = row ? JSON.parse(row.dataset.config || '{}') : {}; } catch (e) { cfg = {}; }
         document.getElementById('profile-cfg-path').value = cfg.path || '';
         document.getElementById('profile-cfg-cdn-local').value = cfg.cdn || '';
-        document.getElementById('profile-cfg-key').value = cfg.key || '';
-        document.getElementById('profile-cfg-secret').value = cfg.secret || '';
+        // MR-12: 凭据类字段（key/secret/token_key）绝不回填明文 —— data-config 已不含这些键，
+        // 编辑时留空即表示保持原值（后端 update 按旧 config 补齐）。
+        document.getElementById('profile-cfg-key').value = '';
+        document.getElementById('profile-cfg-secret').value = '';
+        document.getElementById('profile-cfg-token-key').value = '';
         document.getElementById('profile-cfg-region').value = cfg.region || '';
         document.getElementById('profile-cfg-bucket').value = cfg.bucket || '';
         document.getElementById('profile-cfg-endpoint').value = cfg.endpoint || '';
@@ -490,6 +497,12 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
         document.getElementById('profile-is-default').checked = row ? row.dataset.default === '1' : false;
 
         toggleFields();
+        // MR-12: 编辑态给凭据框加「留空则保持原值」提示（新建态用 provider 默认占位）。
+        if (mode === 'update') {
+            document.getElementById('profile-cfg-key').placeholder = '留空则保持原值';
+            document.getElementById('profile-cfg-secret').placeholder = '留空则保持原值';
+            document.getElementById('profile-cfg-token-key').placeholder = '留空则保持原值';
+        }
         title.textContent = mode === 'update' ? '编辑存储实例' : '新增存储实例';
         submitBtn.textContent = mode === 'update' ? '保存修改' : '创建实例';
     }
@@ -524,6 +537,7 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
             cfg_cdn: _cdnEl ? _cdnEl.value.trim() : '',
             cfg_source_domain: document.getElementById('profile-cfg-source-domain').value.trim(),
             cfg_signed_ttl: _ttlEl ? _ttlEl.value.trim() : '',
+            cfg_token_key: document.getElementById('profile-cfg-token-key').value,
             cfg_path: document.getElementById('profile-cfg-path').value.trim(),
             is_default: document.getElementById('profile-is-default').checked ? '1' : '0'
         };
@@ -534,6 +548,8 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
             const def = PV_FIELDS[payload.provider] || PV_FIELDS.cos;
             const miss = [];
             for (const f in def) {
+                // MR-12: update 态凭据留空=保留原值，不纳入必填缺失校验。
+                if (mode === 'update' && SECRET_FIELDS[f]) continue;
                 if (def[f] && def[f].r && !(payload['cfg_' + f] || '').trim()) {
                     miss.push(def[f].l);
                 }

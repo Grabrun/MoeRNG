@@ -30,13 +30,21 @@ final class CredentialCipher
     /** True when the key file could not be created/read — degrade to plaintext. */
     private static bool $unavailable = false;
 
-    /** Fields inside a storage profile config that hold credentials. */
+    /**
+     * Fields inside a storage profile config that hold credentials.
+     *
+     * MR-36 修复：裸 'key'（各家对象存储的 Access Key，本项目所有云驱动统一用此键名）
+     * 与又拍云 'token_key'（MR-04 独立防盗链密钥）此前漏密封，明文落库。
+     * 一律精确匹配，禁止后缀模糊规则（避免误伤 bucket/endpoint/region/domain 等非密钥键）。
+     */
     public static function isSecretField(string $key): bool
     {
         $k = strtolower($key);
         return $k === 'secret'
             || $k === 'password'
             || $k === 'token'
+            || $k === 'key'
+            || $k === 'token_key'
             || str_ends_with($k, 'secret')
             || str_ends_with($k, '_secret')
             || str_ends_with($k, 'secret_key');

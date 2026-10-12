@@ -712,11 +712,11 @@ function initApiKeys() {
         const id = row?.dataset.id;
         const action = btn.dataset.keyAction;
 
-        if (action === 'copy') {
-            const ok = await copyText(row.dataset.key || '');
-            showToast(ok ? 'API Key 已复制到剪贴板' : '复制失败，请手动选中复制', ok ? 'success' : 'error');
-            return;
-        }
+        // MR-23: the full key is never stored in the DOM anymore (data-key
+        // removed). There is deliberately NO per-row "copy full key" action —
+        // a key can only be copied once, right after creation, from the
+        // newkey-modal (plain_key from the create response). If a key is lost,
+        // delete it and issue a new one.
 
         if (action === 'edit') {
             let permissions = [];
@@ -776,7 +776,6 @@ function initApiKeys() {
         }
 
         row.dataset.name = item.name;
-        row.dataset.key = item.key;
         row.dataset.rateLimit = item.rate_limit;
         row.dataset.rateWindow = item.rate_window;
         row.dataset.permissions = JSON.stringify(item.permissions);
@@ -786,10 +785,7 @@ function initApiKeys() {
 
         row.innerHTML =
             '<td>' + escapeHtml(item.name) + '</td>' +
-            '<td><div class="flex gap-1" style="align-items:center">' +
-                '<code style="font-size:0.8rem">' + escapeHtml(item.key_preview) + '</code>' +
-                '<button type="button" class="btn btn-outline btn-sm" data-key-action="copy" title="复制完整 Key" aria-label="复制完整 Key">' + (window.MOERNG_ICON_COPY || '复制') + '</button>' +
-            '</div></td>' +
+            '<td><code style="font-size:0.8rem">' + escapeHtml(item.key_preview) + '</code></td>' +
             '<td>' + badges + '</td>' +
             '<td>' + item.rate_limit + ' / ' + item.rate_window + 's</td>' +
             '<td><span class="badge badge-' + (active ? 'success' : 'danger') + '">' + escapeHtml(item.status) + '</span></td>' +

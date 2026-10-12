@@ -1,0 +1,9 @@
+{
+  "name": "moerng-harness",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MoeRNG PHP static-analysis gates (CI harness)",
+  "devDependencies": {
+    "php-parser": "^3.7.0"
+  }
+}

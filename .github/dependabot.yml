@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # CI harness 的 npm 依赖（scripts/harness/package.json: php-parser）
+  - package-ecosystem: npm
+    directory: /scripts/harness
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  # composer 生态暂不启用：src/sdk/ 是 gitignored 的第三方打包产物，
+  # 仓库内没有 composer.json / composer.lock，Dependabot 无从对账。
+  # 待 SDK 改为 composer 管理后在此追加：
+  #   - package-ecosystem: composer
+  #     directory: /
+  #     schedule: { interval: weekly }

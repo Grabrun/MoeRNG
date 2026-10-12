@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoeRNG v2.0.0-beta.17 深度审计 · 风险分布（2026-10-11）</title>
+<style>
+  :root{--crit:#c62828;--high:#ef6c00;--med:#f9a825;--low:#1565c0;--info:#757575;--bg:#faf9f7;--card:#ffffff;--ink:#2b2b2b;--sub:#6b6b6b;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:32px 16px;}
+  .wrap{max-width:980px;margin:0 auto;}
+  h1{font-size:22px;margin-bottom:4px;}
+  .sub{color:var(--sub);font-size:13px;margin-bottom:20px;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px;}
+  .card{background:var(--card);border:1px solid #e8e4de;border-radius:12px;padding:16px;text-align:center;}
+  .card .n{font-size:32px;font-weight:700;line-height:1.1;}
+  .card .l{font-size:13px;color:var(--sub);margin-top:4px;}
+  .panel{background:var(--card);border:1px solid #e8e4de;border-radius:12px;padding:20px;margin-bottom:24px;}
+  .panel h2{font-size:15px;margin-bottom:14px;}
+  svg{width:100%;height:auto;display:block;}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:12px;color:var(--sub);}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{padding:8px 10px;border-bottom:1px solid #efece7;text-align:left;vertical-align:top;}
+  th{color:var(--sub);font-weight:600;}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;color:#fff;}
+  .p-h{background:var(--high);} .p-m{background:var(--med);color:#3e2c00;} .p-l{background:var(--low);} .p-i{background:var(--info);}
+  code{background:#f2efe9;padding:1px 5px;border-radius:4px;font-size:12px;}
+  .foot{color:var(--sub);font-size:12px;margin-top:16px;line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MoeRNG 深度审计 · 风险分布总览</h1>
+  <div class="sub">审计对象：E:\Projects\DouBao\MoeRNG（v2.0.0-beta.17，PHP 8.4 + MySQL 自研框架）&nbsp;|&nbsp;审计日期：2026-10-11&nbsp;|&nbsp;发现总数：72</div>
+
+  <div class="cards">
+    <div class="card"><div class="n" style="color:var(--crit)">0</div><div class="l">Critical</div></div>
+    <div class="card"><div class="n" style="color:var(--high)">8</div><div class="l">High</div></div>
+    <div class="card"><div class="n" style="color:var(--med)">22</div><div class="l">Medium</div></div>
+    <div class="card"><div class="n" style="color:var(--low)">21</div><div class="l">Low</div></div>
+    <div class="card"><div class="n" style="color:var(--info)">21</div><div class="l">Info</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>严重性分布</h2>
+    <svg viewBox="0 0 900 260" role="img" aria-label="严重性分布条形图">
+      <line x1="60" y1="210" x2="860" y2="210" stroke="#e8e4de" stroke-width="1"/>
+      <text x="60" y="230" font-size="12" fill="#6b6b6b">0</text>
+      <text x="300" y="230" font-size="12" fill="#6b6b6b">5</text>
+      <text x="540" y="230" font-size="12" fill="#6b6b6b">10</text>
+      <text x="780" y="230" font-size="12" fill="#6b6b6b">15</text>
+      <text x="860" y="230" font-size="12" fill="#6b6b6b">20</text>
+
+      <rect x="70"  y="200" width="0"   height="10" fill="#c62828"/><text x="90" y="190" font-size="13" fill="#2b2b2b">Critical（0）</text>
+      <rect x="70"  y="150" width="150" height="30" fill="#ef6c00" rx="3"/><text x="235" y="170" font-size="13" fill="#2b2b2b">High（8）</text>
+      <rect x="70"  y="100" width="280" height="30" fill="#f9a825" rx="3"/><text x="365" y="120" font-size="13" fill="#2b2b2b">Medium（22）</text>
+      <rect x="70"  y="50"  width="350" height="30" fill="#1565c0" rx="3"/><text x="435" y="70"  font-size="13" fill="#2b2b2b">Low（21）</text>
+      <rect x="70"  y="0"   width="350" height="30" fill="#757575" rx="3"/><text x="435" y="20"  font-size="13" fill="#2b2b2b">Info（21）</text>
+
+      <line x1="70" y1="0" x2="70" y2="210" stroke="#e8e4de" stroke-width="1"/>
+      <line x1="60" y1="200" x2="70" y2="200" stroke="#e8e4de" stroke-width="1"/>
+    </svg>
+    <div class="legend">
+      <span><i style="background:var(--crit)"></i>Critical：严重泄露/资金损失/权限绕过/全面不可用</span>
+      <span><i style="background:var(--high)"></i>High：高概率重大安全问题/数据损坏/核心功能失败</span>
+      <span><i style="background:var(--med)"></i>Medium：局部影响/可绕过/性能下降</span>
+      <span><i style="background:var(--low)"></i>Low：坏味/文档不一致</span>
+      <span><i style="background:var(--info)"></i>Info：最佳实践</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>最紧急问题（Top 5）</h2>
+    <table>
+      <tr><th style="width:60px">编号</th><th>问题</th><th style="width:80px">严重性</th><th>关键位置</th></tr>
+      <tr><td><code>MR-02</code></td><td>editor 角色零服务端强制（垂直越权，editor≡admin）</td><td><span class="pill p-h">High</span></td><td><code>AuthMiddleware.php</code> / 全控制器</td></tr>
+      <tr><td><code>MR-01</code></td><td>会话 Cookie 硬化被 CspNonce 提前 session_start() 架空</td><td><span class="pill p-h">High</span></td><td><code>Application.php:57→CspNonce.php:26</code></td></tr>
+      <tr><td><code>MR-05</code></td><td>云端孤儿对象无回收（上传中途失败 + queueClear 两条路径，持续计费）</td><td><span class="pill p-h">High</span></td><td><code>ImageController.php:887/937,1956</code></td></tr>
+      <tr><td><code>MR-04</code></td><td>又拍云防盗链签名与官方规范不符（防盗链开则全线 403 / 关则私有图公开）</td><td><span class="pill p-h">High</span></td><td><code>UpyunSdkDriver.php:118-124</code></td></tr>
+      <tr><td><code>MR-03</code></td><td>API Key 明文落库（DB 泄露即全部在途 Key 可用）</td><td><span class="pill p-h">High</span></td><td><code>ApiKey.php:21-24 / schema.sql:29</code></td></tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>按模块族的 High / Medium 分布</h2>
+    <svg viewBox="0 0 900 300" role="img" aria-label="按模块族的 High 与 Medium 分布">
+      <text x="60" y="20" font-size="13" fill="#6b6b6b">模块族（High / Medium 计数）</text>
+      <rect x="60" y="35" width="560" height="26" fill="#f2efe9" rx="3"/>
+      <rect x="60" y="35" width="60" height="26" fill="#ef6c00" rx="3"/>
+      <rect x="120" y="35" width="300" height="26" fill="#f9a825" rx="3"/>
+      <text x="632" y="53" font-size="12" fill="#2b2b2b">Core 安全基座：High 1 / Medium 3</text>
+
+      <rect x="60" y="70" width="560" height="26" fill="#f2efe9" rx="3"/>
+      <rect x="60" y="70" width="60" height="26" fill="#ef6c00" rx="3"/>
+      <rect x="120" y="70" width="420" height="26" fill="#f9a825" rx="3"/>
+      <text x="632" y="88" font-size="12" fill="#2b2b2b">控制器层：High 1 / Medium 5</text>
+
+      <rect x="60" y="105" width="560" height="26" fill="#f2efe9" rx="3"/>
+      <rect x="60" y="105" width="60" height="26" fill="#ef6c00" rx="3"/>
+      <rect x="120" y="105" width="420" height="26" fill="#f9a825" rx="3"/>
+      <text x="632" y="123" font-size="12" fill="#2b2b2b">模型与数据一致性：High 1 / Medium 5</text>
+
+      <rect x="60" y="140" width="560" height="26" fill="#f2efe9" rx="3"/>
+      <rect x="60" y="140" width="120" height="26" fill="#ef6c00" rx="3"/>
+      <rect x="180" y="140" width="300" height="26" fill="#f9a825" rx="3"/>
+      <text x="632" y="158" font-size="12" fill="#2b2b2b">存储驱动层：High 2 / Medium 5</text>
+
+      <rect x="60" y="175" width="560" height="26" fill="#f2efe9" rx="3"/>
+      <rect x="60" y="175" width="0" height="26" fill="#ef6c00" rx="3"/>
+      <rect x="120" y="175" width="180" height="26" fill="#f9a825" rx="3"/>
+      <text x="632" y="193" font-size="12" fill="#2b2b2b">前端视图与 JS：High 0 / Medium 3</text>
+
+      <rect x="60" y="210" width="560" height="26" fill="#f2efe9" rx="3"/>
+      <rect x="60" y="210" width="180" height="26" fill="#ef6c00" rx="3"/>
+      <rect x="240" y="210" width="120" height="26" fill="#f9a825" rx="3"/>
+      <text x="632" y="228" font-size="12" fill="#2b2b2b">供应链 / 发布链 / 配置部署：High 3 / Medium 6</text>
+
+      <text x="60" y="268" font-size="11" fill="#6b6b6b">注：合并条目（MR-05/09/12/15/38）按主归属模块计；宽度按计数比例示意，非精确刻度。</text>
+      <text x="60" y="288" font-size="11" fill="#6b6b6b">来源：MoeRNG 深度审计报告（2026-10-11），docs\audit\MoeRNG-深度审计报告-2026-10-11.md。</text>
+    </svg>
+  </div>
+
+  <div class="foot">
+    本图与《MoeRNG 深度审计报告（2026-10-11）》配套，仅用于风险分布的快速可视化；详细证据、利用路径与修复路线图以报告正文为准。<br>
+    审计为只读静态审计 + 逻辑复刻断言（无 PHP CLI / MySQL 运行环境），涉及真实运行时行为的事项已在报告第 7 章列为「未验证」。
+  </div>
+</div>
+</body>
+</html>

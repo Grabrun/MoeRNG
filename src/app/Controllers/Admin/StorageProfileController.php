@@ -43,7 +43,7 @@ class StorageProfileController extends Controller
             if ($request->input('is_default') === '1') {
                 $profile->setAsDefault();
             }
-            $this->json(['success' => true, 'message' => '存储实例「' . $profile->name . '」已创建', 'item' => $this->toItem($profile)]);
+            $this->json(['success' => true, 'message' => '存储实例「' . $profile->name . '」已创建', 'item' => $this->toClientItem($profile)]);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);
         }
@@ -70,7 +70,8 @@ class StorageProfileController extends Controller
                 throw new \RuntimeException('实例名称「' . $name . '」已存在');
             }
 
-            $data = $this->collectRequest($request);
+            // MR-12: 编辑路径传入解密后的旧配置，凭据类字段留空时回填原值。
+            $data = $this->collectRequest($request, $profile->config());
             $data['name'] = $name;
             $profile->fill($data);
             if (!$profile->save()) {
@@ -79,7 +80,7 @@ class StorageProfileController extends Controller
             if ($request->input('is_default') === '1') {
                 $profile->setAsDefault();
             }
-            $this->json(['success' => true, 'message' => '存储实例已更新', 'item' => $this->toItem($profile)]);
+            $this->json(['success' => true, 'message' => '存储实例已更新', 'item' => $this->toClientItem($profile)]);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);
         }
@@ -134,7 +135,7 @@ class StorageProfileController extends Controller
             if (!$profile->save()) {
                 throw new \RuntimeException('操作失败，请重试');
             }
-            $this->json(['success' => true, 'message' => $profile->isEnabled() ? '已启用' : '已停用', 'item' => $this->toItem($profile)]);
+            $this->json(['success' => true, 'message' => $profile->isEnabled() ? '已启用' : '已停用', 'item' => $this->toClientItem($profile)]);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);
         }
@@ -150,7 +151,7 @@ class StorageProfileController extends Controller
                 throw new \RuntimeException('存储实例不存在');
             }
             $profile->setAsDefault();
-            $this->json(['success' => true, 'message' => '默认上传方案已切换为「' . $profile->name . '」', 'item' => $this->toItem($profile)]);
+            $this->json(['success' => true, 'message' => '默认上传方案已切换为「' . $profile->name . '」', 'item' => $this->toClientItem($profile)]);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);
         }
@@ -171,8 +172,13 @@ class StorageProfileController extends Controller
         return new StorageProfile($data);
     }
 
-    /** Validate + collect profile fields (driver/provider/config JSON). */
-    private function collectRequest(Request $request): array
+    /** Validate + collect profile fields (driver/provider/config JSON).
+     *
+     * @param array|null $keepSecrets decrypted old config (update path only):
+     *        credential fields left blank in the form are filled from here,
+     *        because the edit form no longer echoes plaintext secrets (MR-12).
+     */
+    private function collectRequest(Request $request, ?array $keepSecrets = null): array
     {
         $driver = trim((string) $request->input('driver', 'local'));
         if (!in_array($driver, ['local', 's3'], true)) {
@@ -197,7 +203,18 @@ class StorageProfileController extends Controller
                 // 签名 URL 用它替代默认 {bucket}.cos.{region}.myqcloud.com。
                 'source_domain' => trim((string) $request->input('cfg_source_domain', '')),
                 'signed_ttl' => trim((string) $request->input('cfg_signed_ttl', '300')),
+                // MR-04: 又拍云 CDN Token 防盗链独立密钥（可空=不签名）。
+                'token_key' => trim((string) $request->input('cfg_token_key', '')),
             ];
+            // MR-12: 编辑表单不再回显凭据明文，留空 = 保留原值（仅 update 路径传入
+            // $keepSecrets；create 路径无旧值，留空仍触发下方必填校验）。
+            if ($keepSecrets !== null) {
+                foreach (['key', 'secret', 'token_key'] as $sf) {
+                    if (($config[$sf] ?? '') === '' && (string) ($keepSecrets[$sf] ?? '') !== '') {
+                        $config[$sf] = (string) $keepSecrets[$sf];
+                    }
+                }
+            }
             if ($config['key'] === '' || $config['secret'] === '' || $config['bucket'] === '') {
                 throw new \RuntimeException('对象存储实例需填写完整的 AccessKey / SecretKey / Bucket');
             }
@@ -243,5 +260,26 @@ class StorageProfileController extends Controller
             'usable' => $p->isUsable(),
             'config' => $p->config(),
         ];
+    }
+
+    /**
+     * MR-12: same shape as toItem() but with credential values masked before
+     * leaving the server. toItem() stays plaintext for internal/driver use;
+     * every JSON response to the admin UI goes through this instead.
+     */
+    private function toClientItem(StorageProfile $p): array
+    {
+        $item = $this->toItem($p);
+        $cfg = $item['config'] ?? [];
+        if (is_array($cfg)) {
+            foreach ($cfg as $k => $v) {
+                if (is_string($v) && \App\Core\CredentialCipher::isSecretField((string) $k) && $v !== '') {
+                    // 只露末 4 位做识别，完整值永不进响应体。
+                    $cfg[$k] = '••••' . (strlen($v) > 4 ? substr($v, -4) : '');
+                }
+            }
+            $item['config'] = $cfg;
+        }
+        return $item;
     }
 }
