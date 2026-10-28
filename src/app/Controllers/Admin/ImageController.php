@@ -598,42 +598,64 @@ class ImageController extends Controller
         $h = imagesy($src);
         $quality = self::thumbQuality();   // v1.4.0-beta.2: 来自系统设置（默认 82）
         $out = [];
+        // 当前档已落盘但**尚未并入 $out** 的临时文件。并入后才算「已交付」，
+        // 在此之前抛异常必须自己删 —— 见下方 catch。
+        $pendingTmp = null;
 
-        foreach (\App\Models\Image::THUMB_SIZES as $size => $target) {
-            // 尺寸推导与读取端（API 要如实回报"返回的那张图"的宽高）**共用同一份实现**，
-            // 所以接口报出来的宽高必然等于实际生成的那张图的宽高，不会两处各算一套。
-            $dims = \App\Models\Image::thumbDimensions($w, $h, $target);
-            if ($dims === null) {
-                continue;   // 不放大（原图长边本就不超过该档位）
+        try {
+            foreach (\App\Models\Image::THUMB_SIZES as $size => $target) {
+                // 尺寸推导与读取端（API 要如实回报"返回的那张图"的宽高）**共用同一份实现**，
+                // 所以接口报出来的宽高必然等于实际生成的那张图的宽高，不会两处各算一套。
+                $dims = \App\Models\Image::thumbDimensions($w, $h, $target);
+                if ($dims === null) {
+                    continue;   // 不放大（原图长边本就不超过该档位）
+                }
+                [$tw, $th] = $dims;
+
+                $dst = imagecreatetruecolor($tw, $th);
+                // 保留透明通道（PNG/WebP 带 alpha）
+                imagealphablending($dst, false);
+                imagesavealpha($dst, true);
+                $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+                imagefill($dst, 0, 0, $transparent);
+                imagecopyresampled($dst, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
+
+                $tmp = tempnam(sys_get_temp_dir(), 'moerng-thumb-' . $size . '-');
+                $ok = $tmp !== false && imagewebp($dst, $tmp, $quality);
+                imagedestroy($dst);
+                if (!$ok) {
+                    if ($tmp !== false) @unlink($tmp);
+                    continue; // 该档失败，其余档继续
+                }
+                $pendingTmp = $tmp;
+                // v1.5.0-beta.2: 字节数**生成时实测**（webp 编码结果取决于质量设置与
+                // libwebp 版本，事后无法推导）→ 随 thumbs 一起入库，供 API 如实回报 file_size。
+                $bytes = (int) @filesize($tmp);
+                // thumbKey() 对历史 v1 布局的 path 会抛 RuntimeException。它必须在
+                // 「并入 $out」之前调用，这样抛出时 $pendingTmp 仍被本帧持有、可自清理。
+                $out[$size] = [
+                    'tmp' => $tmp,
+                    'key' => \App\Models\Image::thumbKey($size, $path),
+                    'bytes' => $bytes > 0 ? $bytes : null,   // 0 = 未知，绝不谎报
+                ];
+                $pendingTmp = null;   // 已交付给 $out，交由调用方的 discardThumbs 负责
             }
-            [$tw, $th] = $dims;
-
-            $dst = imagecreatetruecolor($tw, $th);
-            // 保留透明通道（PNG/WebP 带 alpha）
-            imagealphablending($dst, false);
-            imagesavealpha($dst, true);
-            $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
-            imagefill($dst, 0, 0, $transparent);
-            imagecopyresampled($dst, $src, 0, 0, 0, 0, $tw, $th, $w, $h);
-
-            $tmp = tempnam(sys_get_temp_dir(), 'moerng-thumb-' . $size . '-');
-            $ok = $tmp !== false && imagewebp($dst, $tmp, $quality);
-            imagedestroy($dst);
-            if (!$ok) {
-                if ($tmp !== false) @unlink($tmp);
-                continue; // 该档失败，其余档继续
+        } catch (\Throwable $e) {
+            // 自清理：本函数是临时文件的**唯一**产生者，故必须自己兜底。
+            // 调用方此时拿到的是异常而非返回数组，$gen 仍为 null，
+            // discardThumbs(null) 会直接 return —— 不在这里删就是纯泄漏
+            // （v1 布局的每张图漏 1-3 个 webp 到 sys_get_temp_dir()，无人清理）。
+            if ($pendingTmp !== null) {
+                @unlink($pendingTmp);
             }
-            // v1.5.0-beta.2: 字节数**生成时实测**（webp 编码结果取决于质量设置与
-            // libwebp 版本，事后无法推导）→ 随 thumbs 一起入库，供 API 如实回报 file_size。
-            $bytes = (int) @filesize($tmp);
-            $out[$size] = [
-                'tmp' => $tmp,
-                'key' => \App\Models\Image::thumbKey($size, $path),
-                'bytes' => $bytes > 0 ? $bytes : null,   // 0 = 未知，绝不谎报
-            ];
+            foreach ($out as $t) {
+                if (!empty($t['tmp'])) @unlink($t['tmp']);
+            }
+            throw $e;
+        } finally {
+            imagedestroy($src);
         }
 
-        imagedestroy($src);
         return ['readable' => true, 'thumbs' => $out, 'reason' => 'ok'];
     }
 
@@ -849,8 +871,13 @@ class ImageController extends Controller
                     . "WHERE `id` IN (" . implode(',', $ids) . ") AND `process_status` = 'pending'"
                 );
                 if ($marked !== count($ids)) {
+                    // 全部或部分行已被并发方（另一个管理员 / 另一个标签页）抢先认领。
+                    // 返回 contended 让前端退避，而不是立刻重试 —— 否则 done=0、
+                    // failed=0、remaining>0 的组合会让前端的两个 break 条件都不成立，
+                    // 退化成以网络 RTT 为间隔的紧循环，每轮都白跑 8 条 COUNT。
                     $this->json([
                         'success' => true,
+                        'contended' => true,
                         'done' => 0,
                         'failed' => 0,
                         'skipped' => 0,
@@ -1164,6 +1191,10 @@ class ImageController extends Controller
                 $scanned++;
                 $lastId = max($lastId, $id);
                 $gen = null; // v1.3.2-beta.2: catch 里用于清理未及上传的临时缩略图
+                // 从对象存储取回的原图副本 —— 必须在 try 外声明，否则异常展开后
+                // 本帧的引用丢失、catch 无从得知，finally 也就删不掉（见 finally）。
+                $localFile = null;
+                $isTemp = false;
                 try {
                     // ── ① 零网络快速路径（v1.5.0-beta.3）────────────────────────────
                     // thumbs 与 thumb_bytes 都已完整 ⇒ 状态本就该是 ok，只是**还没被写下来**
@@ -1241,8 +1272,6 @@ class ImageController extends Controller
                     }
 
                     // ── ③ 从最终存储取回原图字节 → 生成缩略图 ──────────────────────
-                    $localFile = null;
-                    $isTemp = false;
                     if ($driver instanceof \App\Storage\LocalDriver) {
                         $localFile = $driver->uploadDir() . '/' . ltrim($path, '/');
                         if (!is_file($localFile) || !is_readable($localFile)) {
@@ -1257,10 +1286,9 @@ class ImageController extends Controller
                     }
 
                     // —— 多尺寸缩略图生成 + 逐档上传 ——
+                    // 下载副本的删除统一交给 finally（原先写在 makeThumbnails 之后，
+                    // 一旦该调用抛异常就永远不执行 → 每次硬失败漏一份完整原图）。
                     $gen = $this->makeThumbnails($localFile, (string) $row['mime_type'], $path);
-                    if ($isTemp) {
-                        @unlink($localFile);
-                    }
                     $thumbUp = $this->uploadThumbs($driver, $gen['thumbs']);
                     $thumbKeys = $thumbUp['keys'];
 
@@ -1310,6 +1338,13 @@ class ImageController extends Controller
                     // 代价是这类行会一直占批次位置，直到前端 `done===0 && failed>0` 中止 ——
                     // 既有行为，本次不改动（避免把"重试语义"与"硬失败"混在一起改）。
                     $results[] = ['id' => $id, 'error' => mb_substr($e->getMessage(), 0, 300)];
+                } finally {
+                    // 下载副本只有一个归宿：本行处理结束后删掉，无论成功、失败还是抛异常。
+                    // 放在 finally 而不是各分支里，是因为异常可能来自任何一步
+                    //（取回后解码前、生成中、上传中），逐个分支补删除必然漏。
+                    if ($isTemp && $localFile !== null) {
+                        @unlink($localFile);
+                    }
                 }
             }
 

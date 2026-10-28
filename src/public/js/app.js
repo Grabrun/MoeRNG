@@ -1357,7 +1357,7 @@ async function parseJsonResponse(resp, label) {
 // v1.3.3-beta.1 修复: 本函数曾在一次脚本异常中整体丢失（3 处调用点引用未定义函数，
 // 点击报 "runProcessQueue is not defined"），且无 harness 覆盖 —— 现已纳入 click 矩阵。
 // setUI(pct, text, detail) 控制进度条；onTick({phase, stats, ...}) 让调用方实时刷新
-// 状态卡片（phase: start | inflight | batch | done）。
+// 状态卡片（phase: start | inflight | batch | contended | done）。
 async function runProcessQueue(setUI, onTick) {
     const BATCH = 10;   // v2.0.0-beta.12: 3 → 10（与服务端默认对齐，积压轮数减少 2/3）
     let totalDone = 0, totalFailed = 0, totalSkipped = 0;
@@ -1416,6 +1416,14 @@ async function runProcessQueue(setUI, onTick) {
         if (nDone === 0 && nFailed > 0) {
             const first = (j.results && j.results[0] && j.results[0].error) || '';
             throw new Error('连续失败，已中止' + (first ? '（' + first + '）' : ''));
+        }
+        // 本批被并发方（另一个标签页 / 另一位管理员）抢先认领。
+        // 此时 done=failed=0 而 remaining>0，前面的两个退出条件都不成立 ——
+        // 不退避就会以网络 RTT 为间隔空转，每轮白跑 8 条 COUNT（含 2 次全表回表）。
+        // 抖动的固定退避足够：认领冲突通常 1-2 轮就化解，不需要指数退避。
+        if (j.contended) {
+            if (onTick) onTick({ phase: 'contended', stats: lastStats });
+            await new Promise(function (r) { setTimeout(r, 800 + Math.random() * 400); });
         }
     }
 
