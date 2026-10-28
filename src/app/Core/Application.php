@@ -216,6 +216,9 @@ class Application
             $migrationError .= $this->ensureUserLastLogin($db);
             // v1.2.1 登录增强: remember-me (auto-login) token columns on users.
             $migrationError .= $this->ensureUserRemember($db);
+            // 收敛 images.status 的死 ENUM 值（'hidden' / 'deleted'）+ 补 path 索引。
+            $migrationError .= $this->pruneDeadStatusValues($db);
+            $migrationError .= $this->ensureImagePathIndex($db);
         } catch (\Throwable $e) {
             $migrationError = $migrationError !== ''
                 ? $migrationError . ' | ' . $e->getMessage()
@@ -441,6 +444,68 @@ class Application
         return $err;
     }
 
+    /**
+     * 收敛 images.status 的死 ENUM 值：'hidden' / 'deleted' → 只留 'active'。
+     *
+     * 这两个值从 beta.7 起到本轮为止从未被任何代码路径写入（删除一律走
+     * Image::delete() 物理删除）。保留它们有两个害处：一是让人误以为存在
+     * 「隐藏 / 软删」语义，二是 'deleted' 与物理删除重名极易引发误用
+     * （置为 deleted 后前台 status='active' 过滤仍会对外可见）。
+     *
+     * 幂等：已是单值 ENUM 时 SHOW COLUMNS 探测到无 hidden/deleted，直接返回。
+     * 安全：若库里真有落在这两个值的行（理论上不可能，但外部直改过数据库则可能），
+     * 先把它们改回 'active' 再收敛 ENUM，绝不丢数据、也绝不留下非法值。
+     */
+    private function pruneDeadStatusValues(\PDO $db): string
+    {
+        try {
+            $col = $db->query("SHOW COLUMNS FROM `images` LIKE 'status'")->fetch(\PDO::FETCH_ASSOC);
+            $type = (string) ($col['Type'] ?? '');
+            if ($type === '' || stripos($type, 'hidden') === false) {
+                return ''; // 已收敛（或列不存在），无需处理。
+            }
+
+            // 极端情况：外部直接改过库，确有行落在死值上。先归位为 active，
+            // 否则 ALTER 收窄 ENUM 时 MySQL 会把这些行截断/置空。
+            $stuck = $db->query(
+                "SELECT COUNT(*) FROM `images` WHERE `status` IN ('hidden','deleted')"
+            )->fetchColumn();
+            if ((int) $stuck > 0) {
+                $db->exec("UPDATE `images` SET `status` = 'active' WHERE `status` IN ('hidden','deleted')");
+                error_log("[MoeRNG] images.status 发现 {$stuck} 行处于死值，已归位为 active 再收敛 ENUM");
+            }
+
+            $db->exec("ALTER TABLE `images` MODIFY COLUMN `status` ENUM('active') NOT NULL DEFAULT 'active'");
+            return '';
+        } catch (\Throwable $e) {
+            // 收窄失败不阻断站点：ENUM 多几个死值只是冗余，不影响任何现有逻辑。
+            error_log('[MoeRNG] images.status 死值收敛失败（可忽略）: ' . $e->getMessage());
+            return '';
+        }
+    }
+
+    /**
+     * 为 images.path 补前缀索引（cleanupStagingFiles 逐文件按 path 反查用）。
+     *
+     * VARCHAR(512) 在 utf8mb4 下全长索引会超 InnoDB 3072 字节上限，故取前缀 191。
+     * 幂等：1061（duplicate key name）视为已存在。
+     */
+    private function ensureImagePathIndex(\PDO $db): string
+    {
+        try {
+            $db->exec("ALTER TABLE `images` ADD INDEX `idx_path` (`path`(191))");
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            if (stripos($msg, '1061') !== false || stripos($msg, 'duplicate key name') !== false) {
+                return '';
+            }
+            // 大表加索引可能超时/锁表；失败只记录，不阻断站点（查询仍会走全表扫描，
+            // 只是慢，功能不受影响）。
+            error_log('[MoeRNG] ADD INDEX idx_path 失败（不影响功能）: ' . $msg);
+        }
+        return '';
+    }
+
     private function columnExists(\PDO $db, string $table, string $col): bool
     {
         try {
@@ -546,7 +611,7 @@ class Application
         }
         try {
             $db->exec(
-                "ALTER TABLE `images` ADD COLUMN `storage_profile_id` INT UNSIGNED NULL AFTER `storage_provider`, "
+                "ALTER TABLE `images` ADD COLUMN `storage_profile_id` INT NULL AFTER `storage_provider`, "
                 . "ADD INDEX `idx_storage_profile` (`storage_profile_id`)"
             );
             return '';
@@ -566,9 +631,60 @@ class Application
 
     public function baseUrl(): string
     {
+        // MR-31: never blindly trust the Host header. Prefer the operator's
+        // explicit `app.base_url` from config (authoritative). Only derive from
+        // HTTP_HOST when it is not configured, and then sanitize the host so an
+        // injected `Host: evil.com` / CRLF cannot poison absolute links or the
+        // install redirect.
+        $configured = trim((string) (Config::get('app.base_url', '') ?? ''));
+        if ($configured !== '') {
+            $p = parse_url($configured);
+            if ($p && !empty($p['host'])) {
+                $scheme = !empty($p['scheme']) ? strtolower($p['scheme']) : 'http';
+                $host = $p['host'];
+                if (!empty($p['port'])) {
+                    $host .= ':' . (int) $p['port'];
+                }
+                return "{$scheme}://{$host}";
+            }
+        }
+
         $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $host = $this->sanitizeHost((string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
         return "{$scheme}://{$host}";
+    }
+
+    /**
+     * MR-31: validate/sanitize a request-supplied Host value. Strips CRLF/NUL,
+     * splits an optional port, and rejects anything that is not a sane hostname.
+     * Returns 'localhost' for anything suspicious so a bad Host can never be
+     * reflected into an absolute URL.
+     */
+    private function sanitizeHost(string $host): string
+    {
+        $host = str_replace(["\r", "\n", "\0"], '', $host);
+        $host = trim($host);
+        if ($host === '') {
+            return 'localhost';
+        }
+        $port = '';
+        // IPv6 literal, e.g. [::1]:8080
+        if (preg_match('/^(\[[0-9a-fA-F:]+\])(:(\d+))?$/', $host, $m)) {
+            $host = $m[1];
+            if (!empty($m[3]) && (int) $m[3] > 0 && (int) $m[3] <= 65535) {
+                $port = ':' . (int) $m[3];
+            }
+        } elseif (str_contains($host, ':')) {
+            [$h, $p] = explode(':', $host, 2);
+            $host = $h;
+            if (ctype_digit($p) && (int) $p > 0 && (int) $p <= 65535) {
+                $port = ':' . (int) $p;
+            }
+        }
+        if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$/', $host)) {
+            return 'localhost';
+        }
+        return $host . $port;
     }
 
     public function run(): void
@@ -579,9 +695,13 @@ class Application
 
         // Handle installation redirect FIRST — the settings table may not
         // exist yet on a fresh install, so nothing below may touch it.
+        // MR-31: redirect to a SITE-RELATIVE path, never an absolute URL built
+        // from the (untrusted) Host header. The browser resolves /install against
+        // whatever host it actually contacted, so a spoofed `Host: evil.com` can
+        // no longer 302 the operator to an attacker domain.
         if (!$this->installed && !str_starts_with($path, '/install')) {
             $response = new Response();
-            $response->redirect($this->baseUrl() . '/install');
+            $response->redirect('/install');
         }
 
         // v1.1.0-beta.4: output gzip (settings.gzip_level, 0 = off).
@@ -612,14 +732,14 @@ class Application
      */
     private function maybeAutoBackup(): void
     {
-        try {
-            if (\App\Models\Setting::get('backup_enabled', '0') !== '1') {
-                return;
-            }
-        } catch (\Throwable) {
-            return; // settings unavailable (fresh install) — skip silently
+        // MR-32: read the gate from the in-memory settings cache (loaded into
+        // Config as `settings.*` by bootstrap->loadSettings) instead of issuing a
+        // fresh `SELECT * FROM settings` on EVERY web request. Values are strings,
+        // same as Setting::get; default '0' keeps the "disabled" behavior.
+        if ((string) Config::get('settings.backup_enabled', '0') !== '1') {
+            return;
         }
-        $period = \App\Models\Setting::get('backup_period', 'daily');
+        $period = (string) Config::get('settings.backup_period', 'daily');
         $hours = match ($period) {
             'weekly' => 168,
             'monthly' => 720,

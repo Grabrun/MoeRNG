@@ -89,6 +89,11 @@ class ObsSdkDriver implements StorageInterface
             // over the region endpoint so presigned URLs use that domain.
             'endpoint' => $this->sourceDomain !== '' ? $this->sourceDomain : $this->endpoint,
             // signature left unset → OBS V2 (no region required)
+            // MR-20: bound connect/socket timeouts so a stalled endpoint fails
+            // fast instead of pinning a FPM worker.
+            'connect_timeout' => 5,
+            'socket_timeout'  => 30,
+            'timeout'         => 30,
         ]);
         return $this->client;
     }
@@ -187,11 +192,17 @@ class ObsSdkDriver implements StorageInterface
                 'Expires' => $this->signedTtl, // seconds
             ]);
             return (string) ($model['SignedUrl'] ?? '');
-        } catch (\Throwable) {
-            // Presigning should not fail with valid credentials; fall back to a
-            // bare endpoint URL so access errors surface on the image request.
+        } catch (\Throwable $e) {
+            // MR-42: 私有 bucket 的裸 URL 必然 403，直接返回等于给出一个必然失效的
+            // 链接（图片仍显示占位符，极难发现）。只有探测确认可匿名读才降级。
             $host = $this->sourceDomain !== '' ? $this->sourceDomain : $this->endpoint;
-            return rtrim($host, '/') . '/' . $this->bucket . '/' . ltrim($remotePath, '/');
+            $bare = rtrim($host, '/') . '/' . $this->bucket . '/' . ltrim($remotePath, '/');
+            if (!\App\Storage\S3Driver::isPubliclyReadable($bare)) {
+                error_log('[MoeRNG] OBS 预签名失败且裸 URL 不可匿名读（不降级）: ' . $e->getMessage());
+                throw new \RuntimeException('OBS 预签名失败，且该对象无法匿名访问: ' . $e->getMessage(), 0, $e);
+            }
+            error_log('[MoeRNG] OBS 预签名失败，降级为公开读裸 URL: ' . $e->getMessage());
+            return $bare;
         }
     }
 

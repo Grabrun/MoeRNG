@@ -62,8 +62,36 @@ class FileController extends Controller
         header('Content-Type: ' . $mime);
         header('Cache-Control: private, max-age=60');
         header('Content-Length: ' . (string) filesize($real));
+
+        // MR-19：nosniff + SVG 强制下载。
+        //
+        // SVG 是可执行 XML —— 内联渲染时其中的 <script> 会在本站源执行，
+        // 使 /files 成为一条可用的存储型 XSS 投递路径。故图片类型（jpg/png/
+        // webp/…，本端点主用途）保持 inline，其余一律 attachment。
+        header('X-Content-Type-Options: nosniff');
+        $inlineSafe = in_array($mime, [
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'image/bmp', 'image/avif',
+        ], true);
+        header('Content-Disposition: ' . ($inlineSafe ? 'inline' : 'attachment')
+            . '; filename="' . self::safeDownloadName(basename($real)) . '"');
+
         readfile($real);
         exit;
+    }
+
+    /**
+     * 生成安全的 Content-Disposition filename。
+     * 去掉引号/反斜杠/控制字符与路径分隔符，防止响应头注入与文件名歧义。
+     */
+    private static function safeDownloadName(string $name): string
+    {
+        $name = basename($name);
+        $name = preg_replace('/[\x00-\x1F\x7F"\\\\\/]/u', '', $name) ?? '';
+        if ($name === '' || $name === '.' || $name === '..') {
+            $name = 'download';
+        }
+        return $name;
     }
 
     /**

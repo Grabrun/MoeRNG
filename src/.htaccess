@@ -11,20 +11,26 @@ RewriteEngine On
 # -----------------------------------------------------------------------------
 # Deny rules MUST come before the catch-all rewrite below, otherwise the
 # catch-all matches first and these are never evaluated.
+#
+# 清单必须与 src/nginx.conf.example:49 保持一致。storage/ 是本地媒体根
+# （LocalDriver DEFAULT_REL_DIR = 'storage/uploads'），漏掉它会让 Apache 部署
+# 下整个图库可被匿名直接下载，/files 的 HMAC 签名形同虚设。
 # -----------------------------------------------------------------------------
-RewriteRule ^(config|app|views|releases|backups|var)/ - [F,L]
+RewriteRule ^(config|app|views|releases|backups|var|storage)/ - [F,L]
 RewriteRule ^\. - [F,L]
 
 <FilesMatch "\.(env|sql|zip|md|log|ini|lock|ya?ml)$">
     Require all denied
 </FilesMatch>
 
-# Never execute PHP inside the upload directory
-<Directory "public/uploads">
-    <FilesMatch "\.php$">
-        Require all denied
-    </FilesMatch>
-</Directory>
+# ⚠️ 不要在 .htaccess 根写 <FilesMatch "\.php$"> Require all denied。
+#
+# <FilesMatch> 对当前目录**及所有子目录**递归生效，而本文件所在的 src/ 正是
+# 前端控制器目录 —— 写了会让 index.php / api.php / admin.php / install.php /
+# doctor.php / bootstrap.php 全部 403，Apache 部署直接全站瘫痪。
+# （MR-14 曾这样改过一轮，线上用 Nginx 未暴露。现有 CI 也不检查本文件。）
+# 禁止上传目录执行 PHP 靠它们自带的 .htaccess（public/uploads/、storage/incoming/）；
+# 需要 vhost 级兜底请在 Apache 站点配置里加，**不要**写在这里。
 
 # -----------------------------------------------------------------------------
 # Front controllers

@@ -199,15 +199,17 @@ function initApiTester() {
                     let hint = '';
                     try { const j = JSON.parse(text); hint = (j && (j.message || j.error)) || ''; }
                     catch (e2) { /* non-JSON body */ }
-                    resultBox.innerHTML =
-                        '<pre style="color:var(--danger)">请求失败（HTTP ' + resp.status + '）'
+                    // 修复 XSS + CSP：改用 textContent + CSS class（见 helpers.js:renderSafeText）
+                    window.renderSafeText(resultBox,
+                        '请求失败（HTTP ' + resp.status + '）'
                         + (hint ? '\n' + hint : '\n接口返回了非 JSON 错误体 —— 多为网关/伪静态（URL Rewrite）未配置，请求未到达应用层。')
-                        + '\n\n原始响应：\n' + pretty + '</pre>';
+                        + '\n\n原始响应：\n' + pretty,
+                        'test-result-error');
                     showMeta(resp.status, resp.statusText || '错误', ms);
                     saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
                     resolveRequest();
                 } else {
-                    resultBox.innerHTML = '<pre>' + pretty + '</pre>';
+                    window.renderSafeText(resultBox, pretty, 'test-result-raw');
                     showMeta(resp.status, resp.statusText || '成功', ms);
                     saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
                     resolveRequest();
@@ -217,7 +219,7 @@ function initApiTester() {
             await requestDone;
         } catch(e) {
             const ms = performance.now() - t0;
-            resultBox.innerHTML = '<pre style="color:var(--danger)">错误：' + e.message + '</pre>';
+            window.renderSafeText(resultBox, '错误：' + e.message, 'test-result-error');
             showMeta(0, '网络错误', ms);
             saveTestHistory(apiPath, '错误：' + e.message);
             // v1.2.1-beta.3 修复: 异常分支也要 resolve，否则 await requestDone 永远挂起 → 按钮卡 Loading

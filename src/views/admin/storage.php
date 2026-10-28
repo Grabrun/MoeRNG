@@ -160,20 +160,21 @@
                         <input type="text" name="cfg_endpoint" id="profile-cfg-endpoint" class="form-control" placeholder="">
                     </div>
                     <div class="form-group pv-field" data-field="cdn">
-                        <label class="pv-label">CDN 加速域名（可选）<span class="pv-req">*</span></label>
+                        <label class="pv-label">CDN 加速域名（可选）</label>
                         <input type="text" name="cfg_cdn" id="profile-cfg-cdn" class="form-control" placeholder="https://cdn.example.com">
                     </div>
                     <div class="form-group pv-field" data-field="source_domain">
-                        <label class="pv-label">自定义源站域名（可选）<span class="pv-req">*</span></label>
+                        <label class="pv-label">自定义源站域名（可选）</label>
                         <input type="text" name="cfg_source_domain" id="profile-cfg-source-domain" class="form-control" placeholder="img.example.com">
                     </div>
                     <div class="form-group pv-field" data-field="signed_ttl">
                         <label class="pv-label">签名链接有效期（秒）<span class="pv-req">*</span></label>
                         <input type="text" name="cfg_signed_ttl" id="profile-cfg-signed-ttl" class="form-control" placeholder="300（默认 5 分钟）">
                     </div>
-                    <!-- MR-04: 又拍云 CDN Token 防盗链密钥（仅 upyun 显示，其他服务商由 applyProvider 隐藏） -->
+                    <!-- MR-04: 又拍云 CDN Token 防盗链密钥（仅 upyun 显示，其他服务商由 applyProvider 隐藏）。
+                         留空 = 不签名，返回裸 URL（见 UpyunSdkDriver::url），故**非必填**，不加星号。 -->
                     <div class="form-group pv-field" data-field="token_key">
-                        <label class="pv-label">Token 防盗链密钥<span class="pv-req">*</span></label>
+                        <label class="pv-label">Token 防盗链密钥（仅又拍云可选）</label>
                         <input type="password" name="cfg_token_key" id="profile-cfg-token-key" class="form-control" placeholder="" autocomplete="new-password">
                     </div>
                 </div>

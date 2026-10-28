@@ -51,6 +51,21 @@ class QiniuSdkDriver implements StorageInterface
         return $cfg;
     }
 
+    /**
+     * MR-20: bound curl timeouts for the upload hot path.
+     *
+     * The Qiniu SDK defaults to NO curl timeout (CURLOPT_TIMEOUT unset), so a
+     * stalled endpoint would pin a FPM worker until the OS TCP timeout. We pass
+     * an explicit RequestOptions (5s connect / 30s request) to UploadManager.
+     * NOTE: BucketManager (delete/stat) does not accept a RequestOptions in this
+     * SDK version — those are low-frequency management calls and remain on the SDK
+     * default; the upload path (the DoS amplifier) is covered here.
+     */
+    private function reqOpt(): \Qiniu\Http\RequestOptions
+    {
+        return new \Qiniu\Http\RequestOptions(5, null, 30);
+    }
+
     /** Map short region codes to the SDK Region factories. */
     private function zone(): \Qiniu\Region
     {
@@ -67,7 +82,7 @@ class QiniuSdkDriver implements StorageInterface
     public function upload(string $localPath, string $remotePath, string $contentType): string
     {
         $token = $this->auth()->uploadToken($this->bucket);
-        $uploader = new \Qiniu\Storage\UploadManager($this->config());
+        $uploader = new \Qiniu\Storage\UploadManager($this->config(), $this->reqOpt());
         $ret = $uploader->putFile($token, $remotePath, $localPath, null, $contentType);
         if (isset($ret[0]['error'])) {
             throw new \RuntimeException('七牛上传失败: ' . (string) $ret[0]['error']);
@@ -131,7 +146,9 @@ class QiniuSdkDriver implements StorageInterface
         // the default {bucket}.qiniudns.com host for the signed URL.
         $host = $this->sourceDomain !== '' ? $this->sourceDomain : $this->bucket . '.qiniudns.com';
         $base = 'https://' . $host . '/' . str_replace('%2F', '/', rawurlencode($key));
-        $expires = time() + $this->signedTtl;
+        // MR-41: window-aligned expiry (same path → identical signed URL within a
+        // 60s window → browser cache hits), matching the local SignedUrl.
+        $expires = SignedUrl::alignedExpiry($this->signedTtl);
         $signData = $base . '?e=' . $expires;
         $sign = rtrim(strtr(base64_encode(hash_hmac('sha1', $signData, $this->secretKey, true)), '+/', '-_'), '=');
         return $signData . '&token=' . $this->accessKey . ':' . $sign;

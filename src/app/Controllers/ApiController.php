@@ -112,6 +112,12 @@ class ApiController extends Controller
 
         $thumbExt = strtolower(pathinfo($img->thumbKeyFor($actual), PATHINFO_EXTENSION));
 
+        // N+1 修复：原先 `$img->category() ? $img->category()->name : null` 对每张图
+        // 调用两次无记忆化的 Image::category()（每次一条
+        // `SELECT * FROM categories WHERE id=?`）。/api/v1/images?limit=100
+        // 因此多出约 200 条冗余查询。提取到局部变量，只查一次。
+        $cat = $img->category();
+
         return [
             'id' => $img->id,
             'url' => $resolved['url'],
@@ -120,7 +126,7 @@ class ApiController extends Controller
             'height' => $dims[1] ?? null,
             'mime_type' => $isOrig ? $img->mime_type : ($thumbExt === 'webp' ? 'image/webp' : null),
             'file_size' => $isOrig ? $img->file_size : $img->thumbBytesFor($actual),
-            'category' => $img->category() ? $img->category()->name : null,
+            'category' => $cat ? $cat->name : null,
         ];
     }
 
@@ -145,7 +151,17 @@ class ApiController extends Controller
         $type = $request->input('type', 'json');
 
         // Determine return type
-        $returnType = $type;
+        //
+        // type 走白名单 + 400，与 parseSize 同一原则：非法值不静默回退，
+        // 否则调用方会以为自己拿到了请求的格式。
+        if ($type !== '' && !in_array($type, ['json', 'redirect'], true)) {
+            $this->json([
+                'success' => false,
+                'error'   => 'Invalid value for "type". Allowed values: json, redirect.',
+                'allowed' => ['json', 'redirect'],
+            ], 400);
+        }
+        $returnType = $type !== '' ? $type : 'json';
         if ($request->wantsJson()) {
             $returnType = 'json';
         }
@@ -160,12 +176,21 @@ class ApiController extends Controller
         }
 
         // Find category
+        //
+        // slug 查不到时显式 404，不静默放宽成「返回全量」—— 否则 `?category=natrue`
+        //（拼错）会拿到全库随机图且 200 无提示，调用方会以为自己筛到了该分类。
         $categoryId = null;
-        if ($category) {
-            $cat = Category::getBySlug($category);
-            if ($cat) {
-                $categoryId = (int) $cat->id;
+        if ($category !== '' && $category !== null) {
+            $cat = Category::getBySlug((string) $category);
+            if (!$cat) {
+                $this->json([
+                    'success' => false,
+                    'error'   => 'Category not found',
+                    'message' => '分类不存在：' . htmlspecialchars((string) $category, ENT_QUOTES, 'UTF-8'),
+                    'code'    => 'CATEGORY_NOT_FOUND',
+                ], 404);
             }
+            $categoryId = (int) $cat->id;
         }
 
         $image = Image::random($categoryId);
@@ -190,6 +215,18 @@ class ApiController extends Controller
 
         if ($returnType === 'redirect') {
             $resolved = $image->displayUrlWithSize($size);
+            // 边界守卫：Image::url() 在 path 与 url 两列同时为空时返回 ''（非 null），
+            // displayUrlWithSize 会把它包成 ['url' => '', 'size' => null]。直接 302 到
+            // 空 Location 会让调用方拿到无法解析的跳转。数据不一致的行（迁移中断、
+            // 存储配置变更后 path 失效）即可触发，故按 404 处理而非裸跳。
+            if (($resolved['url'] ?? '') === '') {
+                $this->json([
+                    'success' => false,
+                    'error'   => 'Image unavailable',
+                    'message' => '该图片的可访问地址缺失（存储路径为空），请在管理后台检查该图片的存储配置。',
+                    'code'    => 'IMAGE_URL_MISSING',
+                ], 404);
+            }
             (new Response())->redirect($resolved['url'], 302);
         }
 
@@ -218,17 +255,29 @@ class ApiController extends Controller
             $this->json(['success' => false, 'error' => $sizeError], 400);
         }
 
-        $where = "status = 'active'";
+        // MR-13 修复：原先只有 `status = 'active'`，**缺少 `process_status = 'done'`**。
+        // /random 一直带这个过滤（Image::random 的 $where），列表端点却没有 ——
+        // 于是处于 pending/processing/failed 的图片（尚未生成缩略图、可能连原图都
+        // 没落最终存储）会被列进 /api/v1/images，对外暴露未就绪条目：URL 可能为空、
+        // 缩略图 404。与 /random 的可见性契约不一致。
+        $where = "status = 'active' AND process_status = 'done'";
         $params = [];
 
-        if ($category) {
-            $cat = Category::getBySlug($category);
-            if ($cat) {
-                $ids = Image::getCategoryAndChildIds((int) $cat->id);
-                $placeholders = implode(',', array_fill(0, count($ids), '?'));
-                $where .= " AND category_id IN ({$placeholders})";
-                $params = $ids;
+        // 同 /random：slug 不存在时显式 404，不静默放宽成「返回全量」。
+        if ($category !== '' && $category !== null) {
+            $cat = Category::getBySlug((string) $category);
+            if (!$cat) {
+                $this->json([
+                    'success' => false,
+                    'error'   => 'Category not found',
+                    'message' => '分类不存在：' . htmlspecialchars((string) $category, ENT_QUOTES, 'UTF-8'),
+                    'code'    => 'CATEGORY_NOT_FOUND',
+                ], 404);
             }
+            $ids = Image::getCategoryAndChildIds((int) $cat->id);
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $where .= " AND category_id IN ({$placeholders})";
+            $params = $ids;
         }
 
         $result = Image::paginate($page, $perPage, 'sort_order ASC, id DESC', $where, $params);

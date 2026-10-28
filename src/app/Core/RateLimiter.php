@@ -42,18 +42,42 @@ class RateLimiter
         }
         $file = $dir . '/' . md5($bucket) . '.json';
         $now = time();
+
+        // MR-10: the ENTIRE read-modify-write must happen under one exclusive
+        // lock. Previously the file was read unlocked, then only the write used
+        // LOCK_EX — concurrent login attempts each read count=N, +1, and write
+        // back (last-write-wins → lost updates → lockout threshold delayed).
+        // Open c+ (read+write, create-if-missing, no truncate) and hold LOCK_EX
+        // until the new state is fully flushed.
+        $fh = @fopen($file, 'c+');
+        if ($fh === false) {
+            return [false, 0, 0]; // cannot open/create bucket → fail closed
+        }
+        if (!flock($fh, LOCK_EX)) {
+            fclose($fh);
+            return [false, 0, 0]; // cannot lock → fail closed
+        }
+
         $data = ['start' => $now, 'count' => 0];
-        if (is_file($file)) {
-            $raw = json_decode((string) file_get_contents($file), true);
-            if (is_array($raw)) {
-                $data = $raw;
+        $raw = stream_get_contents($fh);
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $data = $decoded;
             }
         }
         if (($now - (int) ($data['start'] ?? $now)) >= $windowSeconds) {
             $data = ['start' => $now, 'count' => 0];
         }
         $data['count'] = (int) ($data['count'] ?? 0) + 1;
-        @file_put_contents($file, json_encode($data), LOCK_EX);
+
+        rewind($fh);
+        ftruncate($fh, 0);
+        fwrite($fh, json_encode($data));
+        fflush($fh);
+        flock($fh, LOCK_UN);
+        fclose($fh);
+
         return [
             $data['count'] <= $limit,
             max(0, $limit - $data['count']),

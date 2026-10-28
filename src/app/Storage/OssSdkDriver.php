@@ -75,6 +75,11 @@ class OssSdkDriver implements StorageInterface
             new \AlibabaCloud\Oss\V2\Credentials\StaticCredentialsProvider($this->accessKey, $this->secretKey)
         );
         $cfg->setRegion($this->region);
+        // MR-20: bound connect/read timeouts (SDK defaults are 10s/20s; tighten
+        // the connect window and keep a 30s read ceiling so a stalled endpoint
+        // fails fast instead of pinning a FPM worker).
+        $cfg->setConnectTimeout(5.0);
+        $cfg->setReadWriteTimeout(30.0);
         // v1.2.1: custom source domain bound to the bucket in the OSS console
         // (CNAME). The SDK then resolves every request host — presigned URLs
         // included — against that domain instead of the default
@@ -159,11 +164,19 @@ class OssSdkDriver implements StorageInterface
                 ['expires' => new \DateInterval('PT' . $this->signedTtl . 'S')]
             );
             return (string) ($result->url ?? '');
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            // MR-42: 私有 bucket 的裸 URL 必然 403，直接返回等于给出一个必然失效的
+            // 链接（图片仍显示占位符，极难发现）。只有探测确认可匿名读才降级。
             $host = $this->sourceDomain !== ''
                 ? $this->sourceDomain
                 : "{$this->bucket}.oss-{$this->region}.aliyuncs.com";
-            return "https://{$host}/" . ltrim($remotePath, '/');
+            $bare = "https://{$host}/" . ltrim($remotePath, '/');
+            if (!\App\Storage\S3Driver::isPubliclyReadable($bare)) {
+                error_log('[MoeRNG] OSS 预签名失败且裸 URL 不可匿名读（不降级）: ' . $e->getMessage());
+                throw new \RuntimeException('OSS 预签名失败，且该对象无法匿名访问: ' . $e->getMessage(), 0, $e);
+            }
+            error_log('[MoeRNG] OSS 预签名失败，降级为公开读裸 URL: ' . $e->getMessage());
+            return $bare;
         }
     }
 

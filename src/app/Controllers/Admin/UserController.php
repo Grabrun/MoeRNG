@@ -57,6 +57,14 @@ class UserController extends Controller
         $user->setPassword($password);
         $user->save();
 
+        // MR-38: account creation is a sensitive admin action — audit it.
+        \App\Models\AuditLog::record('user_create', [
+            'id'       => (int) $user->id,
+            'username' => (string) $user->username,
+            'email'    => (string) $user->email,
+            'role'     => (string) $user->role,
+        ]);
+
         Session::flash('success', 'User created successfully.');
         $this->redirect('/admin/users');
     }
@@ -73,6 +81,7 @@ class UserController extends Controller
 
         $user->username = $request->input('username', $user->username);
         $user->email = $request->input('email', $user->email);
+        $oldRole = (string) $user->role;
 
         // MR-02 纵深防御：与 create 相同的 role 白名单 + 非 admin 会话强制 editor，
         // 防止任何非 admin 上下文把账号提权为 admin。
@@ -89,6 +98,16 @@ class UserController extends Controller
         }
 
         $user->save();
+
+        // MR-38: account edit (esp. role change) must be audited. Never log the
+        // password; only that one was set.
+        \App\Models\AuditLog::record('user_update', [
+            'id'       => (int) $user->id,
+            'username' => (string) $user->username,
+            'role'     => $oldRole . ' -> ' . (string) $user->role,
+            'password_changed' => !empty($password),
+        ]);
+
         Session::flash('success', 'User updated successfully.');
         $this->redirect('/admin/users');
     }
@@ -105,6 +124,13 @@ class UserController extends Controller
 
         $user->status = $user->status === 'active' ? 'disabled' : 'active';
         $user->save();
+
+        // MR-38: enable/disable an account is sensitive (locks someone out).
+        \App\Models\AuditLog::record('user_status', [
+            'id'       => (int) $user->id,
+            'username' => (string) $user->username,
+            'status'   => (string) $user->status,
+        ]);
 
         $this->json(['success' => true, 'message' => 'Status updated.']);
     }

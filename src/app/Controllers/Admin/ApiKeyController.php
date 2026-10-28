@@ -49,6 +49,14 @@ class ApiKeyController extends Controller
             $this->fail('API Key 创建失败，请重试。', 500, self::PAGE);
         }
 
+        // MR-38: key issuance is sensitive. Never log the plaintext key — only
+        // the 16-char prefix already stored for display.
+        \App\Models\AuditLog::record('apikey_create', [
+            'id'     => (int) $apiKey->id,
+            'name'   => (string) $apiKey->name,
+            'prefix' => (string) $apiKey->key_prefix,
+        ]);
+
         // The plaintext key is returned exactly once, right here, so the UI can
         // show it in a modal with a copy button. It is NEVER persisted: only
         // key_hash (SHA-256) and the 16-char key_prefix are stored.
@@ -83,6 +91,13 @@ class ApiKeyController extends Controller
             $this->fail('API Key 更新失败。', 500, self::PAGE);
         }
 
+        // MR-38: permission / quota changes are sensitive.
+        \App\Models\AuditLog::record('apikey_update', [
+            'id'          => (int) $apiKey->id,
+            'name'        => (string) $apiKey->name,
+            'permissions' => json_decode((string) ($apiKey->permissions ?: '[]'), true) ?: [],
+        ]);
+
         $this->ok('API Key 已更新。', ['item' => $this->present($apiKey)], self::PAGE);
     }
 
@@ -99,6 +114,13 @@ class ApiKeyController extends Controller
         if (!$apiKey->save()) {
             $this->fail('状态切换失败。', 500, self::PAGE);
         }
+
+        // MR-38: enabling/disabling a key gates API access.
+        \App\Models\AuditLog::record('apikey_status', [
+            'id'     => (int) $apiKey->id,
+            'name'   => (string) $apiKey->name,
+            'status' => (string) $apiKey->status,
+        ]);
 
         $this->ok(
             $apiKey->status === 'active' ? 'API Key 已启用。' : 'API Key 已禁用。',
@@ -120,6 +142,13 @@ class ApiKeyController extends Controller
         if (!$apiKey->delete()) {
             $this->fail('API Key 删除失败。', 500, self::PAGE);
         }
+
+        // MR-38: irreversible revocation — audit which key was removed.
+        \App\Models\AuditLog::record('apikey_delete', [
+            'id'     => $id,
+            'name'   => (string) $apiKey->name,
+            'prefix' => (string) $apiKey->key_prefix,
+        ]);
 
         $this->ok('API Key 已删除。', ['id' => $id], self::PAGE);
     }

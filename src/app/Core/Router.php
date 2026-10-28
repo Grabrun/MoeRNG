@@ -93,10 +93,10 @@ class Router
             }
         }
 
-        // 404
+        // 404（错误响应统一带 success:false）
         http_response_code(404);
         $response = new Response();
-        return $response->json(['error' => 'Not Found', 'message' => 'The requested route does not exist.'], 404);
+        return $response->json(['success' => false, 'error' => 'Not Found', 'message' => 'The requested route does not exist.'], 404);
     }
 
     /**

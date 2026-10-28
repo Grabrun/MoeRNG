@@ -800,8 +800,19 @@ class ImageController extends Controller
 
         // v1.3.3-beta.1: 先把上次中断（超时/致命错误）遗留的 'processing' 行复位为
         // pending —— 放在开头，使它们在本轮立即被拾取，而不是白等一轮。
+        // MR-15: 复位加陈旧窗口（updated_at < NOW()-5min）——beta.12 的条件认领
+        // （AND process_status='pending'）只防「重复拾取」，防不住本句把别的 worker
+        // 正在处理的行打回 pending 后被再次认领。认领 UPDATE 会自动刷新 updated_at，
+        // 故窗口外的 processing 行才是「真卡死」（worker 被强杀 / 上次 shutdown 钩子
+        // 写库失败）；单请求硬上限 120s，5 分钟窗口绝不误伤正常处理中的批。
+        // 老库缺 updated_at 时整句抛异常被吞 = 不复位：降级方向是「不误伤并发」，
+        // 卡死残留由人工 requeue，优于误伤在途任务。
         try {
-            $pdo->exec("UPDATE `images` SET `process_status` = 'pending' WHERE `process_status` = 'processing'");
+            $pdo->exec(
+                "UPDATE `images` SET `process_status` = 'pending' "
+                . "WHERE `process_status` = 'processing' "
+                . "AND `updated_at` < (NOW() - INTERVAL 5 MINUTE)"
+            );
         } catch (\Throwable) {
             // 列缺失等异常忽略：健康检查会提示补列
         }
@@ -933,8 +944,11 @@ class ImageController extends Controller
                         \App\Models\Image::deriveThumbMeta($thumbsValue, (string) $thumbPath, $thumbBytesValue)
                     );
                     $upd = $pdo->prepare(
-                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `thumbs` = ?, `thumb_bytes` = ?, `processing_state` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ?"
+                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `thumbs` = ?, `thumb_bytes` = ?, `processing_state` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ? AND `process_status` = 'processing'"
                     );
+                    // MR-15: WHERE 带 processing 守卫 —— 若该行已被并发方夺走
+                    // （shutdown 钩子标 failed / 另一 worker 先一步收尾），rowCount=0，
+                    // 本 worker 的写整体放弃，不覆盖并发方已落定的权威状态。
                     $upd->execute([$url, $thumbPath, $thumbsValue, $thumbBytesValue, $stateValue, $id]);
 
                     // —— 成功后删除临时原图 ——
@@ -953,7 +967,9 @@ class ImageController extends Controller
                     $failed++;
                     $err = mb_substr($e->getMessage(), 0, 480);
                     try {
-                        $pdo->prepare("UPDATE `images` SET `process_status` = 'failed', `process_error` = ? WHERE `id` = ?")
+                        // MR-15: 同样带 processing 守卫 —— 行已被并发方先写 done 时
+                        // rowCount=0，放弃把成功的结果改判 failed。
+                        $pdo->prepare("UPDATE `images` SET `process_status` = 'failed', `process_error` = ? WHERE `id` = ? AND `process_status` = 'processing'")
                             ->execute([$err, $id]);
                     } catch (\Throwable) { /* 忽略 */ }
                     // MR-05: 回滚已落桶的对象（best-effort）。这些对象此刻没有任何 DB
@@ -1094,6 +1110,35 @@ class ImageController extends Controller
         //   pending 模式不需要游标 —— 行处理完状态就变了、自然离开集合。
         $fromId  = $isRetry ? max(0, (int) $request->input('from', '0')) : 0;
         $fromSql = $isRetry ? ' AND `id` > ' . (int) $fromId : '';
+
+        // MR-37: 并发认领（文件锁）——管理页按钮与 CLI 子进程 backfill-thumbs-batch.php
+        // 走的是同一个方法入口，此前 SELECT 到处理完之间无任何占位，两边同刻跑会把
+        // 同一批行各生成一遍缩略图、双上传（同 key 覆盖，幂等但双倍 egress）。
+        // 这里用 storage/ 下一把排他锁（flock LOCK_EX|LOCK_NB）：单实例并发下只跑一份，
+        // 拿不到锁的请求立即返回（待补数实时透出，前端循环跟随，持锁方跑完后
+        // remaining 归零自行收敛）。锁句柄随请求结束由 OS 释放，进程崩溃无残留。
+        // 锁文件打不开（storage 目录缺失/不可写）时降级为无锁直跑 —— 与修复前等价，
+        // 不把环境问题放大成功能不可用。
+        $backfillLock = @fopen(dirname(__DIR__, 3) . '/storage/backfill-thumbs.lock', 'c');
+        if (is_resource($backfillLock) && !flock($backfillLock, LOCK_EX | LOCK_NB)) {
+            @fclose($backfillLock);
+            $waitingRemaining = (int) $pdo->query(
+                "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$targetCond}{$fromSql}"
+            )->fetchColumn();
+            $this->json([
+                'success' => true,
+                'scope' => $scope,
+                'total' => $waitingRemaining,
+                'remaining' => $waitingRemaining,
+                'scanned' => 0,
+                'next_from' => $fromId,
+                'done' => 0,
+                'failed' => 0,
+                'results' => [],
+                'skipped' => 'already_running',
+            ]);
+            return;
+        }
 
         $total = $isRetry
             ? (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND {$targetCond}")->fetchColumn()
@@ -1999,6 +2044,47 @@ class ImageController extends Controller
             return;
         }
 
+        // ── 原子认领：防止并发 worker 抢到同一行 ──
+        //
+        // 不认领直接回收+DELETE 的话，与 processQueue 竞争会让正在上传的图片
+        // 被删，而 worker 走成功路径不触发回滚 → 对象存储留下无 DB 指认的孤儿
+        // （StorageInterface 无 LIST 能力，只能人工捞）。
+        //
+        // 用条件 UPDATE 把行从 pending/failed 搬到 processing（worker 认领用的
+        // 同一状态），两者条件互斥，同一行只有一方能拿到；rowCount 为 0 即
+        // worker 已抢先，跳过该行绝不碰它的对象。复用既有 ENUM 值，无需改 schema。
+        $claimed = [];
+        $claimStmt = $pdo->prepare(
+            'UPDATE `images` SET `process_status` = \'processing\', `updated_at` = NOW() '
+            . 'WHERE `id` = ? AND `process_status` = ?'
+        );
+        foreach ($rows as $r) {
+            $rid = (int) $r['id'];
+            $originalStatus = (string) ($r['process_status'] ?? '');
+            try {
+                $claimStmt->execute([$rid, $originalStatus]);
+                if ($claimStmt->rowCount() > 0) {
+                    $claimed[] = $r;
+                }
+                // rowCount == 0 → 并发 worker 已认领，跳过（不回收、不删除）。
+            } catch (\Throwable $e) {
+                // 认领失败（并发/权限）→ 保守跳过该行，绝不在无所有权时删对象。
+                error_log('[MoeRNG] queue-clear 认领失败，跳过 image #' . $rid . ': ' . $e->getMessage());
+            }
+        }
+        $rows = $claimed;
+        if ($rows === []) {
+            $this->json([
+                'success'      => true,
+                'scope'        => $scope,
+                'deleted'      => 0,
+                'temp_removed' => 0,
+                'orphan_risk'  => 0,
+                'skipped'      => '全部目标行已被处理队列并发认领，未做清理',
+            ]);
+            return;
+        }
+
         // MR-05: 删 DB 前先回收已落桶的对象（best-effort）。此前这里是裸 DELETE ——
         // failed 行的原图/缩略图可能已在最终存储，DB 一删，这些对象就成了无法被
         // LIST、也无 DB 记录指认的孤儿。顺序必须是：逐行收集 key → 逐 key delete →
@@ -2091,6 +2177,15 @@ class ImageController extends Controller
                 ]);
             } catch (\Throwable) { /* 审计失败不再抛 */ }
         }
+
+        // MR-38: 清队列操作本身留痕（与上面 image_delete_storage_failed 不重复——
+        // 那条是「回收失败」的异常事件，这条是「谁在何时清了哪个范围」的操作审计）。
+        \App\Models\AuditLog::record('image_queue_clear', [
+            'scope' => $scope,
+            'deleted' => $deleted,
+            'temp_removed' => $tempRemoved,
+            'orphan_risk' => $orphanRisk,
+        ]);
 
         $this->json([
             'success' => true,
@@ -2278,7 +2373,13 @@ class ImageController extends Controller
         $finfo = finfo_open(FILEINFO_MIME_TYPE);
         for ($i = 0; $i < $fileCount; $i++) {
             $tmpName = $files['tmp_name'][$i];
-            $originalName = $files['name'][$i];
+            // original_name 列是 VARCHAR(255)（schema.sql）。MySQL 8 默认严格模式
+            // 下超长会直接报错让整次上传失败（部分 Windows 客户端会带上很长的
+            // 路径串），故在此截断到列宽上限。注意与 process_error 的
+            // mb_substr(..., 0, 480) 同类处理；这里按字符截断避免切碎多字节汉字。
+            // 仅用于展示与去重比对，不参与任何路径构造（存储路径由
+            // Image::newAssetPath 生成，与原文件名完全解耦）。
+            $originalName = mb_substr((string) $files['name'][$i], 0, 255);
             $fileSize = $files['size'][$i];
             $mimeType = $files['type'][$i];
 
@@ -2504,6 +2605,8 @@ class ImageController extends Controller
             $this->fail('图片删除失败。', 500, self::PAGE);
         }
 
+        // image_delete 审计由 Image::delete()（模型层，字段更全）唯一承担，
+        // 此处不再重复埋点 —— 否则批量删 N 张会产生 N+1 条审计。
         $this->ok('已删除 1 张图片。', ['deleted' => [$id]], self::PAGE);
     }
 
@@ -2538,6 +2641,13 @@ class ImageController extends Controller
         if (empty($deleted)) {
             $this->fail('删除失败，未能移除任何图片。', 500, self::PAGE);
         }
+
+        // MR-38: 批量删除留痕（ids 全量入 detail，事后可追溯「谁删了哪一批」）。
+        \App\Models\AuditLog::record('image_batch_delete', [
+            'count' => count($deleted),
+            'ids' => $deleted,
+            'failed' => $failed,
+        ]);
 
         $message = '已删除 ' . count($deleted) . ' 张图片。';
         if (!empty($failed)) {
@@ -2577,7 +2687,10 @@ class ImageController extends Controller
             if (!$image) {
                 continue;
             }
-            if ($image->update(['category_id' => $categoryId === 0 ? null : $categoryId])) {
+            // 赋值后 save()，不要用 $image->update([...])：Model::update() 是
+            // 无参的 protected 方法，从外部调用会抛 Error。与单张 update() 一致。
+            $image->category_id = $categoryId === 0 ? null : $categoryId;
+            if ($image->save()) {
                 $ok++;
             }
         }

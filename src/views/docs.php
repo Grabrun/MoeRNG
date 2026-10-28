@@ -192,7 +192,8 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
                         <tbody>
                             <tr><td><code>page</code></td><td>int</td><td>1</td><td>页码</td></tr>
                             <tr><td><code>limit</code></td><td>int</td><td>20</td><td>每页数量（最大100）</td></tr>
-                            <tr><td><code>category</code></td><td>string</td><td>-</td><td>分类过滤</td></tr>
+                            <tr><td><code>category</code></td><td>string</td><td>-</td><td>分类过滤（含子分类）；slug 不存在时返回 404</td></tr>
+                            <tr><td><code>size</code></td><td>string</td><td>original</td><td>返回哪一档图片：<code>original</code> / <code>lg</code> / <code>md</code> / <code>sm</code>；非法值返回 400</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -216,24 +217,21 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
                     <span class="text-muted doc-endpoint-label">服务统计</span>
                 </div>
                 <div class="body">
-                    <p>返回图片总数、分类总数、版本号、当前存储驱动等信息。</p>
+                    <p>返回图片总数与分类总数。</p>
+                    <p class="text-muted">出于安全考虑，本接口不返回版本号与存储驱动等信息（v1.2.1 起移除）。</p>
                     <div class="copy-wrap">
                         <button type="button" class="copy-btn" data-copy-text='{
   "success": true,
   "data": {
     "total_images": 1234,
-    "total_categories": 15,
-    "version": "<?= APP_VERSION ?>",
-    "storage_driver": "local"
+    "total_categories": 15
   }
 }'>复制</button>
                     <pre><code>{
   "success": true,
   "data": {
     "total_images": 1234,
-    "total_categories": 15,
-    "version": "<?= APP_VERSION ?>",
-    "storage_driver": "local"
+    "total_categories": 15
   }
 }</code></pre>
                     </div>

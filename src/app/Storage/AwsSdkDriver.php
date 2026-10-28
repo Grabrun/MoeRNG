@@ -76,6 +76,13 @@ class AwsSdkDriver implements StorageInterface
                 'key'    => $this->accessKey,
                 'secret' => $this->secretKey,
             ],
+            // MR-20: bound the per-request time so a hung/TCP-stalled endpoint
+            // fails fast instead of pinning a PHP-FPM worker until the OS TCP
+            // timeout. connect_timeout=5s handshake, timeout=30s whole request.
+            'http'        => [
+                'timeout'         => 30,
+                'connect_timeout' => 5,
+            ],
         ];
         // Custom endpoint (S3-compatible gateways such as MinIO) — AWS S3
         // itself resolves the endpoint from region, so this stays empty there.
@@ -179,14 +186,21 @@ class AwsSdkDriver implements StorageInterface
             ]);
             $request = $this->client()->createPresignedRequest($cmd, '+' . $this->signedTtl . ' seconds');
             return (string) $request->getUri();
-        } catch (\Throwable) {
-            // Fall back to a bare public URL (works for public-read buckets).
+        } catch (\Throwable $e) {
+            // MR-42: 私有 bucket 的裸 URL 必然 403，直接返回等于给出一个必然失效的
+            // 链接（图片仍显示占位符，极难发现）。只有探测确认可匿名读才降级。
             $host = $this->sourceDomain !== ''
                 ? rtrim($this->sourceDomain, '/')
                 : ($this->endpoint !== ''
                     ? rtrim($this->endpoint, '/')
                     : "{$this->bucket}.s3.{$this->region}.amazonaws.com");
-            return $host . '/' . ltrim($remotePath, '/');
+            $bare = $host . '/' . ltrim($remotePath, '/');
+            if (!\App\Storage\S3Driver::isPubliclyReadable($bare)) {
+                error_log('[MoeRNG] S3 预签名失败且裸 URL 不可匿名读（不降级）: ' . $e->getMessage());
+                throw new \RuntimeException('S3 预签名失败，且该对象无法匿名访问: ' . $e->getMessage(), 0, $e);
+            }
+            error_log('[MoeRNG] S3 预签名失败，降级为公开读裸 URL: ' . $e->getMessage());
+            return $bare;
         }
     }
 

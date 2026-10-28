@@ -85,15 +85,57 @@ class Category extends Model
         return $this->slug;
     }
 
+    /** Hard stop for recursive subtree deletion — mirrors getTree()/getFlatTree(). */
+    private const MAX_DELETE_DEPTH = 20;
+
     public function delete(): bool
     {
-        // Delete children first
-        foreach ($this->children() as $child) {
-            $child->delete();
+        return $this->deleteSubtree(0, true);
+    }
+
+    /**
+     * MR-16: recursive subtree delete with a depth guard and a single transaction.
+     *
+     * - Depth guard: a self-referencing parent_id cycle in dirty data would
+     *   otherwise recurse forever and blow the PHP stack (getTree()/getFlatTree()
+     *   already bail at 20; the delete path was the one that was missing it).
+     * - Transaction: the child deletes + the images unbind + this row delete run
+     *   atomically, so a mid-way DB failure rolls back instead of leaving a
+     *   half-deleted tree / partially-unbound images.
+     *
+     * @param int  $depth     recursion depth (internal).
+     * @param bool $outermost true only on the top-level call — it owns BEGIN/COMMIT.
+     * @throws \RuntimeException when the depth guard trips (dirty parent_id cycle).
+     */
+    private function deleteSubtree(int $depth, bool $outermost): bool
+    {
+        if ($depth > self::MAX_DELETE_DEPTH) {
+            throw new \RuntimeException(
+                '分类层级过深（超过 ' . self::MAX_DELETE_DEPTH . ' 层），或存在 parent_id 环；已中止删除以保护数据。'
+            );
         }
-        // Update images in this category to uncategorized
-        $stmt = Database::getInstance()->prepare("UPDATE `images` SET `category_id` = NULL WHERE `category_id` = ?");
-        $stmt->execute([$this->id]);
-        return parent::delete();
+        $db = Database::getInstance();
+        if ($outermost) {
+            $db->beginTransaction();
+        }
+        try {
+            // Delete children first (recursion; inner calls do NOT open a new txn).
+            foreach ($this->children() as $child) {
+                $child->deleteSubtree($depth + 1, false);
+            }
+            // Update images in this category to uncategorized.
+            $stmt = $db->prepare("UPDATE `images` SET `category_id` = NULL WHERE `category_id` = ?");
+            $stmt->execute([$this->id]);
+            $result = parent::delete();
+            if ($outermost) {
+                $db->commit();
+            }
+            return $result;
+        } catch (\Throwable $e) {
+            if ($outermost && $db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
     }
 }

@@ -16,6 +16,40 @@
 
 
 // =====================================================================
+// Safe text rendering (shared by front.js tester + app.js API tester)
+// =====================================================================
+// 必须用 textContent 而非 innerHTML：测试器渲染的是服务端响应原文，其中含
+// category 等数据库字段（分类名写入时只 trim、无字符白名单），拼进 innerHTML
+// 即为存储型 XSS —— /tester 无需登录，是最易触达的入口。
+//
+// 样式走 CSS class 而非内联 style 属性：CSP 为 style-src 'self' 'nonce-...'
+// （无 unsafe-inline），经 innerHTML 解析出的 style 属性节点会被**静默丢弃**
+// （不报错），错误提示因此丢失红色高亮。
+window.renderSafeText = function (container, text, cssClass) {
+    if (!container) { return; }
+    var pre = document.createElement('pre');
+    pre.textContent = text == null ? '' : String(text);   // 文本节点，不解析 HTML
+    if (cssClass) { pre.className = cssClass; }
+    // 用 textContent = '' 清空而非 replaceChildren()：后者虽已被现代浏览器广泛
+    // 支持，但 click_matrix_test 的最小 DOM shim 未实现它，且 textContent 写法
+    // 与本函数「只用 textContent、不碰 HTML 解析」的语义更一致。
+    container.textContent = '';
+    container.appendChild(pre);
+};
+
+
+// 共享的 HTML 转义。原先只有 app.js 的 initApiKeys() 内部有一份局部副本
+// （app.js:764），导致 renderHealth() 这类同文件其它函数拿不到它 —— 顺带也是
+// 「同一份逻辑散落多处」的隐患。提升为全局后，各处统一引用这一份。
+window.escapeHtml = function (str) {
+    if (str === null || str === undefined) { return ''; }
+    return String(str).replace(/[&<>"']/g, function (c) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+};
+
+
+// =====================================================================
 // Theme toggle (dark / light), persisted to localStorage('moerng-theme').
 // Lives in helpers.js (loaded on EVERY page, incl. the standalone login
 // page) so the toggle works wherever a .theme-toggle button exists —

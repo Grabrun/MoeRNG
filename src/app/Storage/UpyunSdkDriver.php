@@ -130,7 +130,10 @@ class UpyunSdkDriver implements StorageInterface
         if ($this->tokenKey === '') {
             return $base;
         }
-        $expires = time() + $this->signedTtl;
+        // MR-41: window-aligned expiry (same path → identical _upt within a 60s
+        // window → browser cache hits). The official _upt formula itself is
+        // untouched (P1/MR-04).
+        $expires = SignedUrl::alignedExpiry($this->signedTtl);
         $sign = substr(md5($this->tokenKey . '&' . $expires . '&' . $path), 12, 8) . $expires;
         return $base . '?_upt=' . $sign;
     }

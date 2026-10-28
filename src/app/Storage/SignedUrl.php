@@ -49,6 +49,12 @@ class SignedUrl
                 . 'so the HMAC signing key can be persisted (no DB fallback).'
             );
         }
+        // MR-28: lock the key file down to owner read/write (0640), matching
+        // CredentialCipher's credentials.php. Without this the file inherits the
+        // umask (often 022 → 0644), letting other local accounts on a shared host
+        // read the HMAC key and forge arbitrary /files signed URLs.
+        // Note: chmod is a no-op on Windows (expected) — this only hardens Unix.
+        @chmod($keyFile, 0640);
         // Re-read to survive concurrent first calls that raced each other.
         $re = @include $keyFile;
         $written = is_array($re) ? (string) ($re['signing_key'] ?? '') : '';
@@ -87,13 +93,28 @@ class SignedUrl
      */
     private const URL_WINDOW = 60;
 
-    /** Build the signed local download URL (relative — resolves on the host). */
-    public static function url(string $path, int $ttl): string
+    /**
+     * MR-41: window-aligned expiry, shared by the local /files signed URL and
+     * the Qiniu / Upyun private-space signatures.
+     *
+     * Snapping the issued time to the start of a URL_WINDOW-sized window means
+     * that repeated renders of the same path within one window produce an
+     * identical `expires` value (and therefore an identical signed URL), so the
+     * browser actually reuses the cached image instead of re-downloading it on
+     * every page view. Remaining lifetime stays in [ttl - window, ttl].
+     */
+    public static function alignedExpiry(int $ttl): int
     {
         $ttl = max(1, $ttl);
         $window = min(self::URL_WINDOW, $ttl);
         $issued = intdiv(time(), $window) * $window;
-        $expires = $issued + $ttl;
+        return $issued + $ttl;
+    }
+
+    /** Build the signed local download URL (relative — resolves on the host). */
+    public static function url(string $path, int $ttl): string
+    {
+        $expires = self::alignedExpiry($ttl);
         $p = rtrim(strtr(base64_encode($path), '+/', '-_'), '=');
         return '/files?p=' . $p . '&e=' . $expires . '&s=' . self::sign($path, $expires);
     }

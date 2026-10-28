@@ -27,7 +27,7 @@ final class CredentialCipher
     private const CIPHER = 'aes-256-gcm';
 
     private static ?string $key = null;
-    /** True when the key file could not be created/read — degrade to plaintext. */
+    /** True when the key file could not be created/read — sealConfig() now fails closed. */
     private static bool $unavailable = false;
 
     /**
@@ -50,7 +50,7 @@ final class CredentialCipher
             || str_ends_with($k, 'secret_key');
     }
 
-    /** Seal one value. Non-secret/empty inputs and unavailable-key environments pass through. */
+    /** Seal one value. Non-secret/empty inputs pass through; key lookup is delegated to sealConfig(). */
     public static function encrypt(string $plain): string
     {
         if ($plain === '' || str_starts_with($plain, self::PREFIX)) {
@@ -58,7 +58,10 @@ final class CredentialCipher
         }
         $key = self::loadKey();
         if ($key === null) {
-            return $plain; // degraded mode — same behaviour as before this class
+            // sealConfig() pre-checks availability and throws before reaching
+            // here for real secrets; this low-level fallback stays for any
+            // direct caller that already validated the key.
+            return $plain;
         }
         $nonce = random_bytes(12);
         $tag = '';
@@ -90,9 +93,41 @@ final class CredentialCipher
         return $plain === false ? '' : $plain;
     }
 
-    /** Apply encrypt() to every secret field of a config array. */
+    /**
+     * Apply encrypt() to every secret field of a config array.
+     *
+     * MR-11 (fail-closed): if ANY non-empty credential field actually needs
+     * sealing and the key is unavailable, we DO NOT silently fall back to
+     * plaintext. Instead we throw CredentialCipherKeyUnavailable so the caller
+     * (StorageProfile::save) refuses to persist the row — a DB leak must not
+     * hand over usable cloud credentials.
+     *
+     * The first-ever use still generates+persists the key lazily inside
+     * loadKey(); on a normal install config/ is writable (the installer wrote
+     * config/database.php there), so generation succeeds and no throw occurs.
+     * The throw only fires in the degraded state where a real secret cannot be
+     * sealed at all (config/ read-only after the key vanished).
+     */
     public static function sealConfig(array $config): array
     {
+        // Decide once, up front, whether sealing is required and possible.
+        // Already-sealed (enc:v1:) blobs and empty/non-secret fields are not
+        // material to this decision.
+        $needsSeal = false;
+        foreach ($config as $k => $v) {
+            if (is_string($v) && $v !== '' && self::isSecretField((string) $k)
+                && !str_starts_with($v, self::PREFIX)) {
+                $needsSeal = true;
+                break;
+            }
+        }
+        if ($needsSeal && self::loadKey() === null) {
+            throw new CredentialCipherKeyUnavailable(
+                '凭据加密密钥不可用（config/ 目录不可写或 key 文件缺失），'
+                . '已拒绝以明文保存存储凭据。请恢复 config/credentials.php 的可读权限后重试。'
+            );
+        }
+
         foreach ($config as $k => $v) {
             if (is_string($v) && self::isSecretField((string) $k) && $v !== '') {
                 $config[$k] = self::encrypt($v);
@@ -116,7 +151,9 @@ final class CredentialCipher
      * Load (creating on first use) the 256-bit key through the standard config
      * system: Config::get('credentials.key'), backed by config/credentials.php.
      * A site that generated the earlier standalone credential_key.php is
-     * migrated transparently; a read-only config/ degrades to plaintext.
+     * migrated transparently; if first-use generation fails (config/ read-only)
+     * we return null and sealConfig() fails closed (MR-11) instead of silently
+     * persisting credentials in plaintext.
      */
     private static function loadKey(): ?string
     {
@@ -183,4 +220,14 @@ final class CredentialCipher
         Config::set('credentials.key', $hex);
         return true;
     }
+}
+
+/**
+ * MR-11: thrown by sealConfig() when a real credential must be sealed but the
+ * key is unavailable. Callers must treat this as a hard failure and MUST NOT
+ * persist the row (fail-closed). Declared in this same file so no autoloader
+ * lookup is needed; the class is always loaded together with CredentialCipher.
+ */
+final class CredentialCipherKeyUnavailable extends \RuntimeException
+{
 }

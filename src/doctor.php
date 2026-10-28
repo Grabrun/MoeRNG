@@ -47,6 +47,16 @@ if (!$cli) {
         $authorized = false;
 
         if (session_status() === PHP_SESSION_NONE) {
+            // 本文件刻意不依赖 bootstrap（部署早期也要能跑），因此绕开了
+            // Session::start() 的加固。这里补上等价参数，否则 cookie 会退回
+            // PHP 默认值（use_strict_mode=0 = 可会话固定，且缺 HttpOnly/SameSite）。
+            session_set_cookie_params([
+                'httponly' => true,
+                'samesite' => 'Lax',
+                'secure'   => (($_SERVER['HTTPS'] ?? '') !== '' && ($_SERVER['HTTPS'] ?? '') !== 'off')
+                    || strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https',
+            ]);
+            ini_set('session.use_strict_mode', '1');
             @session_start();
         }
         if (!empty($_SESSION['user_id']) || !empty($_SESSION['admin_id'])) {

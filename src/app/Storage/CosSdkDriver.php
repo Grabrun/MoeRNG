@@ -83,6 +83,11 @@ class CosSdkDriver implements StorageInterface
                 'secretId'  => $this->accessKey,
                 'secretKey' => $this->secretKey,
             ],
+            // MR-20: the COS SDK defaults to timeout/connect_timeout = 3600s —
+            // a stalled endpoint would pin a FPM worker for an hour. Override to
+            // 5s connect / 30s request so failures surface fast.
+            'timeout'         => 30,
+            'connect_timeout' => 5,
         ];
         if ($this->sourceDomain !== '') {
             $config['domain'] = $this->sourceDomain;
@@ -189,15 +194,20 @@ class CosSdkDriver implements StorageInterface
                 '+' . $this->signedTtl . ' seconds'
             );
             return (string) $signed;
-        } catch (\Throwable) {
-            // Presigning should not fail with valid credentials; fall back to a
-            // bare public URL so access errors surface on the image request
-            // rather than crashing the listing page. Honour the custom
-            // source domain if the operator bound one in the COS console.
+        } catch (\Throwable $e) {
+            // MR-42: 预签名失败不静默降级裸 URL —— 私有 bucket 的裸 URL 必然 403，
+            // 那等于把「签名失效」变成「给出一个必然失效的链接」，且图片仍显示占位符，
+            // 极难被发现。先探测该裸 URL 是否真的可匿名读：只有公开读 bucket 才降级。
             $host = $this->sourceDomain !== ''
                 ? $this->sourceDomain
                 : "{$this->bucket}.cos.{$this->region}.myqcloud.com";
-            return "https://{$host}/" . ltrim($remotePath, '/');
+            $bare = "https://{$host}/" . ltrim($remotePath, '/');
+            if (!\App\Storage\S3Driver::isPubliclyReadable($bare)) {
+                error_log('[MoeRNG] COS 预签名失败且裸 URL 不可匿名读（不降级）: ' . $e->getMessage());
+                throw new \RuntimeException('COS 预签名失败，且该对象无法匿名访问: ' . $e->getMessage(), 0, $e);
+            }
+            error_log('[MoeRNG] COS 预签名失败，降级为公开读裸 URL: ' . $e->getMessage());
+            return $bare;
         }
     }
 

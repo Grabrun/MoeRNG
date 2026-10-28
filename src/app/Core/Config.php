@@ -84,13 +84,6 @@ class Config
         return self::$items;
     }
 
-    public static function save(string $file, array $data): bool
-    {
-        $path = self::$configPath . '/' . $file . '.php';
-        $content = "<?php\n\nreturn " . var_export($data, true) . ";\n";
-        return file_put_contents($path, $content, LOCK_EX) !== false;
-    }
-
     public static function reload(): void
     {
         self::$loaded = false;

@@ -32,6 +32,9 @@ class Mailer
      * 而非 settings 表，因为威胁是"能改数据库的攻击者"，而改 config 文件需要
      * 服务器文件权限（即运维本人的权限级别）。云厂商 metadata 地址
      * (169.254.169.254) 无论开关状态一律拒绝——它不是合法邮件服务器。
+     *
+     * @return string 已通过校验的 IP 字面量（调用方必须连它，而不是原 hostname）
+     * @throws \RuntimeException 主机为空 / 无法解析 / 指向内网或元数据地址
      */
     private static function assertSafeHost(string $host): string
     {
@@ -48,14 +51,14 @@ class Mailer
         $private = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
         if ($private === false) {
             if ((bool) Config::get('app.allow_private_smtp', false)) {
-                return $host; // explicit operator opt-in from config/app.php
+                return $ip; // explicit operator opt-in from config/app.php
             }
             throw new \RuntimeException(
                 'SMTP 主机不允许指向内网或保留地址。如确需使用内网邮件服务器，'
                 . '请在 config/app.php 中设置 \'allow_private_smtp\' => true。'
             );
         }
-        return $host;
+        return $ip;
     }
 
     /**
@@ -68,7 +71,7 @@ class Mailer
             return 'SMTP 服务器未配置（mail_host）';
         }
         try {
-            self::assertSafeHost($host);
+            $safeIp = self::assertSafeHost($host);
         } catch (\RuntimeException $e) {
             return $e->getMessage();
         }
@@ -79,7 +82,11 @@ class Mailer
         $from = trim(Setting::get('mail_from', $user !== '' ? $user : 'no-reply@localhost'));
         $fromName = trim(Setting::get('mail_from_name', 'MoeRNG'));
 
-        $remote = ($enc === 'ssl' ? 'ssl://' : '') . $host;
+        // 连**已验证的 IP**而非 hostname —— 否则是 DNS 重绑定（TOCTOU）：
+        // assertSafeHost 解析并校验的是那一刻的 IP，fsockopen 若按 hostname 再解析
+        // 一次，攻击者控制的域名可以在两次解析之间改指向内网/元数据地址。
+        // EHLO/MAIL FROM 等仍用 $host（见下方协议读写），保证对端看到的 SNI/域名正确。
+        $remote = ($enc === 'ssl' ? 'ssl://' : '') . $safeIp;
         $errno = 0;
         $errstr = '';
         $fp = @fsockopen($remote, $port, $errno, $errstr, 10);

@@ -278,15 +278,17 @@ function initApiTester() {
                     let hint = '';
                     try { const j = JSON.parse(text); hint = (j && (j.message || j.error)) || ''; }
                     catch (e2) { /* non-JSON body */ }
-                    resultBox.innerHTML =
-                        '<pre style="color:var(--danger)">请求失败（HTTP ' + resp.status + '）'
+                    // 修复 XSS + CSP：改用 textContent + CSS class（见 helpers.js:renderSafeText）
+                    window.renderSafeText(resultBox,
+                        '请求失败（HTTP ' + resp.status + '）'
                         + (hint ? '\n' + hint : '\n接口返回了非 JSON 错误体 —— 多为网关/伪静态（URL Rewrite）未配置，请求未到达应用层。')
-                        + '\n\n原始响应：\n' + pretty + '</pre>';
+                        + '\n\n原始响应：\n' + pretty,
+                        'test-result-error');
                     showMeta(resp.status, resp.statusText || 'Error', ms);
                     saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
                     resolveRequest();
                 } else {
-                    resultBox.innerHTML = '<pre>' + pretty + '</pre>';
+                    window.renderSafeText(resultBox, pretty, 'test-result-raw');
                     showMeta(resp.status, resp.statusText || 'OK', ms);
                     saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
                     resolveRequest();
@@ -296,7 +298,7 @@ function initApiTester() {
             await requestDone;
         } catch(e) {
             const ms = performance.now() - t0;
-            resultBox.innerHTML = '<pre style="color:var(--danger)">Error: ' + e.message + '</pre>';
+            window.renderSafeText(resultBox, 'Error: ' + e.message, 'test-result-error');
             showMeta(0, 'Network Error', ms);
             saveTestHistory(apiPath, 'Error: ' + e.message);
             // v1.2.1-beta.3 修复: 异常分支也要 resolve，否则 await requestDone 永远挂起 → 按钮卡 Loading
@@ -759,10 +761,9 @@ function initApiKeys() {
         document.getElementById('apikey-empty')?.classList.remove('hidden');
     }
 
-    function escapeHtml(str) {
-        return String(str).replace(/[&<>"']/g, c =>
-            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    }
+    // 转义函数已提升为全局 window.escapeHtml（helpers.js），与 renderHealth 等
+    // 同文件其它函数共用同一份实现，避免逻辑散落。
+    const escapeHtml = window.escapeHtml;
 
     function upsertRow(item, isNew) {
         const body = table.querySelector('tbody');
@@ -785,7 +786,7 @@ function initApiKeys() {
 
         row.innerHTML =
             '<td>' + escapeHtml(item.name) + '</td>' +
-            '<td><code style="font-size:0.8rem">' + escapeHtml(item.key_preview) + '</code></td>' +
+            '<td><code class="key-preview">' + escapeHtml(item.key_preview) + '</code></td>' +
             '<td>' + badges + '</td>' +
             '<td>' + item.rate_limit + ' / ' + item.rate_window + 's</td>' +
             '<td><span class="badge badge-' + (active ? 'success' : 'danger') + '">' + escapeHtml(item.status) + '</span></td>' +
@@ -1838,7 +1839,11 @@ function renderHealth(checks) {
     healthResults.innerHTML = Object.keys(checks).map(function(k) {
         const c = checks[k];
         const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', image_queue: '图片处理队列', thumb_backfill: '历史缩略图', hash_backfill: '历史图片哈希' };
-        return '<div>' + badge(c.ok) + ' ' + (labels[k] || k) + ' — ' + c.detail + '</div>';
+        // 修复：c.detail 服务端拼接了 $e->getMessage()（PDO 异常文本，含库/表/字段名），
+        // 原样拼进 innerHTML 未转义。这里补 escapeHtml —— 与同文件其它 innerHTML 用法
+        // （item.name / item.status 均走 escapeHtml）保持一致。
+        const esc = window.escapeHtml;
+        return '<div>' + badge(c.ok) + ' ' + esc(labels[k] || k) + ' — ' + esc(c.detail) + '</div>';
     }).join('');
     // 「执行修复」仅在有可修复未通过项时可用
     const fixable = Object.keys(checks).some(function(k) {

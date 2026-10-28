@@ -63,12 +63,14 @@ abstract class Controller
         // empty). Answer with a clear 413 instead of a confusing 419.
         if ($token === '' && $this->requestLikelyExceededPostMax()) {
             $this->json([
+                // 错误响应统一带 success:false
+                'success' => false,
                 'error' => '上传请求超过服务器限制（post_max_size = ' . ini_get('post_max_size')
                     . '，单文件限制 ' . ini_get('upload_max_filesize')
                     . '），请分批上传（建议一次 5-10 张）。',
             ], 413);
         }
-        $this->json(['error' => 'CSRF token validation failed.'], 419);
+        $this->json(['success' => false, 'error' => 'CSRF token validation failed.'], 419);
     }
 
     /** Whether this request's body was very likely dropped by post_max_size. */

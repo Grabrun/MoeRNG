@@ -119,8 +119,14 @@ class StorageProfile extends Model
                         JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
                     );
                 }
+            } catch (\App\Core\CredentialCipherKeyUnavailable $e) {
+                // MR-11 fail-closed: a real credential could not be sealed.
+                // Do NOT persist the row in plaintext — let the error bubble to
+                // the controller, which returns it to the admin instead.
+                throw $e;
             } catch (\Throwable) {
                 // leave the raw value untouched — save() must stay best-effort
+                // (only for malformed config JSON, never for credential sealing)
             }
         }
         $saved = parent::save();
@@ -280,12 +286,28 @@ class StorageProfile extends Model
     }
 
     /** Set this profile as the single default (clears others first). */
+    /**
+     * 设为默认存储实例并启用。
+     *
+     * 包在事务里：两步 UPDATE 之间若进程崩溃，会留下「无默认实例」的状态，
+     * 上传全线报错（defaultProfile() 有 fallback 兜底，但状态本身是错的）。
+     */
     public function setAsDefault(): bool
     {
         $db = Database::getInstance();
-        $db->exec('UPDATE `storage_profiles` SET `is_default` = 0');
-        $stmt = $db->prepare('UPDATE `storage_profiles` SET `is_default` = 1, `enabled` = 1 WHERE `id` = ?');
-        return $stmt->execute([(int) $this->attributes[static::$primaryKey]]);
+        $db->beginTransaction();
+        try {
+            $db->exec('UPDATE `storage_profiles` SET `is_default` = 0');
+            $stmt = $db->prepare('UPDATE `storage_profiles` SET `is_default` = 1, `enabled` = 1 WHERE `id` = ?');
+            $ok = $stmt->execute([(int) $this->attributes[static::$primaryKey]]);
+            $ok ? $db->commit() : $db->rollBack();
+            return $ok;
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /** All enabled profiles, ordered — for the upload picker. */

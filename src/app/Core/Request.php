@@ -71,6 +71,12 @@ class Request
         return str_contains($accept, 'application/json');
     }
 
+    /**
+     * 按 `required|min:N|max:N|email|numeric` 规则校验输入。
+     *
+     * @param array<string,string> $rules field => 竖线分隔的规则串
+     * @return array{0: array<string,string[]>, 1: array<string,mixed>} [错误列表, 归一化后的输入]
+     */
     public function validate(array $rules): array
     {
         $errors = [];
@@ -84,15 +90,17 @@ class Request
                 if ($part === 'required' && ($value === null || $value === '')) {
                     $errors[$field][] = "{$field} is required.";
                 }
+                // min/max 按**字符**计（mb_strlen），不是字节：strlen 会把中文按
+                // 3 字节/字计数，min:8 实际只要求 3 个汉字。本项目是中文优先。
                 if (str_starts_with($part, 'min:')) {
                     $min = (int) substr($part, 4);
-                    if (strlen((string)$value) < $min) {
+                    if (mb_strlen((string)$value) < $min) {
                         $errors[$field][] = "{$field} must be at least {$min} characters.";
                     }
                 }
                 if (str_starts_with($part, 'max:')) {
                     $max = (int) substr($part, 4);
-                    if (strlen((string)$value) > $max) {
+                    if (mb_strlen((string)$value) > $max) {
                         $errors[$field][] = "{$field} must not exceed {$max} characters.";
                     }
                 }

@@ -43,6 +43,15 @@ class StorageProfileController extends Controller
             if ($request->input('is_default') === '1') {
                 $profile->setAsDefault();
             }
+            // MR-38: storage instances (and the cloud credentials behind them) are
+            // the most sensitive config on the board. Log identity only — NEVER
+            // the config JSON / key / secret.
+            \App\Models\AuditLog::record('storage_profile_create', [
+                'id'       => (int) $profile->id,
+                'name'     => (string) $profile->name,
+                'driver'   => (string) $profile->driver,
+                'provider' => (string) $profile->provider,
+            ]);
             $this->json(['success' => true, 'message' => '存储实例「' . $profile->name . '」已创建', 'item' => $this->toClientItem($profile)]);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);
@@ -80,6 +89,13 @@ class StorageProfileController extends Controller
             if ($request->input('is_default') === '1') {
                 $profile->setAsDefault();
             }
+            // MR-38: same as create — identity only, never the sealed credentials.
+            \App\Models\AuditLog::record('storage_profile_update', [
+                'id'       => (int) $profile->id,
+                'name'     => (string) $profile->name,
+                'driver'   => (string) $profile->driver,
+                'provider' => (string) $profile->provider,
+            ]);
             $this->json(['success' => true, 'message' => '存储实例已更新', 'item' => $this->toClientItem($profile)]);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);
@@ -96,26 +112,55 @@ class StorageProfileController extends Controller
                 throw new \RuntimeException('存储实例不存在');
             }
 
-            $refs = (int) Database::getInstance()
-                ->query('SELECT COUNT(*) FROM `images` WHERE `storage_profile_id` = ' . (int) $id)
-                ->fetchColumn();
-            if ($refs > 0) {
-                throw new \RuntimeException("该实例下仍有 {$refs} 张图片，无法删除。请先删除或迁移这些图片。");
-            }
-
-            $wasDefault = $profile->isDefault();
-            if (!$profile->delete()) {
-                throw new \RuntimeException('删除失败，请重试');
-            }
-
-            // Deleting the default leaves the system without one — promote the
-            // first remaining enabled profile so uploads keep working.
-            if ($wasDefault) {
-                $next = StorageProfile::defaultProfile();
-                if ($next !== null) {
-                    $next->setAsDefault();
+            // ── 引用计数与删除必须在同一事务内 ──
+            //
+            // 两点必要：① TOCTOU —— 无事务/行锁时，检查通过到删除之间可能有并发
+            // 上传正往该实例写，删掉后这批图解析不到驱动且已传对象成为孤儿；
+            // ② legacy 行 —— storage_profile_id IS NULL 的老行按 storage_provider
+            // 匹配实例，只统计 storage_profile_id 会漏判它们。
+            $db = Database::getInstance();
+            $db->beginTransaction();
+            try {
+                $countStmt = $db->prepare(
+                    'SELECT COUNT(*) FROM `images` '
+                    . 'WHERE `storage_profile_id` = ? '
+                    . 'OR (`storage_profile_id` IS NULL AND `storage_provider` = ?) '
+                    . 'FOR UPDATE'
+                );
+                $countStmt->execute([$id, (string) $profile->provider]);
+                $refs = (int) $countStmt->fetchColumn();
+                if ($refs > 0) {
+                    throw new \RuntimeException("该实例下仍有 {$refs} 张图片，无法删除。请先删除或迁移这些图片。");
                 }
+
+                $wasDefault = $profile->isDefault();
+                if (!$profile->delete()) {
+                    throw new \RuntimeException('删除失败，请重试');
+                }
+
+                // Deleting the default leaves the system without one — promote the
+                // first remaining enabled profile so uploads keep working.
+                // 与删除同事务：中途失败不会留下「无默认实例且未启用替代」的状态。
+                if ($wasDefault) {
+                    $next = StorageProfile::defaultProfile();
+                    if ($next !== null) {
+                        $next->setAsDefault();
+                    }
+                }
+                $db->commit();
+            } catch (\Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $e;
             }
+            // MR-38: irreversible removal of a storage instance.
+            \App\Models\AuditLog::record('storage_profile_delete', [
+                'id'       => $id,
+                'name'     => (string) $profile->name,
+                'driver'   => (string) $profile->driver,
+                'provider' => (string) $profile->provider,
+            ]);
             $this->json(['success' => true, 'message' => '存储实例已删除']);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);
@@ -135,6 +180,12 @@ class StorageProfileController extends Controller
             if (!$profile->save()) {
                 throw new \RuntimeException('操作失败，请重试');
             }
+            // MR-38: enabling/disabling an instance gates uploads.
+            \App\Models\AuditLog::record('storage_profile_toggle', [
+                'id'      => (int) $profile->id,
+                'name'    => (string) $profile->name,
+                'enabled' => $profile->isEnabled(),
+            ]);
             $this->json(['success' => true, 'message' => $profile->isEnabled() ? '已启用' : '已停用', 'item' => $this->toClientItem($profile)]);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);
@@ -151,6 +202,11 @@ class StorageProfileController extends Controller
                 throw new \RuntimeException('存储实例不存在');
             }
             $profile->setAsDefault();
+            // MR-38: switching the upload default changes where new images land.
+            \App\Models\AuditLog::record('storage_profile_set_default', [
+                'id'   => (int) $profile->id,
+                'name' => (string) $profile->name,
+            ]);
             $this->json(['success' => true, 'message' => '默认上传方案已切换为「' . $profile->name . '」', 'item' => $this->toClientItem($profile)]);
         } catch (\Throwable $e) {
             $this->json(['success' => false, 'error' => $e->getMessage()], 400);

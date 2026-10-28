@@ -501,31 +501,34 @@ class Image extends Model
             if (empty($ids)) return null;
 
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
-            $stmt = Database::getInstance()->prepare(
-                "SELECT COUNT(*) FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IN ({$placeholders})"
-            );
-            $stmt->execute($ids);
-            $total = (int) $stmt->fetchColumn();
-            if ($total === 0) return null;
-
-            $offset = random_int(0, $total - 1);
-            $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' AND category_id IN ({$placeholders}) LIMIT 1 OFFSET {$offset}";
-            $stmt = Database::getInstance()->prepare($sql);
-            $stmt->execute($ids);
+            $where  = "status = 'active' AND process_status = 'done' AND category_id IN ({$placeholders})";
+            $params = $ids;
         } else {
-            $stmt = Database::getInstance()->prepare(
-                "SELECT COUNT(*) FROM images WHERE status = 'active' AND process_status = 'done'"
-            );
-            $stmt->execute();
-            $total = (int) $stmt->fetchColumn();
-            if ($total === 0) return null;
-
-            $offset = random_int(0, $total - 1);
-            $sql = "SELECT * FROM images WHERE status = 'active' AND process_status = 'done' LIMIT 1 OFFSET {$offset}";
-            $stmt = Database::getInstance()->prepare($sql);
-            $stmt->execute();
+            $where  = "status = 'active' AND process_status = 'done'";
+            $params = [];
         }
 
+        $pdo = Database::getInstance();
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM images WHERE {$where}");
+        $cnt->execute($params);
+        $total = (int) $cnt->fetchColumn();
+        if ($total === 0) return null;
+
+        // MR-33 修复: COUNT 与 SELECT 非同一快照（REPEATABLE READ 下两次语句各自
+        // 取快照），并发删图窗口内 OFFSET 可能落在存活集之外 → fetch 为空 → 原实现
+        // 直接返回 null，公开随机图 API 偶发「无图」。这里取空时重查一次（重新随机
+        // 偏移）；仍空则回退同条件 LIMIT 1（不取偏移）——只要库里还有符合条件的图
+        // 就必返回一张。返回结构（?self）与前台 API 行为不变。
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $offset = random_int(0, $total - 1);
+            $stmt = $pdo->prepare("SELECT * FROM images WHERE {$where} LIMIT 1 OFFSET {$offset}");
+            $stmt->execute($params);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if ($row) return self::hydrate($row);
+        }
+
+        $stmt = $pdo->prepare("SELECT * FROM images WHERE {$where} LIMIT 1");
+        $stmt->execute($params);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         return $row ? self::hydrate($row) : null;
     }
@@ -581,29 +584,84 @@ class Image extends Model
         $stmt->execute($params);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
-        // 防御：极端并发（COUNT 后行被删）导致取不满时，从头补齐
+        // 防御：极端并发（COUNT 后行被删）导致取不满时，从头补齐。
+        // MR-34 修复：补齐查询必须排除已拿到的 id——否则 offset 后的尾部与
+        // 「从头取」的首段会重叠，同一张图在图库页渲染两次（仿真 dup=[2]）。
         if (count($rows) < $limit) {
             $fill = $limit - count($rows);
-            $st2 = $pdo->prepare("SELECT * FROM `images` WHERE {$where} LIMIT {$fill}");
-            $st2->execute($params);
+            $taken = [];
+            foreach ($rows as $takenRow) {
+                if (isset($takenRow['id'])) $taken[] = (int) $takenRow['id'];
+            }
+            $fillWhere  = $where;
+            $fillParams = $params;
+            if ($taken !== []) {
+                $ph = implode(',', array_fill(0, count($taken), '?'));
+                $fillWhere  .= " AND `id` NOT IN ({$ph})";
+                foreach ($taken as $tid) $fillParams[] = $tid;
+            }
+            $st2 = $pdo->prepare("SELECT * FROM `images` WHERE {$fillWhere} LIMIT {$fill}");
+            $st2->execute($fillParams);
             $rows = array_merge($rows, $st2->fetchAll(\PDO::FETCH_ASSOC));
         }
 
         return array_map(fn($row) => self::hydrate($row), $rows);
     }
 
+    /**
+     * MR-35 修复: 请求级缓存 —— 整棵 `categories` 表的 `parent_id => [childId,...]`
+     * 邻接表。原 getCategoryAndChildIds 逐节点一发 SELECT（N 节点 = N 次查询，
+     * 公开随机图 API 必经）。改为一次取出全表 id/parent_id 后 PHP 侧 BFS 收集子树，
+     * 整请求仅 1 次查询。与本文件既有 `$urlMemo` 同模式：PHP-FPM 每请求独立进程，
+     * static 属性天然请求级；CLI 长驻进程共享可接受。
+     *
+     * @var array<int, array<int, int>>|null
+     */
+    private static ?array $categoryChildrenMap = null;
+
+    /** 一次取出全部分类的 id/parent_id，组邻接表（请求内缓存）。 */
+    private static function categoryChildrenMap(): array
+    {
+        if (self::$categoryChildrenMap !== null) {
+            return self::$categoryChildrenMap;
+        }
+        $stmt = Database::getInstance()->prepare("SELECT `id`, `parent_id` FROM `categories`");
+        $stmt->execute();
+        $map = [];
+        foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            $pid = (int) ($row['parent_id'] ?? 0);
+            $cid = (int) $row['id'];
+            if (!isset($map[$pid]) || !is_array($map[$pid])) $map[$pid] = [];
+            $map[$pid][] = $cid;
+        }
+        return self::$categoryChildrenMap = $map;
+    }
+
+    /**
+     * 取某分类及其全部后代分类的 id 集合（含自身）。
+     *
+     * MR-35: 由「逐节点递归 SELECT」改为「整表一次取出 + PHP 侧 BFS」，整请求 1 次查询。
+     * 返回语义不变：含自身 + 全部后代、去重、array_values（调用方仅作 IN(...) 集合，
+     * 顺序无关）。`$depth` 参数保留仅为签名向后兼容（外部按两参调用的旧代码不破）；
+     * 脏数据自引用环由 `$seen` 集合守卫（等价原 depth>20 硬停）。
+     *
+     * @return array<int, int>
+     */
     public static function getCategoryAndChildIds(int $categoryId, int $depth = 0): array
     {
-        if ($depth > 20) return [];
+        $map = self::categoryChildrenMap();
 
-        $ids = [$categoryId];
-        // execute() returns bool; chaining fetchAll() onto it was a fatal error.
-        $stmt = Database::getInstance()->prepare("SELECT `id` FROM `categories` WHERE `parent_id` = ?");
-        $stmt->execute([$categoryId]);
-        $children = $stmt->fetchAll(\PDO::FETCH_COLUMN);
-
-        foreach ($children as $childId) {
-            $ids = array_merge($ids, self::getCategoryAndChildIds((int) $childId, $depth + 1));
+        $ids  = [];
+        $seen = [];
+        $queue = [$categoryId];
+        while ($queue !== []) {
+            $cur = array_shift($queue);
+            if (isset($seen[$cur])) continue;
+            $seen[$cur] = true;
+            $ids[] = $cur;
+            foreach (($map[$cur] ?? []) as $childId) {
+                if (!isset($seen[$childId])) $queue[] = (int) $childId;
+            }
         }
 
         return array_values(array_unique($ids));
@@ -635,12 +693,24 @@ class Image extends Model
             }
         }
         $deleted = parent::delete();
-        if ($deleted && !empty($failed)) {
-            // 存储删除失败但 DB 已删：文件将成为孤儿，记审计便于排查。
-            \App\Models\AuditLog::record('image_delete_storage_failed', [
-                'id'   => (int) $this->attributes['id'],
-                'paths' => $failed,
+        if ($deleted) {
+            // MR-38: 删除动作本身留痕（与 image_delete_storage_failed 并存——
+            // 后者是「DB 已删但对象存储残留孤儿文件」的排障事件，前者是删除动作本身）。
+            // 动作码 image_delete 与 DashboardController actionLabels 的「删除图片」对齐。
+            // AuditLog::record 内部全包 try/catch，best-effort，不阻断删除主流程。
+            \App\Models\AuditLog::record('image_delete', [
+                'id'       => (int) $this->attributes['id'],
+                'filename' => (string) ($this->attributes['filename'] ?? ''),
+                'path'     => (string) ($this->attributes['path'] ?? ''),
+                'storage'  => (string) ($this->attributes['storage'] ?? ''),
             ]);
+            if (!empty($failed)) {
+                // 存储删除失败但 DB 已删：文件将成为孤儿，记审计便于排查。
+                \App\Models\AuditLog::record('image_delete_storage_failed', [
+                    'id'   => (int) $this->attributes['id'],
+                    'paths' => $failed,
+                ]);
+            }
         }
         return $deleted;
     }

@@ -75,6 +75,7 @@
                     <label class="flex gap-6 align-center pointer"><input type="checkbox" name="permissions[]" value="write"> write</label>
                     <label class="flex gap-6 align-center pointer"><input type="checkbox" name="permissions[]" value="admin"> admin</label>
                 </div>
+                <p class="text-muted text-small mb-0">预留字段，<strong>当前不参与鉴权</strong>：/api/v1/* 全部为只读端点，鉴权只看 Key 是否有效且启用。勾选与否不影响实际权限。</p>
             </div>
             <div class="grid grid-2">
                 <div class="form-group">

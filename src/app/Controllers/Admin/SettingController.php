@@ -25,6 +25,9 @@ use App\Models\AuditLog;
  */
 class SettingController extends Controller
 {
+    /** 审计日志 CSV 导出的行数上限（防止 audit_logs 增长后导出打满内存）。 */
+    private const LOG_EXPORT_MAX = 100000;
+
     /**
      * Group + field schema. This is the single source of truth for the form
      * (view), validation (save) and defaults (view + code paths).
@@ -274,6 +277,16 @@ class SettingController extends Controller
         if (!in_array($info['mime'] ?? '', $allowed, true)) {
             return '仅支持 PNG / JPG / GIF / WebP 格式（不支持 SVG）';
         }
+        // MR-14: extension whitelist. The saved filename extension is derived
+        // from the client-supplied $_FILES['name']; without this gate a real
+        // PNG payload uploaded as "evil.php" would land as an executable under
+        // public/uploads/logo/. Allow only safe image extensions (the MIME check
+        // above already guarantees the content really is an image).
+        $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        $allowedExt = ['png', 'jpg', 'jpeg', 'webp', 'ico'];
+        if (!in_array($ext, $allowedExt, true)) {
+            return 'Logo 扩展名仅支持 PNG / JPG / WebP / ICO';
+        }
         return '';
     }
 
@@ -425,7 +438,12 @@ class SettingController extends Controller
             $params[] = $action;
         }
         $whereSql = $where !== [] ? 'WHERE ' . implode(' AND ', $where) : '';
-        $stmt = \App\Core\Database::getInstance()->prepare("SELECT * FROM audit_logs {$whereSql} ORDER BY id DESC");
+        // 加导出上限：audit_logs 按 audit_log_retention_days（默认 90 天）无限增长，
+        // 无 LIMIT 的全量 fetchAll 在百万行时会把 PHP 内存打满。取最近
+        // self::LOG_EXPORT_MAX 行 —— 导出的是审计日志，最新的最有排查价值。
+        $stmt = \App\Core\Database::getInstance()->prepare(
+            "SELECT * FROM audit_logs {$whereSql} ORDER BY id DESC LIMIT " . self::LOG_EXPORT_MAX
+        );
         $stmt->execute($params);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
@@ -523,7 +541,9 @@ class SettingController extends Controller
         $schemaChecks = [
             ['images', 'storage',            "ADD COLUMN `storage` VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`"],
             ['images', 'storage_provider',   "ADD COLUMN `storage_provider` VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`"],
-            ['images', 'storage_profile_id', "ADD COLUMN `storage_profile_id` INT UNSIGNED NULL AFTER `storage_provider`"],
+            // 签名 INT（不是 UNSIGNED）：须与 schema.sql:70 及 storage_profiles.id
+            // （INT AUTO_INCREMENT，有符号）一致 —— 符号不同则将来加 FK 会报 errno 1215。
+            ['images', 'storage_profile_id', "ADD COLUMN `storage_profile_id` INT NULL AFTER `storage_provider`"],
             ['images', 'file_hash',          "ADD COLUMN `file_hash` CHAR(64) NULL DEFAULT NULL AFTER `file_size`"],
             ['images', 'file_sha256',        "ADD COLUMN `file_sha256` CHAR(64) NULL DEFAULT NULL AFTER `file_hash`"],
             ['images', 'process_status',     "ADD COLUMN `process_status` ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`"],

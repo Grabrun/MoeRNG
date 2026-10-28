@@ -115,9 +115,43 @@ class LocalDriver implements StorageInterface
             || (bool) preg_match('#^[A-Za-z]:[\\\\/]#', $path);
     }
 
+    /**
+     * MR-18: resolve a storage key to an absolute path INSIDE the media root.
+     *
+     * The driver previously trusted caller-supplied keys and only did
+     * ltrim('/', $key). A key containing `..` (e.g. a future second key source,
+     * dirty thumbs JSON, or a migration script) would escape uploadDir and turn
+     * delete() into an arbitrary-file unlink primitive. All filesystem join
+     * points now go through this single normaliser:
+     *   1. backslashes are normalised to '/' (uniform Windows/Linux behaviour);
+     *   2. absolute paths (root-relative '/' or drive letters) are rejected —
+     *      a storage key is ALWAYS relative to the media root;
+     *   3. any `..` segment is rejected outright (current key sources never emit
+     *      it; defence-in-depth, mirroring FileController's realpath containment
+     *      check on the read side).
+     *
+     * @throws \RuntimeException when the key would escape the media root.
+     */
+    private function resolveKeyPath(string $remotePath): string
+    {
+        // Normalise Windows separators and strip a leading slash (a leading '/'
+        // is harmless once trimmed — it does not escape the root; the old code
+        // did ltrim('/') at every join point, so keep that tolerant behaviour).
+        $p = ltrim(str_replace('\\', '/', trim($remotePath)), '/');
+        if ($p === '' || (bool) preg_match('#^[A-Za-z]:#', $p)) {
+            throw new \RuntimeException("Invalid storage key (must be relative): {$remotePath}");
+        }
+        foreach (explode('/', $p) as $seg) {
+            if ($seg === '..') {
+                throw new \RuntimeException("Storage key escapes media root (.. segment): {$remotePath}");
+            }
+        }
+        return rtrim($this->uploadDir, '/\\') . '/' . $p;
+    }
+
     public function upload(string $localPath, string $remotePath, string $contentType): string
     {
-        $targetPath = $this->uploadDir . '/' . ltrim($remotePath, '/');
+        $targetPath = $this->resolveKeyPath($remotePath);
         $targetDir = dirname($targetPath);
 
         if (!is_dir($targetDir) && !@mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
@@ -144,11 +178,16 @@ class LocalDriver implements StorageInterface
 
     public function delete(string $remotePath): bool
     {
-        $filePath = $this->uploadDir . '/' . ltrim($remotePath, '/');
+        $filePath = $this->resolveKeyPath($remotePath);
         if (is_file($filePath)) {
             return @unlink($filePath);
         }
-        return false;
+        // MR-40: idempotent delete — a key that does not exist is already
+        // "deleted", matching the cloud drivers (deleteObject on a missing key
+        // returns 204/true). The old `return false` made deleting a history row
+        // whose thumb file was already gone count as a storage failure and flood
+        // the audit log with image_delete_storage_failed noise.
+        return true;
     }
 
         public function url(string $remotePath): string
@@ -170,7 +209,7 @@ class LocalDriver implements StorageInterface
 
     public function exists(string $remotePath): bool
     {
-        return is_file($this->uploadDir . '/' . ltrim($remotePath, '/'));
+        return is_file($this->resolveKeyPath($remotePath));
     }
 
     /**
@@ -178,7 +217,7 @@ class LocalDriver implements StorageInterface
      */
     public function hashFile(string $remotePath): ?string
     {
-        $full = $this->uploadDir . '/' . ltrim($remotePath, '/');
+        $full = $this->resolveKeyPath($remotePath);
         if (!is_file($full)) {
             return null;
         }
@@ -188,7 +227,7 @@ class LocalDriver implements StorageInterface
 
     public function size(string $remotePath): ?int
     {
-        $full = $this->uploadDir . '/' . ltrim($remotePath, '/');
+        $full = $this->resolveKeyPath($remotePath);
         if (!is_file($full)) {
             return null;
         }

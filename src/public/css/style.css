@@ -1035,15 +1035,18 @@ body.modal-open { overflow: hidden; }
 }
 
 /* --- Responsive refinements --- */
+/* 注意：断点覆盖也必须用 minmax(0,1fr)，不能退回裸 1fr ——
+   裸 1fr 的轨道隐式最小尺寸是 auto，会被长文件名/长 URL 的固有宽度撑破，
+   等于把 :258 处 v1.2.1 那次溢出修复在移动端重新引入（横向滚动条）。 */
 @media (max-width: 960px) {
-    .grid-4 { grid-template-columns: repeat(2, 1fr); }
-    .grid-3 { grid-template-columns: repeat(2, 1fr); }
+    .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .main-content { padding: 24px 20px; }
 }
 @media (max-width: 640px) {
     h1 { font-size: 1.6rem; }
     h2 { font-size: 1.3rem; }
-    .grid-2, .grid-4, .grid-3 { grid-template-columns: 1fr; }
+    .grid-2, .grid-4, .grid-3 { grid-template-columns: minmax(0, 1fr); }
     .stat-card { padding: 16px; }
     td, th { padding: 10px 12px; }
 }
@@ -1770,3 +1773,10 @@ body.modal-open { overflow: hidden; }
 .hero-kicker{display:inline-flex;align-items:center;gap:8px;font-size:.82rem;font-weight:500;color:var(--accent);background:var(--accent-light);padding:6px 14px;border-radius:var(--radius-pill);margin-bottom:16px}
 .hero-banner-wrap{border-radius:var(--radius-lg);overflow:hidden}
 @media(min-width:769px){.hero .stats{border-top:1px solid var(--border);padding-top:20px}.hero .stats .stat{border-left:1px solid var(--border);padding-left:20px}.hero .stats .stat:first-child{border-left:none;padding-left:0}}
+
+/* API 测试器结果区 + API Key 预览。
+   原为 JS 内联 style 属性，经 innerHTML 解析后会被 CSP style-src（无 unsafe-inline）
+   静默丢弃导致样式失效；改为 class 走本文件。详见 helpers.js:renderSafeText 注释。 */
+.test-result-error{color:var(--danger);white-space:pre-wrap;word-break:break-word}
+.test-result-raw{white-space:pre-wrap;word-break:break-word}
+.key-preview{font-size:.8rem}

@@ -80,30 +80,48 @@ class BackupService
      * Dump every table to a single .sql file. Returns '' on success, or an
      * error message.
      */
+    /**
+     * Dump every table to a single .sql file. Returns '' on success, or an
+     * error message.
+     *
+     * 逐行写盘（游标 + fwrite），不把整库读进内存：原实现对每张表
+     * `SELECT *` 后 fetchAll() 再用字符串累加，10 万张图的库会一次性把整个
+     * 数据库塞进 PHP 字符串，必然 OOM。而 create() 由每请求触发的
+     * Application::maybeAutoBackup() 调用，风险面更大。
+     */
     public static function dumpSql(string $file): string
     {
+        $fh = null;
         try {
             $db = Database::getInstance();
             $tables = $db->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);
-            $out = "-- MoeRNG database backup " . date('Y-m-d H:i:s') . "\n"
-                . "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n";
+            $fh = fopen($file, 'wb');
+            if ($fh === false) {
+                return '备份文件无法写入: ' . $file;
+            }
+            fwrite($fh, "-- MoeRNG database backup " . date('Y-m-d H:i:s') . "\n"
+                . "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n");
             foreach ($tables as $t) {
                 $create = $db->query("SHOW CREATE TABLE `{$t}`")->fetch(\PDO::FETCH_NUM);
-                $out .= "\nDROP TABLE IF EXISTS `{$t}`;\n" . ($create[1] ?? '') . ";\n";
-                $rows = $db->query("SELECT * FROM `{$t}`")->fetchAll(\PDO::FETCH_ASSOC);
-                foreach ($rows as $row) {
+                fwrite($fh, "\nDROP TABLE IF EXISTS `{$t}`;\n" . ($create[1] ?? '') . ";\n");
+                // 未设置 fetch mode 时 PDOStatement 本身可迭代，逐行取，不累积。
+                $stmt = $db->query("SELECT * FROM `{$t}`", \PDO::FETCH_ASSOC);
+                foreach ($stmt as $row) {
                     $cols = implode(',', array_map(static fn($c) => "`{$c}`", array_keys($row)));
                     $vals = implode(',', array_map(static function ($v) use ($db) {
                         return $v === null ? 'NULL' : $db->quote((string) $v);
                     }, array_values($row)));
-                    $out .= "INSERT INTO `{$t}` ({$cols}) VALUES ({$vals});\n";
+                    fwrite($fh, "INSERT INTO `{$t}` ({$cols}) VALUES ({$vals});\n");
                 }
             }
-            $out .= "SET FOREIGN_KEY_CHECKS=1;\n";
-            file_put_contents($file, $out);
+            fwrite($fh, "SET FOREIGN_KEY_CHECKS=1;\n");
             return '';
         } catch (\Throwable $e) {
             return '数据库导出失败: ' . $e->getMessage();
+        } finally {
+            if (is_resource($fh)) {
+                fclose($fh);
+            }
         }
     }
 

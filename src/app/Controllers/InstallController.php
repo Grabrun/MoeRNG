@@ -377,9 +377,19 @@ class InstallController extends Controller
     {
         $sql = file_get_contents(dirname(__DIR__, 2) . '/schema.sql');
         if ($sql) {
-            // Split by semicolons for individual statements
+            // 剥离整行 SQL 注释后再按分号切分。
+            //
+            // 必须先剥离整行注释再切分：schema.sql 的注释里含分号，直接
+            // explode(';') 会把 CREATE TABLE 从中间截断成语法错误片段，导致
+            // 全新安装失败。只剥离整行注释（-- 或 # 开头），不动 SQL 内容。
+            $stripped = preg_replace(
+                '/^[ \t]*(?:--|#).*$/m',
+                '',
+                $sql
+            ) ?? $sql;
+
             $statements = array_filter(
-                array_map('trim', explode(';', $sql)),
+                array_map('trim', explode(';', $stripped)),
                 fn($s) => !empty($s)
             );
             foreach ($statements as $statement) {

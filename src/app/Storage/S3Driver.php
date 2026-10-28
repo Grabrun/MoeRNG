@@ -93,7 +93,70 @@ class S3Driver implements StorageInterface
         $this->sourceDomain = (string) ($cfg['source_domain'] ?? '');
         $this->tokenKey  = (string) ($cfg['token_key'] ?? '');
         $this->signedTtl = max(1, (int) ($cfg['signed_ttl'] ?? 300));
+        // MR-39: management-plane SSRF guard on admin-entered endpoint/sourceDomain.
+        $this->warnEndpointSafety();
         return $this;
+    }
+
+    /**
+     * MR-39: log warnings for admin-entered endpoint / sourceDomain that look
+     * like an internal-SSRF target.
+     *
+     * We deliberately WARN (via error_log) rather than hard-reject: a self-hosted
+     * S3-compatible gateway (MinIO) legitimately lives on RFC1918 space, and the
+     * UI validation lives in the admin controller (out of scope here). The goal
+     * is observability — an endpoint pointed at loopback/link-local/metadata
+     * addresses should not silently read internal responses. Non-http(s) schemes
+     * are also flagged.
+     */
+    private function warnEndpointSafety(): void
+    {
+        foreach (self::endpointSafetyWarnings($this->endpoint, $this->sourceDomain) as $w) {
+            error_log('[MoeRNG] Storage endpoint SSRF check: ' . $w);
+        }
+    }
+
+    /**
+     * MR-39: pure endpoint/sourceDomain sanity check. Returns warning strings;
+     * empty array = looks safe.
+     *
+     * Rules:
+     *   - only http:// / https:// schemes allowed (file://, php://, gopher:// … flagged);
+     *   - a literal private/reserved IP (RFC1918, loopback, link-local, IPv6 ULA)
+     *     is flagged as a possible internal SSRF target.
+     * Hostnames are NOT DNS-resolved here (that would block per-request and could
+     * fail); only literal-IP hosts are checked, so public CDN / custom CNAME domains
+     * are never falsely flagged.
+     *
+     * @return string[]
+     */
+    public static function endpointSafetyWarnings(string $endpoint, string $sourceDomain): array
+    {
+        $out = [];
+        foreach (['endpoint' => $endpoint, 'sourceDomain' => $sourceDomain] as $label => $raw) {
+            $raw = trim($raw);
+            if ($raw === '') {
+                continue;
+            }
+            if (!preg_match('#^https?://#i', $raw)) {
+                $out[] = "{$label} must start with http:// or https:// (got: {$raw})";
+                continue;
+            }
+            $host = (string) parse_url($raw, PHP_URL_HOST);
+            if ($host === '') {
+                continue;
+            }
+            $host = preg_replace('/^\[|\]$/', '', $host); // strip IPv6 [..]
+            if (filter_var($host, FILTER_VALIDATE_IP) === false) {
+                continue; // hostname (CDN/CNAME) — not a literal IP, not flagged
+            }
+            // Valid IP: flagged only when it is private/reserved.
+            if (!filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                $out[] = "{$label} host {$host} is a private/reserved IP; "
+                    . 'confirm this is an intended self-hosted gateway, not an internal target.';
+            }
+        }
+        return $out;
     }
 
     /** Missing SDK dir(s) named in the error so a partial deploy is obvious. */
@@ -307,7 +370,7 @@ class S3Driver implements StorageInterface
     public function hashFile(string $remotePath): ?string
     {
         try {
-            return self::hashUrl($this->url($remotePath));
+            return self::hashUrl($this->url($remotePath), $this->tlsVerify());
         } catch (\Throwable) {
             return null;
         }
@@ -316,10 +379,66 @@ class S3Driver implements StorageInterface
     public function size(string $remotePath): ?int
     {
         try {
-            return self::sizeUrl($this->url($remotePath));
+            return self::sizeUrl($this->url($remotePath), $this->tlsVerify());
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * MR-21: decide whether to verify the endpoint's TLS certificate when
+     * stream-reading a signed URL.
+     *
+     * Verification is ON unless the profile has an explicit custom `endpoint`
+     * (a self-hosted S3-compatible gateway such as MinIO, which commonly uses a
+     * self-signed cert). Official cloud domains (COS/OSS/AWS-official/OBS/
+     * Upyun/Qiniu) leave `endpoint` empty and keep verification ON — restoring
+     * the anti-MITM guarantee the signed URL is meant to provide.
+     */
+    private function tlsVerify(): bool
+    {
+        return $this->endpoint === '';
+    }
+
+    /**
+     * 探测一个**未签名**的对象 URL 是否可以匿名读取（bucket 为公开读）。
+     *
+     * 用于 MR-42 的降级决策：预签名失败时不能无条件退回裸 URL ——
+     * 私有 bucket 的裸 URL 必然 403，等于把「签名失效」变成「静默给失效链接」。
+     * 只有确认该 URL 确实可匿名读到（2xx）才允许降级；否则应抛错让图片显式报错。
+     *
+     * 与 sizeUrl() 同样不能用 HEAD（预签名按方法签名，但这里是**裸** URL，
+     * 公开读 bucket 的 GET/HEAD 行为一致）—— 一律用 GET + 读完立刻关。
+     *
+     * @return bool true=可匿名读取（可安全降级）；false=不可读/探测失败（应抛错）
+     */
+    public static function isPubliclyReadable(string $url, bool $tlsVerify = true): bool
+    {
+        $ctx = stream_context_create([
+            // 读满 1 字节即足以判定 2xx；range 让 body 保持极小。
+            'http' => [
+                'timeout'         => 5,
+                'follow_location' => 1,
+                'method'          => 'GET',
+                'ignore_errors'   => true,
+                'header'          => "Range: bytes=0-0\r\n",
+            ],
+            'ssl'  => self::sslContext($tlsVerify),
+        ]);
+        $fp = @fopen($url, 'rb', false, $ctx);
+        if ($fp === false) {
+            return false;
+        }
+        // ignore_errors=true 时 4xx/5xx 也返回句柄，改用 $http_response_header
+        // 里的首行状态码判定。
+        $status = 0;
+        foreach (($http_response_header ?? []) as $h) {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#', (string) $h, $m)) {
+                $status = (int) $m[1]; // 跟随重定向时取最后一组
+            }
+        }
+        @fclose($fp);
+        return $status >= 200 && $status < 300;
     }
 
     /**
@@ -331,11 +450,11 @@ class S3Driver implements StorageInterface
      *
      * 跟随重定向时会有多组响应头，取**最后一组**的 Content-Length（即最终 body 的长度）。
      */
-    public static function sizeUrl(string $url): ?int
+    public static function sizeUrl(string $url, bool $tlsVerify = true): ?int
     {
         $ctx = stream_context_create([
             'http' => ['timeout' => 20, 'follow_location' => 1, 'method' => 'GET'],
-            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false],
+            'ssl'  => self::sslContext($tlsVerify),
         ]);
         $fp = @fopen($url, 'rb', false, $ctx);
         if ($fp === false) {
@@ -352,14 +471,14 @@ class S3Driver implements StorageInterface
     }
 
     /** Stream a URL and compute its SHA-256 in hex (null on any failure). */
-    public static function hashUrl(string $url): ?string
+    public static function hashUrl(string $url, bool $tlsVerify = true): ?string
     {
         $ctx = stream_context_create([
             'http' => [
                 'timeout' => 30,
                 'follow_location' => 1,
             ],
-            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+            'ssl' => self::sslContext($tlsVerify),
         ]);
         $fp = @fopen($url, 'rb', false, $ctx);
         if ($fp === false) {
@@ -385,13 +504,22 @@ class S3Driver implements StorageInterface
     }
 
     /**
+     * MR-43: hard ceiling on streamed download size (200 MB). A malicious or
+     * runaway endpoint (see MR-39) trickling bytes could otherwise fill the
+     * temp dir within the 120s stream timeout.
+     */
+    public const MAX_DOWNLOAD_BYTES = 209715200; // 200 * 1024 * 1024
+
+    /**
      * v1.3.2 迭代: 把 url() 指向的对象流式下载到本地临时文件，返回临时文件路径。
      * 供回填脚本「先拉取到临时文件夹，再用 hash_file 算 MD5 + SHA-256」——
      * 保证对象存储回填时两个哈希都由同一份字节算出、不会混淆。失败返回 null。
      * @param string      $url            直读 URL（url() 签名 URL）
      * @param string|null $tmpDir         临时目录，默认 sys_get_temp_dir()
+     * @param bool        $tlsVerify      MR-21: verify the peer TLS cert (default on;
+     *                                    only off for an explicit self-hosted gateway).
      */
-    public static function downloadUrl(string $url, ?string $tmpDir = null): ?string
+    public static function downloadUrl(string $url, ?string $tmpDir = null, bool $tlsVerify = true): ?string
     {
         $tmpDir = $tmpDir ?? sys_get_temp_dir();
         $tmp = rtrim($tmpDir, '/\\') . '/moerng-dl-' . bin2hex(random_bytes(6));
@@ -400,7 +528,7 @@ class S3Driver implements StorageInterface
                 'timeout' => 120,
                 'follow_location' => 1,
             ],
-            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+            'ssl' => self::sslContext($tlsVerify),
         ]);
         $in = @fopen($url, 'rb', false, $ctx);
         if ($in === false) {
@@ -411,11 +539,24 @@ class S3Driver implements StorageInterface
             fclose($in);
             return null;
         }
+        $total = 0;
         try {
             while (!feof($in)) {
                 $chunk = fread($in, 65536);
                 if ($chunk === false) {
                     break;
+                }
+                // MR-43: cumulative byte ceiling — abort before the temp file can
+                // grow unbounded against a trickle endpoint.
+                $total += strlen($chunk);
+                if ($total > self::MAX_DOWNLOAD_BYTES) {
+                    fclose($in);
+                    fclose($out);
+                    @unlink($tmp);
+                    error_log('[MoeRNG] downloadUrl aborted: object exceeds '
+                        . (self::MAX_DOWNLOAD_BYTES / 1048576) . ' MB ceiling ('
+                        . $total . ' bytes read).');
+                    return null;
                 }
                 fwrite($out, $chunk);
             }
@@ -432,6 +573,23 @@ class S3Driver implements StorageInterface
             @unlink($tmp);
             return null;
         }
+    }
+
+    /**
+     * MR-21: build the stream ssl context. TLS certificate verification is ON by
+     * default (the signed URL's anti-tamper is only meaningful if the bytes
+     * actually come from the real endpoint). Verification is disabled ONLY when
+     * the caller explicitly passes $tlsVerify=false — i.e. an admin-configured
+     * self-hosted S3-compatible gateway (MinIO) that uses a self-signed cert.
+     */
+    private static function sslContext(bool $tlsVerify): array
+    {
+        if ($tlsVerify) {
+            return ['verify_peer' => true, 'verify_peer_name' => true];
+        }
+        // Explicit self-hosted gateway with a self-signed cert — verification
+        // off, but deliberately chosen, not the silent default.
+        return ['verify_peer' => false, 'verify_peer_name' => false];
     }
 
     public function testConnection(): bool

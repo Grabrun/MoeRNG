@@ -270,20 +270,7 @@ abstract class Model
             'total' => $total,
             'page' => $page,
             'per_page' => $perPage,
-            'last_page' => (int) ceil($total / $perPage),
+            'last_page' => max(1, (int) ceil($total / $perPage)),
         ];
-    }
-
-    public static function query(string $sql, array $params = []): array
-    {
-        $stmt = Database::getInstance()->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    public static function execute(string $sql, array $params = []): bool
-    {
-        $stmt = Database::getInstance()->prepare($sql);
-        return $stmt->execute($params);
     }
 }
