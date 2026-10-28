@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# MR-08：仓库此前无任何 CI 门禁。本工作流提供三道门禁：
+#   1. PHP 语法门禁（php -l，真实 PHP 解释器）
+#   2. Node harness 静态门禁（php-parser AST：语法 + 未定义变量 + 跨文件引用对账）
+#   3. 依赖审计占位（composer audit 暂未启用，见该 job 注释）
+
+jobs:
+  php-lint:
+    name: PHP syntax lint (php -l)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring
+          coverage: none
+
+      - name: php -l over src/app, src/views and src/*.php
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "== php -l src/app =="
+          find src/app -name '*.php' -print0 | xargs -0 -n1 php -l
+          echo "== php -l src/views =="
+          find src/views -name '*.php' -print0 | xargs -0 -n1 php -l
+          echo "== php -l src/*.php (entry points) =="
+          find src -maxdepth 1 -name '*.php' -print0 | xargs -0 -n1 php -l
+          # 说明：src/sdk/ 是第三方 vendor（.gitignore，不进版本库），
+          # 不参与 CI 语法门禁；src/config/*.php 为部署时生成，同样不在库中。
+
+  node-harness:
+    name: Node static harness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install php-parser
+        working-directory: scripts/harness
+        run: npm install --no-audit --no-fund
+
+      - name: AST syntax check (whole repo, SKIP sdk/releases/.git)
+        run: node scripts/harness/syntax_check.js
+
+      - name: Undefined-variable check (src/app + entry points)
+        run: node scripts/harness/php_undef_check.js
+
+      - name: Cross-file reference audit (routes/views/icons/JS/DOM/CSS)
+        run: node scripts/harness/xref_audit.js
+
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      # composer audit 说明：
+      #   src/sdk/cos/vendor 等是第三方 SDK 的整树打包产物，且 src/sdk/ 被
+      #   .gitignore 排除在版本库之外，仓库中没有 composer.json / composer.lock，
+      #   runner 也未预装 composer。因此本步骤暂不启用任何会失败的裸命令。
+      #   待后续把 SDK 纳入 composer 管理（出现 composer.lock）后，取消下面注释启用：
+      #
+      #   - uses: shivammathur/setup-php@v2
+      #     with:
+      #       php-version: '8.2'
+      #       tools: composer
+      #       coverage: none
+      #   - name: composer audit
+      #     run: composer audit --no-progress
+      - name: composer audit status
+        run: |
+          echo "composer audit 暂未启用：仓库内无 composer.lock（src/sdk/ 为 gitignored 第三方打包产物）。"
+          echo "启用方法见本文件 dependency-audit job 内注释。"
