@@ -42,6 +42,15 @@ class Image extends Model
     public const THUMB_DEFAULT = 'md';
 
     /**
+     * 「原图」标记 —— 与缩略图三档并列的合法 size 取值，但它**不是缩略图**。
+     *
+     * 定义在这里（而非只在 ApiController）是因为 displayUrlWithSize() 必须能识别它：
+     * 它不是 thumbs 里的键，若当成普通档位走下去就会被"回退"到 md 缩略图 ——
+     * 请求原图却拿到一张 640px 的图，且响应里 size 字段还会自称 md。
+     */
+    public const SIZE_ORIGINAL = 'original';
+
+    /**
      * v1.5.0-beta.3: 通用「图片处理状态」—— 处理项名 + 状态取值。
      *
      * `images.processing_state` 是 JSON 列，**按处理项分键**：
@@ -505,6 +514,14 @@ class Image extends Model
      */
     public function displayUrlWithSize(string $size = self::THUMB_DEFAULT): array
     {
+        // 原图是链的**终点**，必须先拦下。缩略图 URL 对 'original' 恒为空串
+        //（它不是 thumbs 里的键），若继续往下走，`$size !== THUMB_DEFAULT` 成立
+        // → 回退到 md —— 请求原图反而拿到更小的缩略图。这条分支曾经缺失，而
+        // size 缺省就是原图，等于所有不传 size 的调用方都在拿 md。
+        if ($size === self::SIZE_ORIGINAL) {
+            return ['url' => $this->url(), 'size' => self::SIZE_ORIGINAL];
+        }
+
         $u = $this->thumbUrl($size);
         if ($u !== '') return ['url' => $u, 'size' => $size];
         if ($size !== self::THUMB_DEFAULT) {

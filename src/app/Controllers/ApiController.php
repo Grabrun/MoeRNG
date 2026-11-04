@@ -14,8 +14,12 @@ class ApiController extends Controller
     /**
      * v1.5.0-beta.2（API 缩略图获取）: `size` 的允许取值 = 缩略图三档 + original。
      * `original` 是显式表达"我要原图"的写法（redirect 模式的既有语义就是原图）。
+     *
+     * 值本身定义在 Image::SIZE_ORIGINAL —— 解析层（这里）与兜底链
+     * （Image::displayUrlWithSize）必须认同一个字符串，两处各写一个常量就会
+     * 悄悄分叉：解析认 `original`、兜底链不认，请求原图就落到 md 缩略图上。
      */
-    private const SIZE_ORIGINAL = 'original';
+    private const SIZE_ORIGINAL = Image::SIZE_ORIGINAL;
 
     /** /images 的私有短缓存秒数（结果由 page/limit/category/size 决定，非随机）。 */
     private const LIST_CACHE_SECONDS = 30;
