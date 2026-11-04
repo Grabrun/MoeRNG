@@ -1135,13 +1135,44 @@ class ImageController extends Controller
 
         }
 
-        // 本批结束后的统计，一次取回。
-        //
-        // 原先是 7 条独立 COUNT（total / pending / failed / processing / done /
-        // no_thumb / meta_retryable），每批轮询都要把 images 扫 7 遍。合并为 2 条：
-        //   ① 按状态 GROUP BY —— 一条语句拿到全部 4 个状态计数与总数；
-        //   ② 两个 JSON 派生计数用 SUM(CASE) 一次算完。
-        // 二者都不改变语义，只是把重复扫描去掉。
+        // 本批结束后的统计 —— 与 /queue-stats 共用同一份实现（queueStatsSnapshot），
+        // 避免两处各自演化。语义见该方法的注释。
+        $stats = $this->queueStatsSnapshot($pdo);
+
+        // remaining 只计 pending —— 它是前端循环的终止条件；failed 需人工
+        // 显式重试（requeueFailed），若并入 remaining 会导致循环永不终止。
+        $remaining = $stats['pending'];
+        $failedLeft = $stats['failed'];
+
+        $this->json([
+            'success' => true,
+            'total' => $stats['total'],
+            'remaining' => $remaining,
+            'failed_left' => $failedLeft,
+            'done' => $done,
+            'failed' => $failed,
+            'skipped' => $skipped,
+            'stats' => $stats,
+            'results' => $results,
+        ]);
+    }
+
+    /**
+     * 队列统计快照 —— **唯一来源**（processQueue 回包与 /queue-stats 共用）。
+     *
+     * 两条语句：
+     *   ① `GROUP BY process_status` 一条拿到全部 4 个状态计数与总数；
+     *   ② 两个 JSON 派生计数（no_thumb / meta_retryable）用 `SUM(CASE)` 一次算完。
+     * 原先两处各写 7 条独立 COUNT，每批轮询都把 images 扫 7 遍 —— 其中两条
+     * `done + JSON 谓词` 非 sargable，等于对全部 done 行回表解析 JSON。
+     *
+     * v1.5.0-beta.3: meta_retryable 是「状态为 partial/failed 的行」——
+     * 已离开补全队列但不该被放弃，由「重试元数据补全」定向重跑。
+     *
+     * @return array{pending:int, processing:int, done:int, failed:int, no_thumb:int, meta_retryable:int, total:int}
+     */
+    private function queueStatsSnapshot(\PDO $pdo): array
+    {
         $byStatus = [];
         $total = 0;
         foreach ($pdo->query(
@@ -1151,45 +1182,22 @@ class ImageController extends Controller
             $total += (int) $r['n'];
         }
 
-        // remaining 只计 pending —— 它是前端循环的终止条件；failed 需人工
-        // 显式重试（requeueFailed），若并入 remaining 会导致循环永不终止。
-        $remaining = $byStatus['pending'] ?? 0;
-        $failedLeft = $byStatus['failed'] ?? 0;
-
-        // v1.3.3-beta.1: 附带实时统计 —— 前端每批据此刷新状态卡片（此前卡片是
-        // 服务端一次性渲染的静态值，处理过程中完全不动）。
-        // v1.5.0-beta.3: meta_retryable 是「状态为 partial/failed 的行」—— 已离开
-        // 补全队列但不该被放弃，由「重试元数据补全」定向重跑。
         $derived = $pdo->query(
             "SELECT "
             . "COALESCE(SUM(CASE WHEN `process_status` = 'done' AND (" . \App\Models\Image::thumbMetaPendingSql() . ") THEN 1 ELSE 0 END), 0) AS no_thumb, "
             . "COALESCE(SUM(CASE WHEN `process_status` = 'done' AND (" . \App\Models\Image::thumbMetaRetryableSql() . ") THEN 1 ELSE 0 END), 0) AS meta_retryable "
             . "FROM `images`"
         )->fetch(\PDO::FETCH_ASSOC) ?: [];
-        $noThumb = (int) ($derived['no_thumb'] ?? 0);
-        $metaRetryable = (int) ($derived['meta_retryable'] ?? 0);
 
-        $stats = [
-            'pending'        => $remaining,
+        return [
+            'pending'        => $byStatus['pending'] ?? 0,
             'processing'     => $byStatus['processing'] ?? 0,
             'done'           => $byStatus['done'] ?? 0,
-            'failed'         => $failedLeft,
-            'no_thumb'       => $noThumb,
-            'meta_retryable' => $metaRetryable,
+            'failed'         => $byStatus['failed'] ?? 0,
+            'no_thumb'       => (int) ($derived['no_thumb'] ?? 0),
+            'meta_retryable' => (int) ($derived['meta_retryable'] ?? 0),
             'total'          => $total,
         ];
-
-        $this->json([
-            'success' => true,
-            'total' => $total,
-            'remaining' => $remaining,
-            'failed_left' => $failedLeft,
-            'done' => $done,
-            'failed' => $failed,
-            'skipped' => $skipped,
-            'stats' => $stats,
-            'results' => $results,
-        ]);
     }
 
     /**
@@ -1563,21 +1571,9 @@ class ImageController extends Controller
             return;
         }
 
-        $count = function (string $where) use ($pdo): int {
-            return (int) $pdo->query("SELECT COUNT(*) FROM `images`" . ($where !== '' ? " WHERE {$where}" : ''))->fetchColumn();
-        };
-
-        $stats = [
-            'pending'    => $count("process_status = 'pending'"),
-            'processing' => $count("process_status = 'processing'"),
-            'done'       => $count("process_status = 'done'"),
-            'failed'     => $count("process_status = 'failed'"),
-            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaPendingSql()),
-            // v1.5.0-beta.3: 状态为 partial/failed 的行 —— 已离开补全队列但不该被放弃，
-            // 由「重试元数据补全」按 thumbMetaRetryableSql() 定向重跑。
-            'meta_retryable' => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaRetryableSql()),
-            'total'      => $count(''),
-        ];
+        // 与 processQueue / queue-stats 同一份快照实现（唯一来源）——
+        // 页面首次渲染的四个数字必须与后续每 5 秒的轮询口径完全一致。
+        $stats = $this->queueStatsSnapshot($pdo);
 
         // —— 过滤条件：全部走白名单 + 参数绑定（无拼接注入面）——
         $conds  = ["`process_status` IN ('pending','failed')"];
@@ -1671,22 +1667,9 @@ class ImageController extends Controller
             return;
         }
 
-        $count = static function (string $where) use ($pdo): int {
-            return (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE {$where}")->fetchColumn();
-        };
-        $stats = [
-            'pending'    => $count("process_status = 'pending'"),
-            'processing' => $count("process_status = 'processing'"),
-            'done'       => $count("process_status = 'done'"),
-            'failed'     => $count("process_status = 'failed'"),
-            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaPendingSql()),
-            // v1.5.0-beta.3: 状态为 partial/failed 的行 —— 已离开补全队列但不该被放弃，
-            // 由「重试元数据补全」按 thumbMetaRetryableSql() 定向重跑。
-            'meta_retryable' => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaRetryableSql()),
-            'total'      => (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn(),
-        ];
-
-        $this->json(['success' => true, 'stats' => $stats]);
+        // 与 processQueue 同一个快照实现（唯一来源）—— 这个端点被队列页每 5 秒
+        // 轮询一次，原先 7 条独立 COUNT 会把 images 反复扫 7 遍。
+        $this->json(['success' => true, 'stats' => $this->queueStatsSnapshot($pdo)]);
     }
 
     /**

@@ -1357,12 +1357,16 @@ async function parseJsonResponse(resp, label) {
 // v1.3.3-beta.1 修复: 本函数曾在一次脚本异常中整体丢失（3 处调用点引用未定义函数，
 // 点击报 "runProcessQueue is not defined"），且无 harness 覆盖 —— 现已纳入 click 矩阵。
 // setUI(pct, text, detail) 控制进度条；onTick({phase, stats, ...}) 让调用方实时刷新
-// 状态卡片（phase: start | inflight | batch | contended | done）。
+// 状态卡片（phase: start | batch | contended | done）。
 async function runProcessQueue(setUI, onTick) {
     // 单批张数由服务端注入（layout.php 的 meta[name=queue-batch]），与
     // ImageController::QUEUE_BATCH_MAX 同一来源 —— 前后端各写一个数字必然漂移。
     const batchMeta = document.querySelector('meta[name="queue-batch"]');
     const BATCH = Math.max(1, Number(batchMeta && batchMeta.content) || 20);
+    // 单请求客户端墙钟上限。服务端预算 45s，正常情况下必然先返回；只有"请求
+    // 根本没回来"才会走到这里（网关掐断连接却不回响应）。90s 是给服务端预算 +
+    // 单张慢图留的余量。
+    const QUEUE_REQUEST_TIMEOUT = 90000;
     let totalDone = 0, totalFailed = 0, totalSkipped = 0;
     let scopeTotal = null;   // 本轮范围（开始时的待处理数），progress 以它为分母
     let lastStats = null;
@@ -1373,14 +1377,33 @@ async function runProcessQueue(setUI, onTick) {
         const fd = new FormData();
         fd.append('_csrf_token', getCsrfToken());
         fd.append('batch', String(BATCH));
-        // v1.3.3-beta.1: 请求在途期间把「处理中」显示为即将被本批标记的行数
-        //（服务端确实在这一刻把这些行置为 processing），让计数真实可见。
-        if (onTick) onTick({ phase: 'inflight', stats: lastStats, batch: BATCH });
-
-        const r = await fetch('/admin/images/process-queue', {
-            method: 'POST', body: fd,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
+        // 请求发出前**不再预支服务端计数**。此前这里会先把 pending 减 batch、
+        // processing 直接写成 batch（服务端此时还没认领），一旦请求挂住（网关掐断
+        // 却不回响应 / FPM 被强杀无输出），卡片就永久停在那个假数字上 —— 现场表现
+        // 正是「待处理恒显 20，与真实积压无关，刷新页面才恢复真实值」。
+        // 计数只认服务端回包。
+        //
+        // 客户端单请求上限：服务端自身有 QUEUE_TIME_BUDGET(45s) 预算，这里只兜
+        // 「请求根本没回来」。没有它，一次挂死的请求会把按钮锁在 disabled，直到
+        // 手动刷新页面 —— 那正是「无法点击」的成因。
+        const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+        const guard = ctrl ? setTimeout(function () { ctrl.abort(); }, QUEUE_REQUEST_TIMEOUT) : null;
+        let r;
+        try {
+            r = await fetch('/admin/images/process-queue', {
+                method: 'POST', body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                signal: ctrl ? ctrl.signal : undefined,
+            });
+        } catch (e) {
+            if (ctrl && ctrl.signal.aborted) {
+                throw new Error('请求超时（' + Math.round(QUEUE_REQUEST_TIMEOUT / 1000)
+                    + ' 秒未响应），已停止本轮；队列进度会自动刷新，可稍后再点');
+            }
+            throw e;
+        } finally {
+            if (guard) clearTimeout(guard);
+        }
         const j = await parseJsonResponse(r, '处理队列');
         if (!j || !j.success) {
             throw new Error((j && j.error) || '未知错误');
@@ -2002,7 +2025,9 @@ function initQueuePage() {
             el.textContent = Number.isFinite(v) ? v.toLocaleString() : '0';
         }
     }
-    // phase: start | inflight | batch | done
+    // phase: start | batch | contended | done —— 卡片只接受服务端回包里的真实统计。
+    // 曾有 inflight 相位：请求发出前就把 pending 减 batch、processing 记成 batch，
+    // 结果请求一挂住，卡片就永久停在那个假数字上（待处理恒显 20），比不更新更糟。
     function onTick(t) {
         if (t.phase === 'batch' || t.phase === 'done') {
             last.stats = t.stats || last.stats;
@@ -2015,10 +2040,6 @@ function initQueuePage() {
                 if (requeueBtn) requeueBtn.disabled = Number(s2.failed) === 0 && Number(s2.meta_retryable) === 0;
                 if (thumbBtn) thumbBtn.disabled = Number(s2.no_thumb) === 0;
             }
-        } else if (t.phase === 'inflight' && last.stats) {
-            // 请求在途：服务端此刻正把至多 batch 行置为 processing —— 如实显示
-            const inflight = Math.min(Number(t.batch) || 3, Number(last.stats.pending) || 0);
-            paint(Object.assign({}, last.stats, { processing: inflight, pending: Math.max(0, (Number(last.stats.pending) || 0) - inflight) }));
         }
     }
 
@@ -2128,7 +2149,10 @@ function initQueuePage() {
     function startPolling() {
         if (pollTimer !== null) return;
         pollTimer = setInterval(async function() {
-            if (uploading) return;   // 处理中由批次响应驱动，避免重复请求
+            // 处理中也照常轮询：卡片显示的是服务端真实计数（「处理中」会真的往上走）。
+            // 此前处理期间直接跳过轮询，卡片在整个批次里不动，看起来像卡死 ——
+            // 后来补的"请求发出前预支一个假数字"正是为了填这个空，结果更糟。
+            // /queue-stats 已与 processQueue 共用同一份两条语句的快照，5 秒一次成本可接受。
             const j = await refreshStats();
             refreshButtons();
             const s = j && j.stats;
