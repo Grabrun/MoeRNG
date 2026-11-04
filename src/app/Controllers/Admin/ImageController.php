@@ -273,14 +273,15 @@ class ImageController extends Controller
      * 内存上不再经 `ob_start()` / `ob_get_clean()` 把整幅编码结果抓进 PHP 变量
      * （原图的编码结果可达数 MiB，且与画布同时在内存）——直接把输出路径交给 imagewebp。
      *
-     * @return array{ok: bool, note: string, bytes?: int} ok=false 时调用方保持原格式不动。
+     * @return array{ok: bool, note: string, bytes?: int, detail?: string}
+     *         ok=false 时调用方保持原格式不动；`detail` 仅 too-large 附带人读原因。
      *
      * 保持原格式的情形（每条都有明确理由，绝不为了"统一"而牺牲正确性）：
      *   - disabled           开关关闭
      *   - already-webp       已经是 WebP
      *   - format-kept        GIF（GD 只取第一帧，转了就**丢动画**）、SVG（矢量图位图化会失真）
      *   - gd-unavailable     GD 缺 webp 支持
-     *   - too-large          解码会超出可用内存（复用缩略图的同一内存预检）
+     *   - too-large          转码峰值超出内存预算，或超过运营设置的像素上限（见下）
      *   - exif-unavailable   JPEG 且读不到 EXIF：浏览器会按 EXIF 旋转 JPEG，WebP 不会 ——
      *                        不纠正就会把手机照片转"歪"，所以宁可不转
      *   - unreadable/decode-failed/encode-failed/write-failed  读取、编解码或落盘失败
@@ -301,10 +302,13 @@ class ImageController extends Controller
             return ['ok' => false, 'note' => 'gd-unavailable'];
         }
 
-        // 与缩略图同一套内存预检：放不下就不解码（避免不可捕获的 OOM）
-        $tooBig = $this->decodeWouldExceedMemory($file);
-        if ($tooBig !== null) {
-            return ['ok' => false, 'note' => 'too-large'];
+        // 必须用**转码专用**预算，不能沿用缩略图那套 decodeWouldExceedMemory：
+        // 后者只估解码（w×h×4×1.25），而 imagewebp 编码期还要再要一块同级画布，
+        // 真实峰值接近它的两倍。按解码量放行会一路走到编码器才 OOM（不可捕获），
+        // 详见 originalConvertBudget 上方记录的那次线上故障。
+        $budget = $this->originalConvertBudget($file, $mime, true);
+        if ($budget !== null) {
+            return ['ok' => false, 'note' => 'too-large', 'detail' => $budget['detail']];
         }
 
         // 0 = JPEG 读不到 EXIF（宁可不转，见上方说明）；1 = 正常；2~8 = 需纠正
@@ -417,10 +421,14 @@ class ImageController extends Controller
      * 另外这里**刻意不套用 `thumb_max_pixels`**：那是"生成缩略图的成本上限"，
      * 拿它限制原图会把合法的超大原图误判成"超出设置上限"（原图的正确性上限是内存）。
      *
+     * @param bool $applyPixelCap 是否同时套用 `thumb_max_pixels` 设置。**只有上传路径传 true**：
+     *        运营填这个值的意思是"超过就别再派生任何东西（仅存原图）"，原图转码同样要解码
+     *        整幅画布，踩过去只会烧内存。批量「转换历史原图」保持 false（见上一段）。
      * @return array{code: string, detail: string}|null null = 预算内，可以转码。
      */
-    private function originalConvertBudget(string $file, string $mime): ?array
-    {        $info = function_exists('getimagesize') ? @getimagesize($file) : false;
+    private function originalConvertBudget(string $file, string $mime, bool $applyPixelCap = false): ?array
+    {
+        $info = function_exists('getimagesize') ? @getimagesize($file) : false;
         if (!is_array($info) || empty($info[0]) || empty($info[1])) {
             return ['code' => 'dimensions-unavailable', 'detail' => '无法读取图像尺寸（文件损坏或格式不受支持）'];
         }
@@ -428,6 +436,23 @@ class ImageController extends Controller
         $h = (int) $info[1];
         if ($w <= 0 || $h <= 0) {
             return ['code' => 'dimensions-unavailable', 'detail' => '图像尺寸无效（' . $w . '×' . $h . '）'];
+        }
+
+        // 运营侧像素上限（单位万像素，0 = 不限）。只在上传路径生效，见参数说明。
+        if ($applyPixelCap) {
+            $cap = self::thumbMaxPixels();
+            if ($cap > 0 && $w * $h > $cap) {
+                return [
+                    'code'   => 'pixel-cap',
+                    'detail' => sprintf(
+                        '图像超出设置上限（%d×%d = %.1f 万像素，上限 %.0f 万像素）',
+                        $w,
+                        $h,
+                        $w * $h / 10000,
+                        $cap / 10000
+                    ),
+                ];
+            }
         }
 
         $canvas = (float) $w * $h * 4;                 // 一块真彩画布（GD 真彩 = 4 B/px）

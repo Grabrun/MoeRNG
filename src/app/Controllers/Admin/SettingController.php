@@ -87,7 +87,8 @@ class SettingController extends Controller
                     'type' => 'toggle', 'label' => '原图转 WebP', 'default' => '1', 'rules' => ['in:0,1'],
                     'help' => '开启后上传的原图统一转成 WebP 存储（体积通常只有 PNG 的 20~35%、JPEG 的 60~75%）；'
                         . '缩略图本来就是 WebP。以下情形保持原格式：GIF（转码会丢动画）、SVG（矢量）、'
-                        . 'JPEG 读不到 EXIF 方向（转完会变歪）、编码结果不比原文件小。'
+                        . 'JPEG 读不到 EXIF 方向（转完会变歪）、编码结果不比原文件小、'
+                        . '或转码峰值超出可用内存（超大图，含上面的像素上限）。'
                         . '已有原图可用下方「转换历史原图」批量处理',
                 ],
                 'original_webp_quality' => [
