@@ -221,6 +221,20 @@ class ImageController extends Controller
     public const QUEUE_BATCH_DEFAULT = 20;
 
     /**
+     * 单个 process-queue 请求的墙钟预算（秒）。
+     *
+     * 必须明显低于网关与 PHP-FPM 的超时（nginx 默认 60s、宝塔
+     * request_terminate_timeout 常见 100s）。超时由 FPM **直接杀掉 worker** 时，
+     * 连 register_shutdown_function 都来不及跑 —— 本批已认领的行会留在
+     * processing，要等 5 分钟复位窗口才重新可用。线上表现就是「点一次只推进一批，
+     * 然后卡片停在『处理中 20』再也不动」。
+     *
+     * 到点后把本批**还没开始处理**的行原样还回 pending，本次请求正常返回，
+     * 前端循环接着发下一轮 —— 总量不变，只是把一次长请求切成了若干次短请求。
+     */
+    private const QUEUE_TIME_BUDGET = 45;
+
+    /**
      * 本请求「开始解码之前」的内存水位，惰性快照一次。
      *
      * 为什么不能每次现取 memory_get_usage(true)：它统计的是分配器**已向系统
@@ -872,6 +886,9 @@ class ImageController extends Controller
         $this->jsonFatalGuard('process-queue');   // 致命错误 → 合法 JSON（而非空响应）
 
         $batchSize = max(1, min(self::QUEUE_BATCH_MAX, (int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT)));
+        // 墙钟预算从这里开始算（不是从认领之后）—— 复位/探测/取批本身也要时间，
+        // 且它们同样受网关超时约束。见 QUEUE_TIME_BUDGET。
+        $startedAt = microtime(true);
 
         try {
             $pdo = \App\Core\Database::getInstance();
@@ -958,6 +975,27 @@ class ImageController extends Controller
 
             foreach ($rows as $row) {
                 $id = (int) $row['id'];
+
+                // 墙钟预算到点：**至少先做完一张**（否则一张慢图就能让队列原地打转），
+                // 然后把本批还没碰过的行原样还回 pending，本次请求正常返回。
+                // 不还回的话它们会以 processing 身份卡满 5 分钟复位窗口 —— 那正是
+                // 「点一次只推进一批、然后彻底不动」的现场。
+                if ($results !== [] && (microtime(true) - $startedAt) >= self::QUEUE_TIME_BUDGET) {
+                    $processed = array_map(static fn($r) => (int) $r['id'], $results);
+                    $rest = array_values(array_diff($ids, $processed));
+                    if ($rest !== []) {
+                        try {
+                            $pdo->exec(
+                                "UPDATE `images` SET `process_status` = 'pending'"
+                                . " WHERE `process_status` = 'processing' AND `id` IN (" . implode(',', $rest) . ")"
+                            );
+                        } catch (\Throwable) {
+                            // 还原失败也不致命：这些行会走 5 分钟复位，队列不会永久停摆。
+                        }
+                    }
+                    break;
+                }
+
                 $path = (string) $row['path'];
                 $incomingFile = $incomingDir . '/' . ltrim($path, '/');
 

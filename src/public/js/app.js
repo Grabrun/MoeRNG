@@ -1966,15 +1966,23 @@ function initQueuePage() {
     const clearBtn = document.getElementById('queue-clear');
     const clearScope = document.getElementById('queue-clear-scope');
 
-    const box = document.getElementById('queue-progress');
-    const fill = document.getElementById('queue-fill');
-    const text = document.getElementById('queue-text');
-    const detail = document.getElementById('queue-detail');
-    const setUI = function(pct, t, d) {
-        if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
-        if (text && t) text.textContent = t;
-        if (detail && d !== undefined) detail.textContent = d;
-    };
+    // 队列/补全函数都接受一个 setUI 回调；本页已无浮层，统一传空实现。
+    const NOOP = function () {};
+
+    // 右下角的处理进度浮层已移除：它由同一批请求驱动，请求一断就永远停在
+    // 「处理中… 0/N」，比没有更糟。改为用按钮自身表达在跑（禁用 + 文案切换），
+    // 真正的进度看上方四张状态卡 —— 那是由服务端统计驱动的，断开也会立刻回落。
+    function busy(btn, on, label) {
+        if (!btn) return;
+        if (on) {
+            if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+            btn.textContent = label;
+            btn.disabled = true;
+        } else {
+            if (btn.dataset.label) btn.textContent = btn.dataset.label;
+            btn.disabled = false;
+        }
+    }
 
     // v1.3.3-beta.1: 状态卡片实时刷新 —— 此前四张卡是服务端一次性渲染的静态值，
     // 处理期间完全不动（"数据不会实时更新"）。现在每批响应都把服务端统计写入卡片。
@@ -2014,14 +2022,13 @@ function initQueuePage() {
         }
     }
 
-    async function runQueue(label) {
+    async function runQueue() {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
         uploading = true;
-        if (startBtn) startBtn.disabled = true;
+        busy(startBtn, true, '处理中…');
         if (requeueBtn) requeueBtn.disabled = true;
-        if (box) { box.classList.remove('hidden'); setUI(0, label || '处理中…', ''); }
         try {
-            const res = await runProcessQueue(setUI, onTick);
+            const res = await runProcessQueue(NOOP, onTick);
             showToast('处理完成：成功 ' + res.done + ' 张'
                 + (res.failed ? '，失败 ' + res.failed + ' 张' : '')
                 + (res.skipped ? '，' + res.skipped + ' 张过大仅存原图（无缩略图）' : ''),
@@ -2031,7 +2038,7 @@ function initQueuePage() {
             showToast('处理异常: ' + e.message, 'error', 8000);
         } finally {
             uploading = false;
-            if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+            busy(startBtn, false);
             // v1.4.0-beta.2 修复: 失败/异常后必须重新取一次快照 —— 否则统计停在处理前
             // 的旧值（或为空），按钮按旧值判定会呈现「点一次就disabled 到底」。取完按
             // 真实状态刷新按钮；队列仍有积压则继续轮询。
@@ -2042,25 +2049,23 @@ function initQueuePage() {
         }
     }
 
-    startBtn?.addEventListener('click', function() { runQueue('处理中…'); });
+    startBtn?.addEventListener('click', function() { runQueue(); });
 
     // 补全历史缩略图（不改变处理状态，图片始终可见）
     const thumbBtn = document.getElementById('queue-backfill-thumbs');
     thumbBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
         uploading = true;
-        if (thumbBtn) thumbBtn.disabled = true;
-        if (box) { box.classList.remove('hidden'); setUI(0, '补全缩略图…', ''); }
+        busy(thumbBtn, true, '补全中…');
         try {
-            const res = await runBackfillThumbs(setUI);
+            const res = await runBackfillThumbs(NOOP);
             showToast('缩略图补全完成：已补 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 8000);
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {
             showToast('缩略图补全异常: ' + e.message, 'error', 10000);
         } finally {
             uploading = false;
-            if (thumbBtn) thumbBtn.disabled = false;
-            if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+            busy(thumbBtn, false);
             // v1.4.0-beta.2: 同上 —— 重新取快照后按真实状态刷新按钮
             await refreshStats();
             refreshButtons();
@@ -2161,7 +2166,7 @@ function initQueuePage() {
             return;
         }
         uploading = false;
-        runQueue('重试处理中…');
+        runQueue();
     });
 
     // 清空队列（v1.4.0-beta.2）：触发器在队列卡片右上角，展开为浮层；
@@ -2239,8 +2244,7 @@ function initQueuePage() {
     requeueBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有任务进行中，请稍候', 'error', 4000); return; }
         uploading = true;
-        if (requeueBtn) requeueBtn.disabled = true;
-        if (box) { box.classList.remove('hidden'); setUI(0, '重试失败项…', ''); }
+        busy(requeueBtn, true, '重试中…');
         try {
             // ① 主图失败项（process_status='failed'）重新入队
             const fd = new FormData();
@@ -2259,9 +2263,9 @@ function initQueuePage() {
             }
 
             // ② 处理队列（含刚入队的失败项；进度条 + 统计联动）
-            const res = await runProcessQueue(setUI, onTick);
+            const res = await runProcessQueue(NOOP, onTick);
             // ③ 缩略图元数据失败项（partial/failed）定向重试
-            const mres = await runThumbMetaRetry(setUI);
+            const mres = await runThumbMetaRetry(NOOP);
             showToast('重试失败项完成：已重新处理 ' + res.done + ' 张'
                 + (res.failed ? '，仍失败 ' + res.failed + ' 张' : '')
                 + (mres.retried ? '；元数据补齐 ' + mres.retried + ' 张' : ''),
@@ -2271,7 +2275,7 @@ function initQueuePage() {
             showToast('重试失败项异常: ' + e.message, 'error', 10000);
         } finally {
             uploading = false;
-            if (box) setTimeout(() => box.classList.add('hidden'), 1200);
+            busy(requeueBtn, false);
             await refreshStats();
             refreshButtons();
             const sAfter = last.stats;

@@ -63,13 +63,6 @@ $queryBase = 'status=' . urlencode($status) . '&q=' . urlencode($search);
 </div>
 <?php endif; ?>
 
-<!-- 处理进度浮层（处理/重试时显示） -->
-<div id="queue-progress" class="hidden backfill-float">
-    <div class="health-progress-text" id="queue-text">准备处理…</div>
-    <div class="health-progress-track"><div id="queue-fill" class="health-progress-fill"></div></div>
-    <div class="health-progress-detail" id="queue-detail"></div>
-</div>
-
 <!-- v1.4.0-beta.2: 待处理与失败**合并为单一队列**（按状态筛选 + 按文件名/ID 搜索） -->
 <div class="card mb-3">
     <h3 class="queue-section-head">
