@@ -118,6 +118,38 @@ curl -sI https://你的域名/public/css/style.css | grep -iE "cache-control|exp
 - **图片 404 / 签名失效**：确认已重启 PHP-FPM；签名密钥存 `config/signing_key.php`
 - **对象存储图片加载失败**：检查 CSP——v1.2.1-beta.2 起 CSP 自动白名单存储 CDN/源站域名，若仍失败请确认存储管理里的 CDN/源站域名已配置
 
+## 5. 后台处理队列：让它不依赖浏览器
+
+上传后的缩略图/转码处理原先只由**浏览器**驱动（上传完跑一次、或点「开始处理」）。
+关掉标签页即停摆，无人操作则积压永不消化。CLI 入口补上服务端消费者：
+
+```bash
+php src/cli/process-queue.php            # 清空积压后退出
+php src/cli/process-queue.php --loop     # 常驻，空闲每 10 秒轮询
+php src/cli/process-queue.php --batch=50 # 指定单批张数（上限见 QUEUE_BATCH_MAX）
+```
+
+两者可同时存在：Web 与 CLI 靠数据库层的「条件 UPDATE 认领」互斥，认领失败会退避重试，
+不需要额外加锁。
+
+**cron（推荐，最省心）** —— 每 5 分钟跑一次，自身清空后退出：
+
+```cron
+*/5 * * * * cd /www/wwwroot/你的站点 && /www/server/php/84/bin/php src/cli/process-queue.php >/dev/null 2>&1
+```
+
+**supervisor（需要近实时）** —— 常驻进程，空闲轮询：
+
+```ini
+[program:moerng-queue]
+command=/www/server/php/84/bin/php /www/wwwroot/你的站点/src/cli/process-queue.php --loop
+autostart=true
+autorestart=true
+stdout_logfile=/www/wwwlogs/moerng-queue.log
+```
+
+补全历史缩略图另有 `php src/cli/backfill-thumbs.php`（同一套父/子进程结构）。
+
 ## 6. 关于「对象存储前端直传」（已移除）
 
 v1.3.1-beta.1/beta.2 迭代期曾实现过浏览器直传云存储（presigned PUT）方案，

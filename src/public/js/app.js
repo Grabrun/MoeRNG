@@ -1359,7 +1359,10 @@ async function parseJsonResponse(resp, label) {
 // setUI(pct, text, detail) 控制进度条；onTick({phase, stats, ...}) 让调用方实时刷新
 // 状态卡片（phase: start | inflight | batch | contended | done）。
 async function runProcessQueue(setUI, onTick) {
-    const BATCH = 10;   // v2.0.0-beta.12: 3 → 10（与服务端默认对齐，积压轮数减少 2/3）
+    // 单批张数由服务端注入（layout.php 的 meta[name=queue-batch]），与
+    // ImageController::QUEUE_BATCH_MAX 同一来源 —— 前后端各写一个数字必然漂移。
+    const batchMeta = document.querySelector('meta[name="queue-batch"]');
+    const BATCH = Math.max(1, Number(batchMeta && batchMeta.content) || 20);
     let totalDone = 0, totalFailed = 0, totalSkipped = 0;
     let scopeTotal = null;   // 本轮范围（开始时的待处理数），progress 以它为分母
     let lastStats = null;

@@ -90,6 +90,16 @@ CREATE TABLE IF NOT EXISTS `images` (
     `thumbs` VARCHAR(1200) NULL DEFAULT NULL,
     `thumb_bytes` VARCHAR(255) NULL DEFAULT NULL,
     `processing_state` JSON NULL DEFAULT NULL,
+    -- thumb_meta：processing_state.thumb_meta 的归一化投影（NULL/非法 JSON → 'pending'）。
+    -- VIRTUAL（不落盘、不占存储），只为让 thumbMetaPendingSql()/
+    -- thumbMetaRetryableSql() 变成可走索引的等值/IN 比较 —— 原表达式含
+    -- JSON_VALID/JSON_EXTRACT，非 sargable，队列状态卡片每批都要全表回表。
+    -- 表达式必须与 Image::thumbMetaExpr() 的降级分支逐字一致。
+    `thumb_meta` VARCHAR(16) GENERATED ALWAYS AS (
+        COALESCE(JSON_UNQUOTE(JSON_EXTRACT(
+            IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '$.thumb_meta'
+        )), 'pending')
+    ) VIRTUAL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX `idx_category` (`category_id`),
@@ -100,6 +110,10 @@ CREATE TABLE IF NOT EXISTS `images` (
     INDEX `idx_file_hash` (`file_hash`),
     INDEX `idx_file_sha256` (`file_sha256`),
     INDEX `idx_process_status` (`process_status`),
+    -- 队列状态卡片的两个派生计数（no_thumb / meta_retryable）都形如
+    -- 「process_status='done' AND thumb_meta IN (...)/= ...」，这条复合索引让它们
+    -- 变成覆盖索引扫描，不必回表解析 JSON。
+    INDEX `idx_status_thumb_meta` (`process_status`, `thumb_meta`),
     -- cleanupStagingFiles 按 path 反查是否已入库（每个暂存文件查一次），
     -- 无索引时该循环等于 N 次全表扫描。VARCHAR(512) 全长索引在 utf8mb4 下
     -- 会超 InnoDB 3072 字节上限，故取前缀 191（764 字节，足够区分路径）。

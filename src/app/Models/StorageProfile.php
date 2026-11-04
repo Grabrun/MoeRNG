@@ -70,8 +70,15 @@ class StorageProfile extends Model
         return self::$rowCache[$key] = parent::find($id);
     }
 
-    /** 取（并缓存）实例的驱动对象 —— 构造代价高，同一请求内复用。 */
-    private static function cachedDriver(self $profile): StorageInterface
+    /**
+     * 取（并缓存）实例的驱动对象 —— 构造代价高，同一请求内复用。
+     *
+     * public：队列处理（ImageController::processQueue / backfillThumbs）逐张图都要
+     * 驱动。原先它们直接调 `$profile->driver()`，绕过了这层缓存 —— 每张图重建一次
+     * 驱动：S3 系要逐字段解密凭据（每个 profile 2 个 secret 字段），本地系要
+     * `realpath()` 两次。批 50 张就是 50 次无谓的重建。
+     */
+    public static function cachedDriver(self $profile): StorageInterface
     {
         $key = (int) ($profile->attributes['id'] ?? 0);
         if ($key > 0 && isset(self::$driverCache[$key])) {

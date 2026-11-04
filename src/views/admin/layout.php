@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= $csrf_token ?>">
+    <?php /* 队列单批张数：与 ImageController::QUEUE_BATCH_MAX 同一来源，避免前后端各写一个数字 */ ?>
+    <meta name="queue-batch" content="<?= \App\Controllers\Admin\ImageController::QUEUE_BATCH_MAX ?>">
     <title><?= h($title ?? '仪表盘') ?> - MoeRNG Admin</title>
     <link rel="preconnect" href="https://miaoda.feishu.cn" crossorigin>
     <link rel="preconnect" href="https://sf3-scmcdn-cn.feishucdn.com" crossorigin>

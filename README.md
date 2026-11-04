@@ -110,6 +110,7 @@ src/
 │   ├── Models/        # 数据模型
 │   ├── Middleware/    # 中间件（认证 / CSRF / 限流）
 │   └── Storage/       # 6 家存储驱动（Local / S3 / COS / OSS / AWS / OBS / UPYUN / QINIU）
+├── cli/               # 命令行脚本（队列 worker / 缩略图补全）
 ├── views/             # 视图模板
 ├── public/            # 静态资源与上传目录
 ├── sdk/               # 对象存储官方 SDK（发布包内置，源码仓库忽略）

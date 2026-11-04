@@ -22,17 +22,23 @@ declare(strict_types=1);
 
 use App\Core\Database;
 
-$batch = 10;
+$batch = 0;   // 0 = 用 ImageController::QUEUE_BATCH_DEFAULT；clamp 放在 bootstrap 之后（常量要能看到类）
 $withRetry = false;
 foreach (array_slice($argv, 1) as $arg) {
     if ($arg === '--retry') {
         $withRetry = true;
     } elseif (str_starts_with($arg, '--batch=')) {
-        $batch = max(1, min(10, (int) substr($arg, 8)));
+        $batch = (int) substr($arg, 8);
     }
 }
 
 require dirname(__DIR__) . '/bootstrap.php';
+
+// 上限只认 ImageController::QUEUE_BATCH_MAX —— 原先 5 处各写一个 10，改一处等于没改。
+$batch = max(1, min(
+    \App\Controllers\Admin\ImageController::QUEUE_BATCH_MAX,
+    $batch > 0 ? $batch : \App\Controllers\Admin\ImageController::QUEUE_BATCH_DEFAULT
+));
 
 try {
     $pdo = Database::getInstance();

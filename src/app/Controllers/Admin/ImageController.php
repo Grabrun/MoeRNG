@@ -206,6 +206,40 @@ class ImageController extends Controller
     private const MEMORY_BASELINE_HEADROOM = 16777216; // v2.0.0-beta.3: 解码/转码基线余量（原裸数字两处）
 
     /**
+     * 单批处理张数上限 —— **唯一来源**。
+     *
+     * 原先「10」硬编码在 5 处（控制器 2、app.js 1、CLI 2），改一处等于没改。
+     * 现在控制器、视图（layout.php 的 meta 标签）、CLI 都引用这一个常量。
+     *
+     * 取 50 而不是更大的值：单请求有 set_time_limit(120) 硬上限，大图解码
+     * 0.3–1.5 s/张，50 张约 15–75 s，留足余量；100 张容易撞超时，
+     * 而超时会让本批已认领的行全部重来。
+     */
+    public const QUEUE_BATCH_MAX = 50;
+
+    /** 单批默认张数（前端不传 batch 时用它；比上限低，留出余量给慢速存储）。 */
+    public const QUEUE_BATCH_DEFAULT = 20;
+
+    /**
+     * 本请求「开始解码之前」的内存水位，惰性快照一次。
+     *
+     * 为什么不能每次现取 memory_get_usage(true)：它统计的是分配器**已向系统
+     * 申请**的内存（real_size），而 PHP 释放内存只还给自己的 free list、不还给
+     * 操作系统，所以该值在一个请求内**单调不减**。批量处理时，同批靠后的图片会
+     * 被前面图片撑起的水位压低可用额度 → 本该放得下的图被判 too-large 而静默
+     * 跳过缩略图，且**换一下处理顺序结果就不同**。
+     *
+     * 快照一次即让批内每张图面对同一份预算（顺序无关）。这在语义上也是对的：
+     * 前一张图释放的 chunk 会被下一张复用，real_size 的抬升并不代表内存不可用。
+     */
+    private ?int $memoryBaseline = null;
+
+    private function memoryBaseline(): int
+    {
+        return $this->memoryBaseline ??= memory_get_usage(true);
+    }
+
+    /**
      * 原图转码预算的安全边际：估算值必须 ≤ 可用内存 × 该系数才放行。
      *
      * 留 15% 余量是为了吸收估算误差 —— 估算公式里的"编码器同级缓冲"是从一次
@@ -386,8 +420,7 @@ class ImageController extends Controller
      * @return array{code: string, detail: string}|null null = 预算内，可以转码。
      */
     private function originalConvertBudget(string $file, string $mime): ?array
-    {
-        $info = function_exists('getimagesize') ? @getimagesize($file) : false;
+    {        $info = function_exists('getimagesize') ? @getimagesize($file) : false;
         if (!is_array($info) || empty($info[0]) || empty($info[1])) {
             return ['code' => 'dimensions-unavailable', 'detail' => '无法读取图像尺寸（文件损坏或格式不受支持）'];
         }
@@ -412,7 +445,8 @@ class ImageController extends Controller
         if ($limit === PHP_INT_MAX) {
             return null;   // 无内存限制 → 交给解码器
         }
-        $available = $limit - memory_get_usage(true) - self::MEMORY_BASELINE_HEADROOM;   // 再留 16 MiB 基线余量
+        // 用请求级基线快照（而非现取），否则批内靠后的图会被前面撑起的水位压低额度。
+        $available = $limit - $this->memoryBaseline() - self::MEMORY_BASELINE_HEADROOM;
         if ($available <= 0 || $need > (int) ($available * self::MEMORY_SAFETY_FACTOR)) {
             return [
                 'code' => 'memory-budget',
@@ -557,7 +591,8 @@ class ImageController extends Controller
         if ($limit === PHP_INT_MAX) {
             return null;   // 无内存限制 → 交给解码器
         }
-        $available = $limit - memory_get_usage(true) - self::MEMORY_BASELINE_HEADROOM;   // 再留 16 MiB 基线余量
+        // 用请求级基线快照（而非现取），否则批内靠后的图会被前面撑起的水位压低额度。
+        $available = $limit - $this->memoryBaseline() - self::MEMORY_BASELINE_HEADROOM;
         if ($need > $available) {
             return sprintf(
                 '图像过大（%d×%d，解码约需 %.0f MiB，当前可用 %.0f MiB）',
@@ -811,7 +846,7 @@ class ImageController extends Controller
         $this->validateCsrf();
         $this->jsonFatalGuard('process-queue');   // 致命错误 → 合法 JSON（而非空响应）
 
-        $batchSize = max(1, min(10, (int) $request->input('batch', '10')));
+        $batchSize = max(1, min(self::QUEUE_BATCH_MAX, (int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT)));
 
         try {
             $pdo = \App\Core\Database::getInstance();
@@ -839,19 +874,22 @@ class ImageController extends Controller
             // 列缺失等异常忽略：健康检查会提示补列
         }
 
-        $total = (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
-        $pendingBefore = (int) $pdo->query(
-            "SELECT COUNT(*) FROM `images` WHERE process_status = 'pending'"
-        )->fetchColumn();
+        // 只需要「有没有待处理」这一个布尔，故取 1 行即可（LIMIT 1 走索引，不等价于全表计数）。
+        // 其余计数统一挪到本批结束后一次取回（见下方 $stats），避免同一张表重复扫描。
+        $hasPending = $pdo->query(
+            "SELECT 1 FROM `images` WHERE process_status = 'pending' LIMIT 1"
+        )->fetchColumn() !== false;
 
         $done = 0;
         $failed = 0;
         $skipped = 0;   // v1.3.3-beta.1: 原图过大而跳过缩略图生成的数量（原图仍正常入库）
         $results = [];
 
-        if ($pendingBefore > 0) {
+        if ($hasPending) {
             $rows = $pdo->query(
-                "SELECT * FROM `images` WHERE process_status = 'pending' ORDER BY id ASC LIMIT {$batchSize}"
+                // 只取循环里真正用到的列（原先 SELECT *，批 50 张多搬 20 余列纯浪费）
+                "SELECT `id`, `path`, `storage_profile_id`, `mime_type` FROM `images` "
+                . "WHERE process_status = 'pending' ORDER BY id ASC LIMIT {$batchSize}"
             )->fetchAll(\PDO::FETCH_ASSOC);
 
             $incomingDir = self::incomingDir();
@@ -919,7 +957,7 @@ class ImageController extends Controller
                     if ($profile === null) {
                         throw new \RuntimeException('无可用存储实例');
                     }
-                    $storage = $profile->driver();
+                    $storage = \App\Models\StorageProfile::cachedDriver($profile);
 
                     // v1.3.3-beta.1 修复: mime 在此统一取用 —— 原先它定义在被替换掉的
                     // 缩略图块里，重排后成为未定义变量（PHP 求值为 null，触发
@@ -965,18 +1003,18 @@ class ImageController extends Controller
                     // v1.5.0-beta.3: 处理状态同批写入。推导口径与补全工具**共用同一个函数**
                     // （Image::deriveThumbMeta），避免两个入口各判一套、给出互相矛盾的状态。
                     // 总开关关闭时 thumbs 留空 → 状态为 pending，重新开启后可被补全工具收走。
-                    $stateValue = \App\Models\Image::withProcessingState(
-                        null,                                   // 新行，尚无其它处理项
-                        \App\Models\Image::ITEM_THUMB_META,
-                        \App\Models\Image::deriveThumbMeta($thumbsValue, (string) $thumbPath, $thumbBytesValue)
-                    );
-                    $upd = $pdo->prepare(
-                        "UPDATE `images` SET `url` = ?, `thumb_path` = ?, `thumbs` = ?, `thumb_bytes` = ?, `processing_state` = ?, `process_status` = 'done', `process_error` = NULL WHERE `id` = ? AND `process_status` = 'processing'"
-                    );
                     // MR-15: WHERE 带 processing 守卫 —— 若该行已被并发方夺走
                     // （shutdown 钩子标 failed / 另一 worker 先一步收尾），rowCount=0，
                     // 本 worker 的写整体放弃，不覆盖并发方已落定的权威状态。
-                    $upd->execute([$url, $thumbPath, $thumbsValue, $thumbBytesValue, $stateValue, $id]);
+                    $this->writeThumbMetaState(
+                        $pdo,
+                        $id,
+                        null,                                   // 新行，尚无其它处理项
+                        \App\Models\Image::deriveThumbMeta($thumbsValue, (string) $thumbPath, $thumbBytesValue),
+                        ['`url` = ?', '`thumb_path` = ?', '`thumbs` = ?', '`thumb_bytes` = ?', "`process_status` = 'done'", '`process_error` = NULL'],
+                        [$url, $thumbPath, $thumbsValue, $thumbBytesValue],
+                        "AND `process_status` = 'processing'"
+                    );
 
                     // —— 成功后删除临时原图 ——
                     @unlink($incomingFile);
@@ -1034,30 +1072,48 @@ class ImageController extends Controller
 
         }
 
+        // 本批结束后的统计，一次取回。
+        //
+        // 原先是 7 条独立 COUNT（total / pending / failed / processing / done /
+        // no_thumb / meta_retryable），每批轮询都要把 images 扫 7 遍。合并为 2 条：
+        //   ① 按状态 GROUP BY —— 一条语句拿到全部 4 个状态计数与总数；
+        //   ② 两个 JSON 派生计数用 SUM(CASE) 一次算完。
+        // 二者都不改变语义，只是把重复扫描去掉。
+        $byStatus = [];
+        $total = 0;
+        foreach ($pdo->query(
+            "SELECT `process_status` AS s, COUNT(*) AS n FROM `images` GROUP BY `process_status`"
+        ) as $r) {
+            $byStatus[(string) $r['s']] = (int) $r['n'];
+            $total += (int) $r['n'];
+        }
+
         // remaining 只计 pending —— 它是前端循环的终止条件；failed 需人工
         // 显式重试（requeueFailed），若并入 remaining 会导致循环永不终止。
-        $remaining = (int) $pdo->query(
-            "SELECT COUNT(*) FROM `images` WHERE process_status = 'pending'"
-        )->fetchColumn();
-        $failedLeft = (int) $pdo->query(
-            "SELECT COUNT(*) FROM `images` WHERE process_status = 'failed'"
-        )->fetchColumn();
+        $remaining = $byStatus['pending'] ?? 0;
+        $failedLeft = $byStatus['failed'] ?? 0;
 
         // v1.3.3-beta.1: 附带实时统计 —— 前端每批据此刷新状态卡片（此前卡片是
         // 服务端一次性渲染的静态值，处理过程中完全不动）。
-        $count = static function (string $where) use ($pdo): int {
-            return (int) $pdo->query("SELECT COUNT(*) FROM `images`" . ($where !== '' ? " WHERE {$where}" : ''))->fetchColumn();
-        };
+        // v1.5.0-beta.3: meta_retryable 是「状态为 partial/failed 的行」—— 已离开
+        // 补全队列但不该被放弃，由「重试元数据补全」定向重跑。
+        $derived = $pdo->query(
+            "SELECT "
+            . "COALESCE(SUM(CASE WHEN `process_status` = 'done' AND (" . \App\Models\Image::thumbMetaPendingSql() . ") THEN 1 ELSE 0 END), 0) AS no_thumb, "
+            . "COALESCE(SUM(CASE WHEN `process_status` = 'done' AND (" . \App\Models\Image::thumbMetaRetryableSql() . ") THEN 1 ELSE 0 END), 0) AS meta_retryable "
+            . "FROM `images`"
+        )->fetch(\PDO::FETCH_ASSOC) ?: [];
+        $noThumb = (int) ($derived['no_thumb'] ?? 0);
+        $metaRetryable = (int) ($derived['meta_retryable'] ?? 0);
+
         $stats = [
-            'pending'    => $remaining,
-            'processing' => $count("process_status = 'processing'"),
-            'done'       => $count("process_status = 'done'"),
-            'failed'     => $failedLeft,
-            'no_thumb'   => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaPendingSql()),
-            // v1.5.0-beta.3: 状态为 partial/failed 的行 —— 已离开补全队列但不该被放弃，
-            // 由「重试元数据补全」按 thumbMetaRetryableSql() 定向重跑。
-            'meta_retryable' => $count("process_status = 'done' AND " . \App\Models\Image::thumbMetaRetryableSql()),
-            'total'      => $total,
+            'pending'        => $remaining,
+            'processing'     => $byStatus['processing'] ?? 0,
+            'done'           => $byStatus['done'] ?? 0,
+            'failed'         => $failedLeft,
+            'no_thumb'       => $noThumb,
+            'meta_retryable' => $metaRetryable,
+            'total'          => $total,
         ];
 
         $this->json([
@@ -1088,7 +1144,7 @@ class ImageController extends Controller
     {
         $this->validateCsrf();
         $this->jsonFatalGuard('backfill-thumbs');   // 同上（同样做 GD 解码）
-        $batchSize = max(1, min(10, (int) $request->input('batch', '10')));
+        $batchSize = max(1, min(self::QUEUE_BATCH_MAX, (int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT)));
 
         // v1.5.0-beta.3: 一个端点、两个范围（按 processing_state 区分「补什么」）：
         //   scope=pending（默认）—— 处理 thumb_meta 为 pending 的行：生成缩略图 / 补字节数；
@@ -1182,7 +1238,10 @@ class ImageController extends Controller
 
         if ($remaining > 0) {
             $rows = $pdo->query(
-                "SELECT * FROM `images` WHERE process_status = 'done' AND {$targetCond}{$fromSql} ORDER BY id ASC LIMIT {$batchSize}"
+                // 显式列：done 行的 url(1024)/original_name/file_hash/file_sha256 等全不用，
+                // 而 url 在有 CDN 时可达 KB 级 —— SELECT * 在这条路径上的浪费最实在。
+                "SELECT `id`, `path`, `storage_profile_id`, `mime_type`, `thumbs`, `thumb_path`, `thumb_bytes`, `processing_state` "
+                . "FROM `images` WHERE process_status = 'done' AND {$targetCond}{$fromSql} ORDER BY id ASC LIMIT {$batchSize}"
             )->fetchAll(\PDO::FETCH_ASSOC);
 
             foreach ($rows as $row) {
@@ -1223,7 +1282,7 @@ class ImageController extends Controller
                     if ($profile === null) {
                         throw new \RuntimeException('无可用存储实例');
                     }
-                    $driver = $profile->driver();
+                    $driver = \App\Models\StorageProfile::cachedDriver($profile);
 
                     // ── ② 已有缩略图、只缺字节数 → **只实测，不重做** ────────────────
                     // 不重新编码、不覆盖对象（缩略图本身是好的），只问存储要对象长度。
@@ -1250,16 +1309,14 @@ class ImageController extends Controller
                             (string) $row['thumb_path'],
                             $bytesJson
                         );
-                        $pdo->prepare("UPDATE `images` SET `thumb_bytes` = ?, `processing_state` = ? WHERE `id` = ?")
-                            ->execute([
-                                $bytesJson,
-                                \App\Models\Image::withProcessingState(
-                                    $row['processing_state'] ?? null,
-                                    \App\Models\Image::ITEM_THUMB_META,
-                                    $state
-                                ),
-                                $id,
-                            ]);
+                        $this->writeThumbMetaState(
+                            $pdo,
+                            $id,
+                            $row['processing_state'] ?? null,
+                            $state,
+                            ['`thumb_bytes` = ?'],
+                            [$bytesJson]
+                        );
                         $done++;
                         $note = '已实测缩略图字节数（' . count($bytes) . '/' . count($haveThumbs) . ' 档）';
                         if ($state === \App\Models\Image::STATE_FAILED) {
@@ -1300,19 +1357,14 @@ class ImageController extends Controller
                     // 否则 md 这一档会在推导里被当成"缺档"，状态被误判成 partial。
                     $effectiveThumbPath = $thumbKeys['md'] ?? (string) $row['thumb_path'];
                     $state = \App\Models\Image::deriveThumbMeta($thumbsValue, $effectiveThumbPath, $bytesValue);
-                    $pdo->prepare(
-                        "UPDATE `images` SET `thumb_path` = COALESCE(?, `thumb_path`), `thumbs` = ?, `thumb_bytes` = ?, `processing_state` = ? WHERE `id` = ?"
-                    )->execute([
-                        $thumbKeys['md'] ?? null,
-                        $thumbsValue,
-                        $bytesValue,
-                        \App\Models\Image::withProcessingState(
-                            $row['processing_state'] ?? null,
-                            \App\Models\Image::ITEM_THUMB_META,
-                            $state
-                        ),
+                    $this->writeThumbMetaState(
+                        $pdo,
                         $id,
-                    ]);
+                        $row['processing_state'] ?? null,
+                        $state,
+                        ['`thumb_path` = COALESCE(?, `thumb_path`)', '`thumbs` = ?', '`thumb_bytes` = ?'],
+                        [$thumbKeys['md'] ?? null, $thumbsValue, $bytesValue]
+                    );
 
                     if ($thumbKeys === []) {
                         // 源图小于所有档位（合法空操作）/ 过大（内存预检）/ 不可解码
@@ -1374,11 +1426,40 @@ class ImageController extends Controller
      */
     private function stampThumbMetaState(\PDO $pdo, int $id, ?string $currentJson, string $state): void
     {
-        $pdo->prepare("UPDATE `images` SET `processing_state` = ? WHERE `id` = ?")
-            ->execute([
-                \App\Models\Image::withProcessingState($currentJson, \App\Models\Image::ITEM_THUMB_META, $state),
-                $id,
-            ]);
+        $this->writeThumbMetaState($pdo, $id, $currentJson, $state);
+    }
+
+    /**
+     * 写一行 image 的 thumb_meta 状态，可附带其它列 —— 三条成功路径的唯一出口。
+     *
+     * 队列处理（新行）、实测字节数、重新生成缩略图这三条路径写的列各不相同，但
+     * **状态 JSON 的拼装方式必须一致** —— 各自拼一遍迟早走偏（典型症状：某处忘了
+     * 保留 `processing_state` 里的其它处理项，把别人的状态覆盖成 null）。
+     *
+     * @param array<int,string> $setFragments SET 额外片段（可含 `?` 占位符），processing_state 由本方法追加
+     * @param array<int,mixed>  $params       与 $setFragments 中占位符一一对应的参数
+     * @param string            $guard        追加在 WHERE `id` = ? 之后的条件（如 "AND `process_status` = 'processing'"）
+     */
+    private function writeThumbMetaState(
+        \PDO $pdo,
+        int $id,
+        ?string $currentJson,
+        string $state,
+        array $setFragments = [],
+        array $params = [],
+        string $guard = ''
+    ): void {
+        $setFragments[] = '`processing_state` = ?';
+        $params[] = \App\Models\Image::withProcessingState(
+            $currentJson,
+            \App\Models\Image::ITEM_THUMB_META,
+            $state
+        );
+        $params[] = $id;
+        $pdo->prepare(
+            "UPDATE `images` SET " . implode(', ', $setFragments)
+            . " WHERE `id` = ?" . ($guard !== '' ? ' ' . $guard : '')
+        )->execute($params);
     }
 
     /**
@@ -2267,7 +2348,9 @@ class ImageController extends Controller
 
         if ($remaining > 0) {
             $rows = $pdo->query(
-                "SELECT * FROM `images` WHERE {$missingCond} ORDER BY id ASC LIMIT {$batchSize}"
+                // 显式列（同 backfillThumbs：只取实际用到的 4 列）
+                "SELECT `id`, `path`, `storage_profile_id`, `file_hash` FROM `images` "
+                . "WHERE {$missingCond} ORDER BY id ASC LIMIT {$batchSize}"
             )->fetchAll(\PDO::FETCH_ASSOC);
 
             foreach ($rows as $row) {
@@ -2287,7 +2370,7 @@ class ImageController extends Controller
                         $results[] = ['id' => $id, 'error' => '无可用存储实例'];
                         continue;
                     }
-                    $driver = $profile->driver();
+                    $driver = \App\Models\StorageProfile::cachedDriver($profile);
 
                     // —— 取字节到本地（对象存储拉临时文件；本地直读）——
                     $localFile = null;
@@ -2391,7 +2474,7 @@ class ImageController extends Controller
                 '未配置任何启用的存储实例。请到后台「存储管理」新增存储实例并设为默认。'
             );
         }
-        $storage = $profile->driver();
+        $storage = \App\Models\StorageProfile::cachedDriver($profile);
         $storageType = (string) $profile->driver;
         $storageProvider = (string) $profile->provider;
         $profileId = (int) $profile->id;

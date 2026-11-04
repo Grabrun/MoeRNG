@@ -342,9 +342,7 @@ class Image extends Model
      */
     public static function thumbMetaPendingSql(): string
     {
-        $path = '$.' . self::ITEM_THUMB_META;
-        return "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '{$path}')), '"
-            . self::STATE_PENDING . "') = '" . self::STATE_PENDING . "'";
+        return self::thumbMetaExpr() . " = '" . self::STATE_PENDING . "'";
     }
 
     /**
@@ -356,9 +354,50 @@ class Image extends Model
      */
     public static function thumbMetaRetryableSql(): string
     {
+        return self::thumbMetaExpr() . " IN ('" . self::STATE_PARTIAL . "', '" . self::STATE_FAILED . "')";
+    }
+
+    /**
+     * `processing_state.thumb_meta` 归一化后的 SQL 值表达式（NULL/非法 JSON → 'pending'）。
+     *
+     * 为什么要有生成列：JSON_VALID / JSON_EXTRACT 是**非 sargable** 的，而
+     * `processing_state` 也不在任何索引里。状态卡片的两个派生计数
+     *（no_thumb / meta_retryable）因此必须回表逐行解析 JSON —— 10 万行 95% 是
+     * done 时，每个批次轮询就是约 9.5 万次随机回表。
+     *
+     * `thumb_meta` 是 VIRTUAL 生成列（见 Application::ensureThumbMetaColumn），其
+     * 表达式与这里的降级分支**逐字等价**；配合
+     * `idx_status_thumb_meta(process_status, thumb_meta)` 后那两条计数变成覆盖索引扫描。
+     *
+     * ⚠️ 有列时直接返回裸列名，**不能**再套 COALESCE —— 一旦套上函数，
+     * 优化器就用不了索引，生成列也就白加了。（列定义里已含 COALESCE，故无需再包。）
+     *
+     * 降级：老库若加列失败（权限不足 / 老版本 MySQL），SHOW COLUMNS 探测不到就退回
+     * JSON 表达式 —— 查询仍正确，只是慢。绝不让加列失败演变成功能不可用。
+     */
+    private static function thumbMetaExpr(): string
+    {
+        if (self::hasThumbMetaColumn()) {
+            return '`thumb_meta`';
+        }
         $path = '$.' . self::ITEM_THUMB_META;
-        $col = "JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '{$path}'))";
-        return "{$col} IN ('" . self::STATE_PARTIAL . "', '" . self::STATE_FAILED . "')";
+        return "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '{$path}')), '"
+            . self::STATE_PENDING . "')";
+    }
+
+    /** `images.thumb_meta` 生成列是否可用（请求内缓存一次）。 */
+    private static function hasThumbMetaColumn(): bool
+    {
+        if (self::$thumbMetaColumn !== null) {
+            return self::$thumbMetaColumn;
+        }
+        try {
+            $stmt = Database::getInstance()->query("SHOW COLUMNS FROM `images` LIKE 'thumb_meta'");
+            return self::$thumbMetaColumn = $stmt->fetchColumn() !== false;
+        } catch (\Throwable) {
+            // 探测失败按「没有」处理：退回 JSON 表达式，结果仍然正确。
+            return self::$thumbMetaColumn = false;
+        }
     }
 
     /**
@@ -409,6 +448,9 @@ class Image extends Model
      * @var array<string, string>
      */
     private static array $urlMemo = [];
+
+    /** `images.thumb_meta` 生成列的存在性缓存（null = 尚未探测）。 */
+    private static ?bool $thumbMetaColumn = null;
 
     /** 经存储驱动生成某键的 URL（请求内记忆化）。 */
     private function driverUrlFor(string $key): string

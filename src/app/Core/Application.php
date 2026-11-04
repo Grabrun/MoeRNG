@@ -11,7 +11,7 @@ class Application
      *
      * **新增迁移时务必递增此值**，否则老站点不会执行新迁移。
      */
-    private const SCHEMA_VERSION = '2026-09-28-2';
+    private const SCHEMA_VERSION = '2026-11-04-1';
 
     private static ?self $instance = null;
     private Router $router;
@@ -219,6 +219,8 @@ class Application
             // 收敛 images.status 的死 ENUM 值（'hidden' / 'deleted'）+ 补 path 索引。
             $migrationError .= $this->pruneDeadStatusValues($db);
             $migrationError .= $this->ensureImagePathIndex($db);
+            // thumb_meta 生成列 + (process_status, thumb_meta) 复合索引。
+            $migrationError .= $this->ensureThumbMetaColumn($db);
         } catch (\Throwable $e) {
             $migrationError = $migrationError !== ''
                 ? $migrationError . ' | ' . $e->getMessage()
@@ -502,6 +504,53 @@ class Application
             // 大表加索引可能超时/锁表；失败只记录，不阻断站点（查询仍会走全表扫描，
             // 只是慢，功能不受影响）。
             error_log('[MoeRNG] ADD INDEX idx_path 失败（不影响功能）: ' . $msg);
+        }
+        return '';
+    }
+
+    /**
+     * 给 images 补 thumb_meta 生成列与 (process_status, thumb_meta) 复合索引。
+     *
+     * 目的：队列状态卡片的两个派生计数原先是
+     *   `process_status='done' AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(...)),'pending') = 'pending'`
+     * —— 谓词含 JSON_VALID/JSON_EXTRACT，**非 sargable**，且 processing_state 不在
+     * 任何索引里，于是每批轮询都要对全部 done 行回表解析 JSON。
+     *
+     * 用 **VIRTUAL** 而非 STORED：MySQL 8.0 追加 VIRTUAL 生成列是 INSTANT 操作
+     * （不重建表、不锁写），而 STORED 会整表重建 —— 本项目是覆盖部署到存量库，
+     * 不能假设有停机窗口。VIRTUAL 列的值会物化进索引，覆盖索引扫描照样生效。
+     *
+     * 全程 best-effort：两步各自 try/catch + 1060/1061 幂等，失败只 error_log。
+     * Image::thumbMetaExpr() 探测不到列时会退回原 JSON 表达式，查询结果不变（只是慢），
+     * 所以这里的失败绝不会演变成功能不可用。
+     */
+    private function ensureThumbMetaColumn(\PDO $db): string
+    {
+        if (!$this->columnExists($db, 'images', 'thumb_meta')) {
+            try {
+                $db->exec(
+                    "ALTER TABLE `images` ADD COLUMN `thumb_meta` VARCHAR(16) "
+                    . "GENERATED ALWAYS AS (COALESCE(JSON_UNQUOTE(JSON_EXTRACT("
+                    . "IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '$.thumb_meta'"
+                    . ")), 'pending')) VIRTUAL"
+                );
+            } catch (\Throwable $e) {
+                $msg = $e->getMessage();
+                if (stripos($msg, '1060') === false && stripos($msg, 'duplicate column') === false) {
+                    error_log('[MoeRNG] ADD COLUMN images.thumb_meta 失败（退回 JSON 表达式，功能不受影响）: ' . $msg);
+                    return '';
+                }
+            }
+        }
+
+        try {
+            $db->exec("ALTER TABLE `images` ADD INDEX `idx_status_thumb_meta` (`process_status`, `thumb_meta`)");
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
+                // 索引缺失只是慢（列已在，谓词仍可走 process_status 前缀），不阻断站点。
+                error_log('[MoeRNG] ADD INDEX idx_status_thumb_meta 失败（不影响功能）: ' . $msg);
+            }
         }
         return '';
     }

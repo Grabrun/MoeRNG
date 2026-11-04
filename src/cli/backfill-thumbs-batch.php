@@ -13,11 +13,11 @@ use App\Core\Request;
 use App\Core\Session;
 use App\Controllers\Admin\ImageController;
 
-$batch = 3;
+$batch = 0;   // 0 = 用 ImageController::QUEUE_BATCH_DEFAULT；clamp 放在 bootstrap 之后（常量要能看到类）
 $scope = 'pending';
 foreach (array_slice($argv, 1) as $arg) {
     if (str_starts_with($arg, '--batch=')) {
-        $batch = max(1, min(10, (int) substr($arg, 8)));
+        $batch = (int) substr($arg, 8);
     }
     if ($arg === '--retry') {
         $scope = 'retry';
@@ -25,6 +25,12 @@ foreach (array_slice($argv, 1) as $arg) {
 }
 
 require dirname(__DIR__) . '/bootstrap.php';
+
+// 上限只认 ImageController::QUEUE_BATCH_MAX（单一来源）。
+$batch = max(1, min(
+    ImageController::QUEUE_BATCH_MAX,
+    $batch > 0 ? $batch : ImageController::QUEUE_BATCH_DEFAULT
+));
 
 // CLI 无 Web 会话：自行启动 session 并生成合法 CSRF token，
 // 使 backfillThumbs() 开头的 validateCsrf() 通过（校验的是 session 内 token）。

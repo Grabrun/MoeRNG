@@ -552,6 +552,8 @@ class SettingController extends Controller
             ['images', 'thumbs',             "ADD COLUMN `thumbs` VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`"],
             ['images', 'thumb_bytes',        "ADD COLUMN `thumb_bytes` VARCHAR(255) NULL DEFAULT NULL AFTER `thumbs`"],
             ['images', 'processing_state',   "ADD COLUMN `processing_state` JSON NULL DEFAULT NULL AFTER `thumb_bytes`"],
+            // VIRTUAL 生成列：不重建表（INSTANT），只让 thumb_meta 判据可走索引。
+            ['images', 'thumb_meta',         "ADD COLUMN `thumb_meta` VARCHAR(16) GENERATED ALWAYS AS (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '$.thumb_meta')), 'pending')) VIRTUAL"],
             ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
             ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
             ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
@@ -561,6 +563,9 @@ class SettingController extends Controller
             ['images', 'idx_file_sha256', 'file_sha256'],
             ['images', 'idx_storage_profile', 'storage_profile_id'],
             ['images', 'idx_process_status', 'process_status'],
+            // 复合索引：第 4 元素给出自定义 DDL（单列规则拼不出来）
+            ['images', 'idx_status_thumb_meta', 'thumb_meta',
+                "ADD INDEX `idx_status_thumb_meta` (`process_status`, `thumb_meta`)"],
         ];
         $missing = [];
         $colsCache = [];
@@ -582,9 +587,12 @@ class SettingController extends Controller
                 $missing[] = [$tbl, $col, $ddl];
             }
         }
-        foreach ($idxChecks as [$tbl, $idx, $col]) {
+        foreach ($idxChecks as $chk) {
+            [$tbl, $idx, $col] = $chk;
+            // 第 4 元素可选：复合索引的 DDL 无法由单列规则拼出，显式给出。
+            $ddl = $chk[3] ?? "ADD INDEX `{$idx}` (`{$col}`)";
             if (in_array($col, $tableCols($tbl), true) && !isset($tableIdx($tbl)[$idx])) {
-                $missing[] = [$tbl, $idx, "ADD INDEX `{$idx}` (`{$col}`)"];
+                $missing[] = [$tbl, $idx, $ddl];
             }
         }
         $checks['schema'] = [
