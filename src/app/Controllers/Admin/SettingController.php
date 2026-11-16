@@ -588,18 +588,17 @@ class SettingController extends Controller
                 . " WHERE TRIM(COALESCE(`file_sha256`, '')) <> '' ORDER BY `id` DESC LIMIT 1"
             )->fetch(\PDO::FETCH_ASSOC) ?: null;
 
-            $probe = static function (\PDO $pdo, string $col, string $val): bool {
-                $st = $pdo->prepare("SELECT `id` FROM `images` WHERE `{$col}` = ? LIMIT 1");
-                $st->execute([$val]);
-                return $st->fetchColumn() !== false;
-            };
-
+            // 自检必须走运行时同一条判据：findByContentHash() 对 CHAR(64) 的 MD5 带 TRIM 兜底，
+            // 这里若另写一条不带兜底的 SQL，NO PAD 排序规则下会误报「回查不到自己」。
             $shaHit = $md5Hit = null;
             if ($sample !== null) {
-                $shaHit = $probe($pdo, 'file_sha256', trim((string) $sample['file_sha256']));
-                $md5v = trim((string) $sample['file_hash']);
-                if ($md5v !== '') {
-                    $md5Hit = $probe($pdo, 'file_hash', $md5v);
+                $shaVal = trim((string) $sample['file_sha256']);
+                if ($shaVal !== '') {
+                    $shaHit = \App\Models\Image::findByContentHash([$shaVal], []) !== null;
+                }
+                $md5Val = trim((string) $sample['file_hash']);
+                if ($md5Val !== '') {
+                    $md5Hit = \App\Models\Image::findByContentHash([], [$md5Val]) !== null;
                 }
             }
 
@@ -613,7 +612,7 @@ class SettingController extends Controller
 
             $bad = [];
             if ($shaHit === false) $bad[] = 'file_sha256 回查不到自己';
-            if ($md5Hit === false) $bad[] = 'file_hash 回查不到自己（CHAR 尾空格问题）';
+            if ($md5Hit === false) $bad[] = 'file_hash 回查不到自己';
 
             $checks['dedupe_key'] = [
                 'ok' => $bad === [] && $dupGroups === 0,
