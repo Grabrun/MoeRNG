@@ -7,7 +7,7 @@
 > 随后该线被 v2 重构取代（`c888590` 取消全部 v1.5 兼容与迁移）——**v1.5 系列从未正式发版**，
 > 无 tag / 无 GitHub Release，其能力已并入 v2.0.0-beta 系列。
 
-## [未发布] - 2026-11-16
+## [2.0.0-beta.19] - 2026-11-17
 
 ### 注释治理：全库去历史化（代码零改动）
 
@@ -87,18 +87,83 @@
   回填 `storage_profile_id`、清空残留 `url`；后台健康检查与 doctor 新增
   `legacy_refs` / `Legacy data migration` 检测项。
 
+### 上传链路修复：去重失效、`size=original`、转码 OOM
+
+- **跨批次去重失效**（三处缺陷，任一都足以静默失效，界面无报错）：`file_hash` 是
+  `CHAR(64)` 却只存 32 位 MD5，尾空格比较受排序规则影响 → 改先比定长 `file_sha256`、
+  MD5 补 `TRIM`；转码前后各算一套哈希（历史行记上传字节、新行记落盘字节）→ 两套都参与
+  查找；旧行缺强哈希时曾用*本次*上传的存储实例去读别人的 path（跨桶必然读不到而放行）
+  → 改为按该行自己的 `storage_profile_id` 解析实例。判重统一走 `Image::findByContentHash()`。
+- **`size=original` 返回缩略图**：`displayUrlWithSize()` 把 `original` 当成"该档缩略图
+  不存在"回退到 md，`/api/v1/random`、`/api/v1/images` 与 `?type=redirect` 全部命中，
+  连响应里的 `size/width/height/mime_type/file_size` 五个字段一起错。现于链首短路，
+  `'original'` 收敛为 `Image::SIZE_ORIGINAL` 单一字面量。
+- **上传路径转码 OOM**：转码预检借用了缩略图口径（≈5P），而 `imagewebp` 编码期还要一块
+  同级画布（真实 ≈9P），5600 万–9000 万像素的图正好落在缝隙里，且该调用在 `try` 之外、
+  OOM 不可捕获。改用 `originalConvertBudget()`，上传侧分界收紧到约 4400 万像素。
+- `backfillHashes` 的 SELECT 补回 `file_sha256`：此前漏列导致 `$hasSha` 恒为 false（死判断）。
+
+### 队列与图片处理管线
+
+- **3 处 P0 资源泄漏**：`backfillThumbs` 取回的原图副本只在 `makeThumbnails()` 之后删除
+  （异常路径永不执行）→ 移入 `finally`；`thumbKey()` 在数组字面量里求值，对 v1 布局抛
+  异常时已生成的 webp 随栈帧丢失 → 生成端 `try/catch` 自清理。
+- **整批卡死在 processing**：单批 20 张常超网关 60s，FPM 被强杀时连 shutdown 钩子都来不及
+  跑，本批行留在 processing 且无失败计数。新增 `QUEUE_TIME_BUDGET = 45s`：到点且已做完
+  至少一张，就把未碰的行原样还回 `pending` 再正常返回。
+- **统计卡显示假数字**：删除请求发出前的 `inflight` 相位预支（「待处理」显示的是
+  "上一轮真实值 − batch"）；每批请求加 `AbortController` 90s 超时，挂死的请求不再把按钮
+  永久锁在 disabled；处理中也继续轮询 `/queue-stats`。统计三处各写一套 7 条 COUNT，
+  收敛为 `queueStatsSnapshot()`（GROUP BY + SUM(CASE) 两条）。
+- **移除右下角进度浮层**（视图 + JS 双清）：它由同一批请求驱动，请求一断就永久停在
+  「处理中… 0/N」。改用按钮 `busy()` 状态 + 上方四张状态卡。
+- **性能**：每批 8 条 COUNT → 3 条（其中两条 JSON 派生计数要对全部 done 行回表解析）；
+  新增 `thumb_meta` VIRTUAL 生成列 + `idx_status_thumb_meta` 让队列判据可走索引
+  （选 VIRTUAL 因 MySQL 8.0 追加列是 INSTANT，STORED 会重建表）；
+  `memory_get_usage(true)` 改为请求级基线快照 —— 该值在请求内单调不减，逐张现取会让
+  靠后的图被误判 `too-large`，换个处理顺序结果就不同。
+- **新增 CLI worker**：`php src/cli/process-queue.php [--loop[=秒]] [--batch=张数]`。
+
+### 全项目审计：37 项发现，修复 35 项
+
+- **阻断 5**：`schema.sql` 注释含分号致全新安装少建两张表（切分前剥离整行注释）、
+  `batchCategorize` 调 protected 无参 `Model::update()`（该端点自上线起每次 500）、
+  `.htaccess` 根级 `<FilesMatch "\.php$">` 致 Apache 全站 403（且 `storage/` 漏在拒绝
+  列表外，可绕过 `/files` 签名直下）、限流被任意 `X-API-Key` 头换桶绕过、
+  `rate_limits` 唯一键在存量库永不建立（`ON DUPLICATE KEY` 退化为纯 INSERT）。
+- **严重 7**：`queueClear` 与 `processQueue` 竞争产生孤儿对象（改条件 UPDATE 原子认领）、
+  存储实例删除 TOCTOU、`/tester` 存储型 XSS、`/files` 缺 `nosniff` 且 SVG 内联可执行、
+  `api_stats` 计数不可达（`Response::json` 结尾 `exit`）、分类 slug 冲突 500、
+  限流 DB 异常 fail-open 改 fail-closed。
+- **一般 14**：列表缺 `process_status='done'`、分类 N+1、响应式 grid 退回裸 `1fr` 等，
+  明细见 `docs/audit/`。
+
+### 工程化
+
+- GitHub Actions 三道门禁：`php -l`（真实解释器全量）、`php-parser` AST 级检查
+  （语法 / 未定义变量 / 跨文件引用对账）、`composer audit` 占位。
+- 新增 `docs/audit/` 两份报告（全项目审计、图片处理架构分析与优化方案）。
+
 **部署注意（覆盖部署必读）**
 
-1. 升级后先访问后台「系统设置 → 健康检查」；若 `legacy_refs` 报非零，
-   执行 `php src/cli/migrate-legacy-refs.php`（先看干跑映射），确认后加 `--apply`。
-2. 未迁移的历史图片在读取时会**明确报错**（不再是静默猜实例）。
-3. 本地开发环境：PHP 8.5 起 `$http_response_header` 有 deprecation 提示，不影响 8.4 目标版本。
+1. 覆盖部署即可，**不要删 `config/`**：包内不含 `config/app.php` 与 `credentials.php`。
+2. 升级后打开后台「系统设置 → 健康检查」，确认四项：`schema` 全部就位、`legacy_refs`
+   为 0、`image_queue` 正常、「上传去重判据」正常。
+3. 若 `legacy_refs` 非零：`php src/cli/migrate-legacy-refs.php`（默认干跑）→ 确认映射后
+   加 `--apply`。未迁移的历史图片读取时会**明确报错**，不再静默猜存储实例。
+4. 存量库由运行时自迁移追加 `thumb_meta` 生成列与 `idx_status_thumb_meta`
+   （`ALGORITHM=INSTANT`，不重建表、不锁写）。
+5. 队列可用后台按钮驱动，也可 `php src/cli/process-queue.php --loop=10`；两者不要同时跑。
+6. 传一张此前传过的图片，验证跨批次去重生效。
+7. 本地开发环境：PHP 8.5 起 `$http_response_header` 有 deprecation 提示，不影响 8.4 目标版本。
 
 **验证**
 
-- PHP 语法 2918/2918（php-parser）+ 89 个非 SDK 文件 `php -l` 全绿。
-- harness 29 个脚本全部通过（含 8 个契约测试的断言同步到新实现）。
-- `click_test` / `scope_check` 以 `src/public/js/app.js` 为参数运行通过（点击矩阵与作用域链无异常）。
+- PHP 语法：90 个非 SDK 文件 `php -l` 全绿 + `php-parser` 2920 文件解析通过。
+- harness 28 个脚本全部通过；`click_test` / `scope_check` / `hero_stats` 通过。
+- 本轮注释治理额外做了 `php -w` 逐文件对比：88 个 PHP 文件代码 token 与改前完全一致。
+- **未做运行时验证**（本机无 PHP+GD+MySQL）：「5000 万像素上传不转码但正常入库」、
+  「跨批次去重」、「迁移脚本干跑映射」三项需部署后实测。
 
 ## [2.0.0-beta.18] - 2026-10-12
 
