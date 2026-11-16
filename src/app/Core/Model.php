@@ -35,11 +35,6 @@ abstract class Model
         return $model;
     }
 
-    public function exists(): bool
-    {
-        return $this->exists;
-    }
-
     public function fill(array $attributes): void
     {
         foreach ($attributes as $key => $value) {

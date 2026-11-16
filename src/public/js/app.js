@@ -1358,6 +1358,36 @@ async function parseJsonResponse(resp, label) {
 // 点击报 "runProcessQueue is not defined"），且无 harness 覆盖 —— 现已纳入 click 矩阵。
 // setUI(pct, text, detail) 控制进度条；onTick({phase, stats, ...}) 让调用方实时刷新
 // 状态卡片（phase: start | batch | contended | done）。
+// 批量端点统一请求：FormData（自动带 CSRF）→ POST → 解析 → 非 success 抛出。
+//
+// 六个批量流程（处理队列 / 补全缩略图 / 元数据重试 / 暂存清理 / 原图转换 /
+// 哈希回填）此前各写一遍这三步，终止条件才是各流程真正不同的部分。收敛后新增
+// 批处理入口只需写自己的循环条件。
+async function postBatch(url, fields, label, signal) {
+    const fd = new FormData();
+    fd.append('_csrf_token', getCsrfToken());
+    if (fields) {
+        for (const k of Object.keys(fields)) fd.append(k, String(fields[k]));
+    }
+    const r = await fetch(url, {
+        method: 'POST', body: fd,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        signal: signal,
+    });
+    const j = await parseJsonResponse(r, label);
+    if (!j || !j.success) {
+        let msg = (j && j.error) || '未知错误';
+        // PHP 致命错误（OOM / 超时）在 JSON 里带 fatal / memory_limit / peak_mb ——
+        // 一并报出来，否则只剩一句"未知错误"，运维无从判断撞的是哪条上限。
+        if (j && j.fatal) {
+            msg += '（memory_limit=' + (j.memory_limit || '?')
+                + '，峰值 ' + (j.peak_mb === undefined ? '?' : j.peak_mb) + ' MiB）';
+        }
+        throw new Error(msg);
+    }
+    return j;
+}
+
 async function runProcessQueue(setUI, onTick) {
     // 单批张数由服务端注入（layout.php 的 meta[name=queue-batch]），与
     // ImageController::QUEUE_BATCH_MAX 同一来源 —— 前后端各写一个数字必然漂移。
@@ -1374,9 +1404,6 @@ async function runProcessQueue(setUI, onTick) {
     if (onTick) onTick({ phase: 'start', stats: null });
 
     for (;;) {
-        const fd = new FormData();
-        fd.append('_csrf_token', getCsrfToken());
-        fd.append('batch', String(BATCH));
         // 请求发出前**不再预支服务端计数**。此前这里会先把 pending 减 batch、
         // processing 直接写成 batch（服务端此时还没认领），一旦请求挂住（网关掐断
         // 却不回响应 / FPM 被强杀无输出），卡片就永久停在那个假数字上 —— 现场表现
@@ -1388,13 +1415,14 @@ async function runProcessQueue(setUI, onTick) {
         // 手动刷新页面 —— 那正是「无法点击」的成因。
         const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
         const guard = ctrl ? setTimeout(function () { ctrl.abort(); }, QUEUE_REQUEST_TIMEOUT) : null;
-        let r;
+        let j;
         try {
-            r = await fetch('/admin/images/process-queue', {
-                method: 'POST', body: fd,
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                signal: ctrl ? ctrl.signal : undefined,
-            });
+            j = await postBatch(
+                '/admin/images/process-queue',
+                { batch: BATCH },
+                '处理队列',
+                ctrl ? ctrl.signal : undefined
+            );
         } catch (e) {
             if (ctrl && ctrl.signal.aborted) {
                 throw new Error('请求超时（' + Math.round(QUEUE_REQUEST_TIMEOUT / 1000)
@@ -1403,10 +1431,6 @@ async function runProcessQueue(setUI, onTick) {
             throw e;
         } finally {
             if (guard) clearTimeout(guard);
-        }
-        const j = await parseJsonResponse(r, '处理队列');
-        if (!j || !j.success) {
-            throw new Error((j && j.error) || '未知错误');
         }
 
         const nDone = Number(j.done) || 0;
@@ -1460,17 +1484,8 @@ async function runProcessQueue(setUI, onTick) {
 async function runBackfillThumbs(setUI) {
     let totalDone = 0, totalFailed = 0, total = 0, done = 0;
     for (;;) {
-        const fd = new FormData();
-        fd.append('_csrf_token', getCsrfToken());
-        fd.append('batch', '10');   // v2.0.0-beta.12: 3 → 10（与服务端默认对齐）
-        const r = await fetch('/admin/images/backfill-thumbs', {
-            method: 'POST', body: fd,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        const j = await parseJsonResponse(r, '补全缩略图');
-        if (!j || !j.success) {
-            throw new Error((j && j.error) || '未知错误');
-        }
+        // v2.0.0-beta.12: 3 → 10（与服务端默认对齐）
+        const j = await postBatch('/admin/images/backfill-thumbs', { batch: 10 }, '补全缩略图');
         total = j.total;
         done = total - j.remaining;
         totalDone += j.done;
@@ -1500,19 +1515,11 @@ async function runThumbMetaRetry(setUI) {
 
     for (;;) {
         rounds++;
-        const fd = new FormData();
-        fd.append('_csrf_token', getCsrfToken());
-        fd.append('scope', 'retry');
-        fd.append('batch', '10');
-        fd.append('from', String(from));
-
-        const r = await fetch('/admin/images/backfill-thumbs', {
-            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        const j = await parseJsonResponse(r, '重试元数据补全');
-        if (!j || !j.success) {
-            throw new Error((j && j.error) || '未知错误');
-        }
+        const j = await postBatch(
+            '/admin/images/backfill-thumbs',
+            { scope: 'retry', batch: 10, from: from },
+            '重试元数据补全'
+        );
 
         const n = Number(j.scanned) || 0;
         scanned += n;
@@ -1544,18 +1551,11 @@ async function runStorageCleanup(mode, setUI) {
 
     for (;;) {
         rounds++;
-        const fd = new FormData();
-        fd.append('_csrf_token', getCsrfToken());
-        fd.append('mode', apply ? 'apply' : 'dry-run');
-        fd.append('batch', apply ? '10' : '1000');
-
-        const r = await fetch('/admin/images/cleanup-storage', {
-            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        const j = await parseJsonResponse(r, '存储清理');
-        if (!j || !j.success) {
-            throw new Error((j && j.error) || '未知错误');
-        }
+        const j = await postBatch(
+            '/admin/images/cleanup-storage',
+            { mode: apply ? 'apply' : 'dry-run', batch: apply ? 10 : 1000 },
+            '存储清理'
+        );
 
         const s = j.staging || {};
         scanned += Number(s.scanned) || 0;
@@ -1586,7 +1586,9 @@ async function runStorageCleanup(mode, setUI) {
 
     return { done: done, planned: planned, failed: failed, skipped: skipped,
         scanned: scanned, samples: samples, firstError: firstError, rounds: rounds };
-}async function runOriginalConversion(mode, setUI) {
+}
+
+async function runOriginalConversion(mode, setUI) {
     const apply = mode === 'apply';
     let done = 0, skipped = 0, failed = 0, orphan = 0, scanned = 0, rounds = 0;
     let firstRemaining = -1, firstError = '';
@@ -1601,25 +1603,9 @@ async function runStorageCleanup(mode, setUI) {
 
     for (;;) {
         rounds++;
-        const fd = new FormData();
-        fd.append('_csrf_token', getCsrfToken());
-        fd.append('mode', apply ? 'apply' : 'dry-run');
-        fd.append('batch', apply ? '5' : '200');
-        if (from !== null) fd.append('from', String(from));
-
-        const r = await fetch('/admin/images/convert-originals', {
-            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        const j = await parseJsonResponse(r, '原图转换');
-        if (!j || !j.success) {
-            // 服务端现在把 PHP 致命错误（OOM / 超时）也转成 JSON（fatal:true）——
-            // 顺带把 memory_limit 与内存峰值报出来，不再只有一句"空响应"。
-            const extra = (j && j.fatal)
-                ? '（memory_limit=' + (j.memory_limit || '?') + '，峰值 '
-                  + (j.peak_mb === undefined ? '?' : j.peak_mb) + ' MiB）'
-                : '';
-            throw new Error(((j && j.error) || '未知错误') + extra);
-        }
+        const fields = { mode: apply ? 'apply' : 'dry-run', batch: apply ? 5 : 200 };
+        if (from !== null) fields.from = from;
+        const j = await postBatch('/admin/images/convert-originals', fields, '原图转换');
 
         if (firstRemaining < 0) firstRemaining = Number(j.remaining) || 0;
         const remaining = Number(j.remaining) || 0;
@@ -1834,17 +1820,7 @@ function initStorageCleanup() {
 async function runHashBackfill(setUI) {
     let totalUpdated = 0, totalFailed = 0, total = 0, done = 0;
     for (;;) {
-        const fd = new FormData();
-        fd.append('_csrf_token', getCsrfToken());
-        fd.append('batch', '5');
-        const r = await fetch('/admin/images/backfill-hashes', {
-            method: 'POST', body: fd,
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        const j = await parseJsonResponse(r, '哈希回填');
-        if (!j || !j.success) {
-            throw new Error((j && j.error) || '未知错误');
-        }
+        const j = await postBatch('/admin/images/backfill-hashes', { batch: 5 }, '哈希回填');
         total = j.total;
         done = total - j.remaining;
         totalUpdated += j.updated;
@@ -2032,14 +2008,9 @@ function initQueuePage() {
         if (t.phase === 'batch' || t.phase === 'done') {
             last.stats = t.stats || last.stats;
             paint(last.stats);
-            if (t.phase === 'done' && last.stats) {
-                // 完成后同步按钮可用性（无需等 reload 才变灰）
-                const s2 = last.stats;
-                if (startBtn) startBtn.disabled = Number(s2.pending) === 0;
-                // v2.0.0-beta.13: 「重试失败项」合并主图失败 + 缩略图元数据失败
-                if (requeueBtn) requeueBtn.disabled = Number(s2.failed) === 0 && Number(s2.meta_retryable) === 0;
-                if (thumbBtn) thumbBtn.disabled = Number(s2.no_thumb) === 0;
-            }
+            // 按钮可用性只有一份规则（refreshButtons）。此前这里内联重算了一遍，
+            // 且漏了 uploading —— 两条规则已经开始漂移。
+            if (t.phase === 'done') refreshButtons();
         }
     }
 

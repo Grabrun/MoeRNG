@@ -43,8 +43,7 @@ class StorageProfile extends Model
     /** @var array<int, \App\Storage\StorageInterface> */
     private static array $driverCache = [];
 
-    /** 无实例的裸本地驱动（legacy 行回退用）；构造需探测目录，故复用。 */
-    private static ?\App\Storage\StorageInterface $localDriverCache = null;
+    /** 无实例的裸本地驱动已随「按 provider 猜实例」的移除而删除（v2.0.0-beta.19）。 */
 
     /** 默认实例解析结果（null 表示"解析过但没有"）。 */
     private static ?self $defaultCache = null;
@@ -55,9 +54,23 @@ class StorageProfile extends Model
     {
         self::$rowCache = [];
         self::$driverCache = [];
-        self::$localDriverCache = null;
         self::$defaultCache = null;
         self::$defaultResolved = false;
+    }
+
+    /**
+     * 「按 id 解析实例，缺失则回落到默认实例」—— 唯一实现。
+     *
+     * 控制器此前自建第三层 memo（ImageController::resolveProfile），而 find() 与
+     * defaultProfile() 各自已有请求级缓存 —— 三层解决同一个问题。现在解析逻辑
+     * 留在缓存所在的模型里，控制器直接调用。
+     */
+    public static function resolve(?int $profileId): ?self
+    {
+        if ($profileId !== null && $profileId > 0) {
+            return self::find($profileId) ?? self::defaultProfile();
+        }
+        return self::defaultProfile();
     }
 
     /** 带请求内缓存的实例查找。 */
@@ -188,7 +201,8 @@ class StorageProfile extends Model
         if (!$this->isS3()) {
             return (string) ($cfg['path'] ?? \App\Storage\LocalDriver::defaultRelDir());
         }
-        return (string) ($cfg['bucket'] ?? '') . ($cfg['region'] !== '' ? " ({$cfg['region']})" : '');
+        $region = (string) ($cfg['region'] ?? '');
+        return (string) ($cfg['bucket'] ?? '') . ($region !== '' ? " ({$region})" : '');
     }
 
     /** Whether the credentials are complete enough to actually use. */
@@ -197,21 +211,36 @@ class StorageProfile extends Model
         if (!$this->isS3()) {
             return true;
         }
-        $cfg = $this->config();
-        if (!empty($cfg['key']) && !empty($cfg['secret']) && !empty($cfg['bucket'])) {
-            // OBS signs against the endpoint (V2, no region needed); 又拍云 USS
-            // 无 region（service=bucket, operator=key, password=secret）；
-            // the other providers require a region.
-            $provider = (string) ($this->attributes['provider'] ?? '');
-            if ($provider === 'obs') {
-                return !empty($cfg['endpoint']);
-            }
-            if ($provider === 'upyun') {
-                return true;
-            }
-            return !empty($cfg['region']);
+        return self::missingCredentialFields(
+            $this->config(),
+            (string) ($this->attributes['provider'] ?? '')
+        ) === [];
+    }
+
+    /**
+     * 对象存储凭据完整性判定 —— **唯一来源**（模型 isUsable / 驱动 assertCredentials
+     * / 后台表单校验共用同一份规则）。
+     *
+     * 各 provider 的必填项差异：
+     *   - OBS 按 endpoint 签名（V2，无 region 概念）；
+     *   - 又拍云 USS：service(=bucket) + operator(=key) + password(=secret)，无 region；
+     *   - 其余（COS / OSS / AWS / 七牛）必须有 region。
+     *
+     * @param array<string,mixed> $cfg 明文配置（key/secret/bucket/region/endpoint）
+     * @return list<string> 缺失字段标签；空数组 = 完整
+     */
+    public static function missingCredentialFields(array $cfg, string $provider): array
+    {
+        $missing = [];
+        if (trim((string) ($cfg['key'] ?? '')) === '') $missing[] = 'AccessKey';
+        if (trim((string) ($cfg['secret'] ?? '')) === '') $missing[] = 'SecretKey';
+        if (trim((string) ($cfg['bucket'] ?? '')) === '') $missing[] = 'Bucket';
+        if ($provider === 'obs') {
+            if (trim((string) ($cfg['endpoint'] ?? '')) === '') $missing[] = 'Endpoint';
+        } elseif ($provider !== 'upyun') {
+            if (trim((string) ($cfg['region'] ?? '')) === '') $missing[] = 'Region';
         }
-        return false;
+        return $missing;
     }
 
     /**
@@ -255,41 +284,37 @@ class StorageProfile extends Model
         return self::$defaultCache = null;
     }
 
-    /** Upload driver for an image row, honouring the remembered profile. */
+    /**
+     * 上传驱动 for an image row —— **只认 storage_profile_id**（v2.0.0-beta.19）。
+     *
+     * 此前的兜底链是「profile_id → storage!=s3 就裸本地 → 按 storage_provider 找同
+     * provider 的启用实例 → 默认 s3 实例」，那是为 profile 机制之前的历史行准备的
+     * **运行时兼容层**。它有两个真实危害：
+     *   ① 猜错比报错更糟：同 provider 有多个实例（两个 COS 桶）时会把图片指向另一个
+     *      桶，表现为"图片 404 / 读到别人的图"，且没有任何报错；
+     *   ② 让后来者以为"归属可以缺失"，于是新代码继续不写 profile_id。
+     *
+     * 历史行改由**一次性迁移**处理：`php src/cli/migrate-legacy-refs.php`（干跑优先）。
+     * 未迁移的行在这里**明确报错并给出命令**，不做静默猜测。
+     */
     public static function driverForImage(array $row): StorageInterface
     {
         $profileId = isset($row['storage_profile_id']) ? (int) $row['storage_profile_id'] : 0;
-        if ($profileId > 0) {
-            $profile = self::find($profileId);
-            if ($profile !== null) {
-                return self::cachedDriver($profile);
-            }
+        if ($profileId <= 0) {
+            throw new \RuntimeException(
+                '图片记录缺少存储实例归属（storage_profile_id 为空，属迁移前历史数据）。'
+                . '请运行 php src/cli/migrate-legacy-refs.php --apply 完成一次性迁移。'
+            );
         }
 
-        $type = (string) ($row['storage'] ?? 'local');
-        if ($type !== 's3') {
-            // 本地驱动构造也要做 realpath/目录探测；同一请求内复用一个实例。
-            return self::$localDriverCache ??= new \App\Storage\LocalDriver();
+        $profile = self::find($profileId);
+        if ($profile === null) {
+            throw new \RuntimeException(
+                '图片记录指向的存储实例 #' . $profileId . ' 不存在。'
+                . '请到「存储管理」恢复该实例，或运行 php src/cli/migrate-legacy-refs.php 重新绑定。'
+            );
         }
-
-        // Legacy rows (pre-profile): match the remembered provider to an
-        // enabled profile of the same provider, else fall back to the default.
-        $provider = (string) ($row['storage_provider'] ?? '');
-        foreach (self::all('sort_order ASC, id ASC') as $candidate) {
-            if ($candidate->isS3() && $candidate->isEnabled()
-                && ($candidate->attributes['provider'] ?? '') === $provider) {
-                return self::cachedDriver($candidate);
-            }
-        }
-        $default = self::defaultProfile();
-        if ($default !== null && $default->isS3()) {
-            return self::cachedDriver($default);
-        }
-        // v1.0.35: no settings fallback — profiles are the source of truth.
-        throw new \RuntimeException(
-            '图片记录无匹配的存储实例（profile_id 失效且无同 provider/默认 s3 实例）。'
-            . '请检查「存储管理」配置。'
-        );
+        return self::cachedDriver($profile);
     }
 
     /** Set this profile as the single default (clears others first). */

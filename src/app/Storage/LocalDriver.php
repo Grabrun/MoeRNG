@@ -212,19 +212,6 @@ class LocalDriver implements StorageInterface
         return is_file($this->resolveKeyPath($remotePath));
     }
 
-    /**
-     * v1.3.2 迭代: 本地文件直接流式计算 SHA-256。
-     */
-    public function hashFile(string $remotePath): ?string
-    {
-        $full = $this->resolveKeyPath($remotePath);
-        if (!is_file($full)) {
-            return null;
-        }
-        $h = @hash_file('sha256', $full);
-        return ($h === false || $h === '') ? null : $h;
-    }
-
     public function size(string $remotePath): ?int
     {
         $full = $this->resolveKeyPath($remotePath);

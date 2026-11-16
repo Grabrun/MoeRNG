@@ -16,10 +16,7 @@ class InstallController extends Controller
      */
     public function index(Request $request): void
     {
-        // If already installed, redirect
-        if (Config::get('app.installed', false)) {
-            $this->redirect('/');
-        }
+        $this->guardNotInstalled();
 
         $checks = $this->checkEnvironment();
 
@@ -30,12 +27,13 @@ class InstallController extends Controller
     }
 
     /**
-     * POST /install/step2 - Database config
-     */
-    /**
-     * v1.3.3-beta.1 修复（深度审计）: 安装向导「上一步」是 GET 链接（<a href>），但
-     * step2/3/4 只注册了 POST —— 点击必然 404。这些方法只**重渲染**对应步骤（数据
-     * 取自 session），绝不写入，因此不会像复用 POST 处理器那样用空值覆盖安装状态。
+     * 重装守卫：已安装站点一律重定向到首页。
+     *
+     * 没有它，任何人重放安装向导的 POST 就能覆盖 config/database.php 并重建管理员
+     * （完整接管）。所有入口（index / step2-4 / complete / showStep2-4）都必须调用，
+     * 因此收成一个私有方法 —— 原先 5 处内联复制，安全补丁要改 6 遍。
+     *
+     * v1.3.3-beta.1 附注：showStep2/3/4 只重渲染、不写入，故复用同一守卫即可。
      */
     private function guardNotInstalled(): void
     {
@@ -78,9 +76,7 @@ class InstallController extends Controller
         // Security: block reinstall on an already-installed site. Without
         // this, anyone could POST through the wizard and overwrite
         // config/database.php + recreate the admin account (full takeover).
-        if (\App\Core\Config::get('app.installed', false)) {
-            $this->redirect('/');
-        }
+        $this->guardNotInstalled();
         $this->render('install/step2', [
             'db' => [
                 'host' => '127.0.0.1',
@@ -100,9 +96,7 @@ class InstallController extends Controller
         // Security: block reinstall on an already-installed site. Without
         // this, anyone could POST through the wizard and overwrite
         // config/database.php + recreate the admin account (full takeover).
-        if (\App\Core\Config::get('app.installed', false)) {
-            $this->redirect('/');
-        }
+        $this->guardNotInstalled();
         // Save DB config to session
         \App\Core\Session::set('install_db', [
             'host' => $request->input('db_host', '127.0.0.1'),
@@ -134,9 +128,7 @@ class InstallController extends Controller
         // Security: block reinstall on an already-installed site. Without
         // this, anyone could POST through the wizard and overwrite
         // config/database.php + recreate the admin account (full takeover).
-        if (\App\Core\Config::get('app.installed', false)) {
-            $this->redirect('/');
-        }
+        $this->guardNotInstalled();
         \App\Core\Session::set('install_admin', [
             'email' => $request->input('email', ''),
             'username' => $request->input('username', ''),
@@ -167,9 +159,7 @@ class InstallController extends Controller
         // Security: block reinstall on an already-installed site. Without
         // this, anyone could POST through the wizard and overwrite
         // config/database.php + recreate the admin account (full takeover).
-        if (\App\Core\Config::get('app.installed', false)) {
-            $this->redirect('/');
-        }
+        $this->guardNotInstalled();
         $dbConfig = \App\Core\Session::get('install_db');
         $adminConfig = \App\Core\Session::get('install_admin');
         $storageDriver = $request->input('storage_driver', 'local');

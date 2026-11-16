@@ -221,8 +221,9 @@ if (!is_file($autoloaderFile)) {
     check('Class App\\Storage\\AwsSdkDriver', class_exists(\App\Storage\AwsSdkDriver::class));
 
     // v1.3.2 迭代: Storage 接口完整性 —— 所有实现类都必须实现接口声明的每一个
-    // 方法（含 hashFile）。缺方法会让 PHP 报"contains N abstract methods"
-    // fatal 并使上传整条链路瘫痪——此检查把这类回归提前到 doctor 阶段捕获。
+    // 方法。缺方法会让 PHP 报"contains N abstract methods" fatal 并使上传整条
+    // 链路瘫痪——此检查把这类回归提前到 doctor 阶段捕获（方法清单按接口反射，
+    // 接口增删方法后无需改这里）。
     // 遍历 App\Storage\ 下实现 StorageInterface 的所有类，反射验证非抽象。
     $storageChkBad = [];
     foreach (glob(__DIR__ . '/app/Storage/*.php') as $storageFile) {
@@ -421,28 +422,11 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
     // here and hand the operator the exact SQL to run with a privileged account.
     if (isset($pdo)) {
         try {
-            // v1.3.2 迭代: 完整的「覆盖部署应自迁移」schema 完整性检查。
-            // 覆盖部署到已有库时，运行时自迁移可能因缺 ALTER 权限/中断而漏跑，
-            // 导致新增字段/索引缺失。此表列出应用期望的完整结构，缺失即 FAIL，
-            // --fix 时补全（DDL 与 Application 的迁移语义一致，幂等）。
-            $schemaChecks = [
-                // table, column|index, ddl to add (if missing)
-                ['images', 'storage',            "ADD COLUMN `storage` VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`"],
-                ['images', 'storage_provider',   "ADD COLUMN `storage_provider` VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`"],
-                ['images', 'storage_profile_id', "ADD COLUMN `storage_profile_id` INT UNSIGNED NULL AFTER `storage_provider`, ADD INDEX `idx_storage_profile` (`storage_profile_id`)"],
-                ['images', 'file_hash',          "ADD COLUMN `file_hash` CHAR(64) NULL DEFAULT NULL AFTER `file_size`"],
-                ['images', 'file_sha256',        "ADD COLUMN `file_sha256` CHAR(64) NULL DEFAULT NULL AFTER `file_hash`"],
-                ['images', 'process_status',     "ADD COLUMN `process_status` ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`"],
-                ['images', 'thumb_path',         "ADD COLUMN `thumb_path` VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`"],
-                ['images', 'process_error',      "ADD COLUMN `process_error` VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`"],
-                ['images', 'thumbs',             "ADD COLUMN `thumbs` VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`"],
-                // v1.5.0-beta.3 迭代: 缩略图实测字节数 + 按处理项补全状态（与自迁移/健康检查四处一致）
-                ['images', 'thumb_bytes',        "ADD COLUMN `thumb_bytes` VARCHAR(255) NULL DEFAULT NULL AFTER `thumbs`"],
-                ['images', 'processing_state',   "ADD COLUMN `processing_state` JSON NULL DEFAULT NULL AFTER `thumb_bytes`"],
-                ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
-                ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
-                ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
-            ];
+            // v2.0.0-beta.19: 期望清单来自 Application::schemaExpectations()（唯一
+            // 来源）。此前这里是手抄的第二份，已抄出偏差：缺 thumb_meta 生成列与
+            // idx_status_thumb_meta / idx_path（真缺索引时照样报"全部就位"），
+            // 且 storage_profile_id 写成 INT UNSIGNED（其余三处都是 signed INT）。
+            $expect = \App\Core\Application::schemaExpectations();
             $schemaMissing = [];
             // 每表缓存一次列/索引清单（SHOW INDEX 的 FETCH_COLUMN 取的是第一列
             // `Table`，不是 Key_name —— 必须用 FETCH_ASSOC 收 Key_name）
@@ -461,21 +445,19 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 return $idxCache[$tbl];
             };
 
-            foreach ($schemaChecks as [$tbl, $col, $ddl]) {
-                if (!in_array($col, $tableCols($tbl), true)) {
-                    $schemaMissing[] = [$tbl, $col, $ddl];
+            // 先列后索引：--fix 按 $schemaMissing 顺序执行 ALTER，索引依赖列已存在。
+            foreach ($expect['columns'] as $tbl => $cols) {
+                foreach ($cols as $col => $def) {
+                    if (!in_array($col, $tableCols($tbl), true)) {
+                        $schemaMissing[] = [$tbl, $col, "ADD COLUMN `{$col}` {$def}"];
+                    }
                 }
             }
-            // 索引完整性（仅当对应列已存在且索引缺失时补）
-            $idxChecks = [
-                ['images', 'idx_file_hash', 'file_hash'],
-                ['images', 'idx_file_sha256', 'file_sha256'],
-                ['images', 'idx_storage_profile', 'storage_profile_id'],
-                ['images', 'idx_process_status', 'process_status'],
-            ];
-            foreach ($idxChecks as [$tbl, $idx, $col]) {
-                if (in_array($col, $tableCols($tbl), true) && !isset($tableIdx($tbl)[$idx])) {
-                    $schemaMissing[] = [$tbl, $idx, "ADD INDEX `{$idx}` (`{$col}`)"];
+            foreach ($expect['indexes'] as $tbl => $idxs) {
+                foreach ($idxs as $idx => $ddl) {
+                    if (!isset($tableIdx($tbl)[$idx])) {
+                        $schemaMissing[] = [$tbl, $idx, $ddl];
+                    }
                 }
             }
             if ($schemaMissing === []) {
@@ -548,19 +530,23 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                     }
                     // 修复后重新验证 —— 以实际结构为准，而不是 ALTER 计数
                     $stillMissing = [];
-                    foreach ($schemaChecks as [$tbl, $col, $ddl]) {
-                        if (!in_array($col, $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true)) {
-                            $stillMissing[] = "{$tbl}.{$col}";
+                    foreach ($expect['columns'] as $tbl => $cols) {
+                        $have = $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN);
+                        foreach (array_keys($cols) as $col) {
+                            if (!in_array($col, $have, true)) {
+                                $stillMissing[] = "{$tbl}.{$col}";
+                            }
                         }
                     }
-                    foreach ($idxChecks as [$tbl, $idx, $col]) {
+                    foreach ($expect['indexes'] as $tbl => $idxs) {
                         $haveIdx = [];
                         foreach ($pdo->query("SHOW INDEX FROM `{$tbl}`")->fetchAll(PDO::FETCH_ASSOC) as $r) {
                             $haveIdx[$r['Key_name']] = true;
                         }
-                        if (in_array($col, $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN), true)
-                            && !isset($haveIdx[$idx])) {
-                            $stillMissing[] = "{$tbl}.{$idx}";
+                        foreach (array_keys($idxs) as $idx) {
+                            if (!isset($haveIdx[$idx])) {
+                                $stillMissing[] = "{$tbl}.{$idx}";
+                            }
                         }
                     }
                     if ($stillMissing === [] && $alterErrors === []) {
@@ -581,6 +567,27 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             }
         } catch (Throwable $e) {
             check('images schema probe', false, $e->getMessage());
+        }
+
+        // v2.0.0-beta.19: 历史兼容数据残留 —— 运行时不再"猜实例 / 回退 url 列"，
+        // 只在这里与后台健康检查里检测；迁移走 cli/migrate-legacy-refs.php。
+        try {
+            $noProfile = (int) $pdo->query(
+                "SELECT COUNT(*) FROM `images` WHERE `storage_profile_id` IS NULL"
+            )->fetchColumn();
+            $urlLeft = (int) $pdo->query(
+                "SELECT COUNT(*) FROM `images` WHERE `url` IS NOT NULL AND `url` <> ''"
+            )->fetchColumn();
+            if ($noProfile === 0 && $urlLeft === 0) {
+                check('Legacy data migration', true, '无历史兼容数据残留');
+            } else {
+                check('Legacy data migration', false,
+                    "{$noProfile} 张缺存储实例归属、{$urlLeft} 行残留 url —— "
+                    . '运行 php src/cli/migrate-legacy-refs.php --apply'
+                    . '（迁移前这些图片的读取会明确报错）');
+            }
+        } catch (Throwable $e) {
+            check('Legacy data migration', true, '检测失败（忽略）: ' . $e->getMessage(), true);
         }
 
         // Surface any error the automatic migration captured (e.g. ALTER denied).

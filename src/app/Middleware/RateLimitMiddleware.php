@@ -27,21 +27,27 @@ class RateLimitMiddleware
             return $next($request);
         }
 
-        $identifier = $this->getIdentifier($request);
+        // X-API-Key **只解析一次**，两个用途共用：① 分桶标识；② 额度/窗口覆盖。
+        // 此前 getIdentifier() 内部又查了一次 ApiKey::findByKey —— 同一请求两次
+        // 相同的库查询，且两处的 status 判断各写一遍。
+        //
+        // 只有**已验证有效**的 key 才按 key 分桶：否则攻击者每次带一个随机
+        // X-API-Key 就能拿到全新的计数行（UNIQUE 是 identifier+window_key），
+        // 限流被完全绕过且 rate_limits 无界膨胀。
+        $apiKey = (string) $request->header('x-api-key', '');
+        $keyModel = $apiKey !== '' ? ApiKey::findByKey($apiKey) : null;
+        $validKey = $keyModel !== null && ($keyModel->status ?? '') === 'active';
+
+        $identifier = $validKey
+            ? 'key:' . md5($apiKey)
+            : 'ip:' . md5((string) ($request->ip ?? 'unknown'));
+
         $windowSeconds = 60;
         $maxRequests = max(1, (int) (Setting::get('api_rate_limit_per_minute', '60') ?: 60));
-
-        // A valid active API key overrides the per-key limit.
-        //
-        // 窗口与额度一样由 key 覆盖（rate_window 此前存了但不生效，属虚假配置）。
-        // 无 key 时保持默认 60s。
-        $apiKey = $request->header('x-api-key', '');
-        if ($apiKey !== '') {
-            $keyModel = ApiKey::findByKey($apiKey);
-            if ($keyModel && ($keyModel->status ?? '') === 'active') {
-                $maxRequests = max(1, $keyModel->getRateLimit());
-                $windowSeconds = max(1, (int) ($keyModel->rate_window ?: 60));
-            }
+        if ($validKey) {
+            // 窗口与额度一样由 key 覆盖（rate_window 此前存了但不生效，属虚假配置）。
+            $maxRequests = max(1, $keyModel->getRateLimit());
+            $windowSeconds = max(1, (int) ($keyModel->rate_window ?: 60));
         }
 
         $now = time();
@@ -109,29 +115,6 @@ class RateLimitMiddleware
         }
 
         return $next($request);
-    }
-
-    private function getIdentifier(Request $request): string
-    {
-        // Use API Key if provided, otherwise IP.
-        //
-        // 修复：原先只要 X-API-Key 头非空就直接用它的 md5 当桶标识，
-        // **完全不校验这个 key 是否真实存在且启用**。攻击者每次请求带一个随机的
-        // X-API-Key 头，就能拿到一个全新的 rate_limits 行（UNIQUE 约束是
-        // (identifier, window_key)，见 schema.sql），计数从 1 重新开始 ——
-        // 限流被完全绕过，同时 rate_limits 表无界膨胀（清理只按 expires_at）。
-        //
-        // 现在只对**已验证有效**的 key 按 key 计桶，否则一律回退 IP。
-        // ApiKey::findByKey 走 key_hash 唯一索引查表，是常数开销；
-        // 且它同时覆盖了 status !== 'active' 的禁用 key。
-        $apiKey = $request->header('x-api-key', '');
-        if ($apiKey !== '') {
-            $keyModel = ApiKey::findByKey($apiKey);
-            if ($keyModel !== null && ($keyModel->status ?? '') === 'active') {
-                return 'key:' . md5($apiKey);
-            }
-        }
-        return 'ip:' . md5((string) ($request->ip ?? 'unknown'));
     }
 
     /**

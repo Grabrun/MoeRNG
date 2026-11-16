@@ -93,32 +93,17 @@ class S3Driver implements StorageInterface
         $this->sourceDomain = (string) ($cfg['source_domain'] ?? '');
         $this->tokenKey  = (string) ($cfg['token_key'] ?? '');
         $this->signedTtl = max(1, (int) ($cfg['signed_ttl'] ?? 300));
-        // MR-39: management-plane SSRF guard on admin-entered endpoint/sourceDomain.
-        $this->warnEndpointSafety();
         return $this;
-    }
-
-    /**
-     * MR-39: log warnings for admin-entered endpoint / sourceDomain that look
-     * like an internal-SSRF target.
-     *
-     * We deliberately WARN (via error_log) rather than hard-reject: a self-hosted
-     * S3-compatible gateway (MinIO) legitimately lives on RFC1918 space, and the
-     * UI validation lives in the admin controller (out of scope here). The goal
-     * is observability — an endpoint pointed at loopback/link-local/metadata
-     * addresses should not silently read internal responses. Non-http(s) schemes
-     * are also flagged.
-     */
-    private function warnEndpointSafety(): void
-    {
-        foreach (self::endpointSafetyWarnings($this->endpoint, $this->sourceDomain) as $w) {
-            error_log('[MoeRNG] Storage endpoint SSRF check: ' . $w);
-        }
     }
 
     /**
      * MR-39: pure endpoint/sourceDomain sanity check. Returns warning strings;
      * empty array = looks safe.
+     *
+     * 调用点已前移到「保存存储实例」（StorageProfileController）—— 它是**配置写入
+     * 边界**，每次保存校验一次即可。v2.0.0-beta.19 之前这里在 loadProfile() 里
+     * 每次构造驱动都 error_log 一遍：合法的自建 MinIO（RFC1918）会导致每个请求
+     * 都刷一条警告，日志噪音掩盖真告警。
      *
      * Rules:
      *   - only http:// / https:// schemes allowed (file://, php://, gopher:// … flagged);
@@ -179,19 +164,15 @@ class S3Driver implements StorageInterface
 
     private function assertCredentials(): void
     {
-        $missing = [];
-        if ($this->accessKey === '') $missing[] = 'AccessKey';
-        if ($this->secretKey === '') $missing[] = 'SecretKey';
-        if ($this->bucket === '') $missing[] = 'Bucket';
-        if ($this->provider === 'obs') {
-            // OBS signs against the endpoint (V2 signature, no region needed),
-            // so endpoint is the required field — region is optional.
-            if ($this->endpoint === '') $missing[] = 'Endpoint';
-        } elseif ($this->provider === 'upyun') {
-            // 又拍云 USS：service(=bucket) + operator(=key) + password(=secret)，无 region。
-        } elseif ($this->region === '') {
-            $missing[] = 'Region';
-        }
+        // 规则与 StorageProfile::isUsable() 同一份（v2.0.0-beta.19 之前各写一套，
+        // 新增 provider 时极易只改一处）。
+        $missing = \App\Models\StorageProfile::missingCredentialFields([
+            'key'      => $this->accessKey,
+            'secret'   => $this->secretKey,
+            'bucket'   => $this->bucket,
+            'region'   => $this->region,
+            'endpoint' => $this->endpoint,
+        ], $this->provider);
         if ($missing !== []) {
             throw new \RuntimeException(
                 "对象存储 [{$this->provider}] 凭据未完整配置（缺少 " . implode('/', $missing)
@@ -200,182 +181,76 @@ class S3Driver implements StorageInterface
         }
     }
 
-    private function cosSdk(): ?CosSdkDriver
-    {
-        if ($this->provider !== 'cos') {
-            return null;
-        }
-        if (!CosSdkDriver::available()) {
-            throw $this->sdkMissing('cos');
-        }
-        return new CosSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
-    }
+    /** 已解析的子驱动（请求内复用：构造会重建 SDK 客户端并解密凭据）。 */
+    private ?StorageInterface $sdk = null;
 
-    private function ossSdk(): ?OssSdkDriver
+    /**
+     * 按 provider 解析子驱动 —— **唯一分发点**（v2.0.0-beta.19）。
+     *
+     * 原先每个公共方法各写一遍同一条 6 分支 `if (($sdk = $this->cosSdk()) !== null)`
+     * 链（upload / delete / exists / url / testConnection 共 5 份）—— 新增一个
+     * provider 要改 6 个工厂 + 5 条链。现在只有这一处。
+     *
+     * 每个分支先查 `available()`（SDK 目录是否齐全）：缺失时抛出指明目录的错误，
+     * 而不是让 `new` 触发 "Class not found" 致命错误。
+     */
+    private function sdk(): StorageInterface
     {
-        if ($this->provider !== 'oss') {
-            return null;
+        if ($this->sdk !== null) {
+            return $this->sdk;
         }
-        if (!OssSdkDriver::available()) {
-            throw $this->sdkMissing('oss');
-        }
-        return new OssSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
-    }
-
-    private function awsSdk(): ?AwsSdkDriver
-    {
-        if ($this->provider !== 'aws') {
-            return null;
-        }
-        if (!AwsSdkDriver::available()) {
-            throw $this->sdkMissing('aws');
-        }
-        return new AwsSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->endpoint, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
-    }
-
-    private function obsSdk(): ?ObsSdkDriver
-    {
-        if ($this->provider !== 'obs') {
-            return null;
-        }
-        if (!ObsSdkDriver::available()) {
-            throw $this->sdkMissing('obs');
-        }
-        return new ObsSdkDriver($this->accessKey, $this->secretKey, $this->endpoint, $this->bucket, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
-    }
-
-    private function upyunSdk(): ?UpyunSdkDriver
-    {
-        if ($this->provider !== 'upyun') {
-            return null;
-        }
-        if (!UpyunSdkDriver::available()) {
-            throw $this->sdkMissing('upyun');
-        }
-        // 又拍云：service=bucket、operator=key、password=secret；MR-04 增补 token_key 防盗链密钥
-        return new UpyunSdkDriver($this->bucket, $this->accessKey, $this->secretKey, $this->cdnUrl, $this->signedTtl, $this->sourceDomain, $this->tokenKey);
-    }
-
-    private function qiniuSdk(): ?QiniuSdkDriver
-    {
-        if ($this->provider !== 'qiniu') {
-            return null;
-        }
-        if (!QiniuSdkDriver::available()) {
-            throw $this->sdkMissing('qiniu');
-        }
-        return new QiniuSdkDriver($this->accessKey, $this->secretKey, $this->bucket, $this->region, $this->cdnUrl, $this->signedTtl, $this->sourceDomain);
+        return $this->sdk = match ($this->provider) {
+            'cos'   => CosSdkDriver::available()
+                ? new CosSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl, $this->sourceDomain)
+                : throw $this->sdkMissing('cos'),
+            'oss'   => OssSdkDriver::available()
+                ? new OssSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->cdnUrl, $this->signedTtl, $this->sourceDomain)
+                : throw $this->sdkMissing('oss'),
+            'aws'   => AwsSdkDriver::available()
+                ? new AwsSdkDriver($this->accessKey, $this->secretKey, $this->region, $this->bucket, $this->endpoint, $this->cdnUrl, $this->signedTtl, $this->sourceDomain)
+                : throw $this->sdkMissing('aws'),
+            'obs'   => ObsSdkDriver::available()
+                ? new ObsSdkDriver($this->accessKey, $this->secretKey, $this->endpoint, $this->bucket, $this->cdnUrl, $this->signedTtl, $this->sourceDomain)
+                : throw $this->sdkMissing('obs'),
+            // 又拍云：service=bucket、operator=key、password=secret；MR-04 增补 token_key 防盗链密钥
+            'upyun' => UpyunSdkDriver::available()
+                ? new UpyunSdkDriver($this->bucket, $this->accessKey, $this->secretKey, $this->cdnUrl, $this->signedTtl, $this->sourceDomain, $this->tokenKey)
+                : throw $this->sdkMissing('upyun'),
+            'qiniu' => QiniuSdkDriver::available()
+                ? new QiniuSdkDriver($this->accessKey, $this->secretKey, $this->bucket, $this->region, $this->cdnUrl, $this->signedTtl, $this->sourceDomain)
+                : throw $this->sdkMissing('qiniu'),
+            default => throw new \RuntimeException("未知存储服务商: {$this->provider}"),
+        };
     }
 
     public function upload(string $localPath, string $remotePath, string $contentType): string
     {
         $this->assertCredentials();
-
-        if (($sdk = $this->cosSdk()) !== null) {
-            return $sdk->upload($localPath, $remotePath, $contentType);
-        }
-        if (($sdk = $this->ossSdk()) !== null) {
-            return $sdk->upload($localPath, $remotePath, $contentType);
-        }
-        if (($sdk = $this->awsSdk()) !== null) {
-            return $sdk->upload($localPath, $remotePath, $contentType);
-        }
-        if (($sdk = $this->obsSdk()) !== null) {
-            return $sdk->upload($localPath, $remotePath, $contentType);
-        }
-        if (($sdk = $this->upyunSdk()) !== null) {
-            return $sdk->upload($localPath, $remotePath, $contentType);
-        }
-        if (($sdk = $this->qiniuSdk()) !== null) {
-            return $sdk->upload($localPath, $remotePath, $contentType);
-        }
-        throw new \RuntimeException("未知存储服务商: {$this->provider}");
+        return $this->sdk()->upload($localPath, $remotePath, $contentType);
     }
 
     public function delete(string $remotePath): bool
     {
-        if (($sdk = $this->cosSdk()) !== null) {
-            return $sdk->delete($remotePath);
-        }
-        if (($sdk = $this->ossSdk()) !== null) {
-            return $sdk->delete($remotePath);
-        }
-        if (($sdk = $this->awsSdk()) !== null) {
-            return $sdk->delete($remotePath);
-        }
-        if (($sdk = $this->obsSdk()) !== null) {
-            return $sdk->delete($remotePath);
-        }
-        if (($sdk = $this->upyunSdk()) !== null) {
-            return $sdk->delete($remotePath);
-        }
-        if (($sdk = $this->qiniuSdk()) !== null) {
-            return $sdk->delete($remotePath);
-        }
-        throw new \RuntimeException("未知存储服务商: {$this->provider}");
+        return $this->sdk()->delete($remotePath);
     }
 
     public function exists(string $remotePath): bool
     {
-        if (($sdk = $this->cosSdk()) !== null) {
-            return $sdk->exists($remotePath);
-        }
-        if (($sdk = $this->ossSdk()) !== null) {
-            return $sdk->exists($remotePath);
-        }
-        if (($sdk = $this->awsSdk()) !== null) {
-            return $sdk->exists($remotePath);
-        }
-        if (($sdk = $this->obsSdk()) !== null) {
-            return $sdk->exists($remotePath);
-        }
-        if (($sdk = $this->upyunSdk()) !== null) {
-            return $sdk->exists($remotePath);
-        }
-        if (($sdk = $this->qiniuSdk()) !== null) {
-            return $sdk->exists($remotePath);
-        }
-        throw new \RuntimeException("未知存储服务商: {$this->provider}");
+        return $this->sdk()->exists($remotePath);
     }
 
     public function url(string $remotePath): string
     {
-        if (($sdk = $this->cosSdk()) !== null) {
-            return $sdk->url($remotePath);
-        }
-        if (($sdk = $this->ossSdk()) !== null) {
-            return $sdk->url($remotePath);
-        }
-        if (($sdk = $this->awsSdk()) !== null) {
-            return $sdk->url($remotePath);
-        }
-        if (($sdk = $this->obsSdk()) !== null) {
-            return $sdk->url($remotePath);
-        }
-        if (($sdk = $this->upyunSdk()) !== null) {
-            return $sdk->url($remotePath);
-        }
-        if (($sdk = $this->qiniuSdk()) !== null) {
-            return $sdk->url($remotePath);
-        }
-        throw new \RuntimeException("未知存储服务商: {$this->provider}");
+        return $this->sdk()->url($remotePath);
     }
 
     /**
-     * v1.3.2 迭代: 计算远程对象 SHA-256 —— 分层校验的二次验证。
-     * 经 url() 拿签名 URL 后流式读取（仅 MD5 初筛命中、且库内无强哈希时才会
-     * 走到这里，属低频路径；服务器本身已是中转架构，与现有上传流量一致）。
-     * 读取失败返回 null，调用方保守放行（避免误杀）。
+     * 只取对象长度（存量缩略图补全用）。
+     *
+     * **刻意不委派给子驱动**：子驱动的 size() 走 `sizeUrl($this->url(...))`，
+     * 不带 TLS 放行判断；自建网关（MinIO + 自签证书）会因此恒返回 null。
+     * 这里必须传 tlsVerify()，故保留自有实现。
      */
-    public function hashFile(string $remotePath): ?string
-    {
-        try {
-            return self::hashUrl($this->url($remotePath), $this->tlsVerify());
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
     public function size(string $remotePath): ?int
     {
         try {
@@ -445,8 +320,8 @@ class S3Driver implements StorageInterface
      * 只取对象长度：**读到响应头即关闭，不下载 body**。
      *
      * 为什么不用 HEAD：各家的预签名 URL 通常按 HTTP 方法签名，HEAD 会被拒（403）。
-     * 所以用 GET 建立连接、从响应头里取 Content-Length 后立刻 fclose —— 与 hashUrl()
-     * （真读完整流）相比省掉了整个 body，存量补全时每张图 3 档都能廉价实测。
+     * 所以用 GET 建立连接、从响应头里取 Content-Length 后立刻 fclose —— 省掉了
+     * 整个 body，存量补全时每张图 3 档都能廉价实测。
      *
      * 跟随重定向时会有多组响应头，取**最后一组**的 Content-Length（即最终 body 的长度）。
      */
@@ -468,39 +343,6 @@ class S3Driver implements StorageInterface
         }
         @fclose($fp);
         return ($len !== null && $len > 0) ? $len : null;
-    }
-
-    /** Stream a URL and compute its SHA-256 in hex (null on any failure). */
-    public static function hashUrl(string $url, bool $tlsVerify = true): ?string
-    {
-        $ctx = stream_context_create([
-            'http' => [
-                'timeout' => 30,
-                'follow_location' => 1,
-            ],
-            'ssl' => self::sslContext($tlsVerify),
-        ]);
-        $fp = @fopen($url, 'rb', false, $ctx);
-        if ($fp === false) {
-            return null;
-        }
-        $ctxHash = hash_init('sha256');
-        try {
-            while (!feof($fp)) {
-                $chunk = fread($fp, 8192);
-                if ($chunk === false || $chunk === '') {
-                    break;
-                }
-                hash_update($ctxHash, $chunk);
-            }
-            return hash_final($ctxHash);
-        } catch (\Throwable) {
-            return null;
-        } finally {
-            if (is_resource($fp)) {
-                fclose($fp);
-            }
-        }
     }
 
     /**
@@ -594,25 +436,11 @@ class S3Driver implements StorageInterface
 
     public function testConnection(): bool
     {
-        if (($sdk = $this->cosSdk()) !== null) {
-            return $sdk->testConnection();
-        }
-        if (($sdk = $this->ossSdk()) !== null) {
-            return $sdk->testConnection();
-        }
-        if (($sdk = $this->awsSdk()) !== null) {
-            return $sdk->testConnection();
-        }
-        if (($sdk = $this->obsSdk()) !== null) {
-            return $sdk->testConnection();
-        }
-        if (($sdk = $this->upyunSdk()) !== null) {
-            return $sdk->testConnection();
-        }
-        if (($sdk = $this->qiniuSdk()) !== null) {
-            return $sdk->testConnection();
-        }
-        throw new \RuntimeException("未知存储服务商: {$this->provider}");
+        // testConnection() 不在 StorageInterface 上（只有具体驱动有），故从 sdk()
+        // 拿到实例后按具体方法调用 —— 六个子驱动的签名一致。
+        /** @var StorageInterface $sdk */
+        $sdk = $this->sdk();
+        return $sdk->testConnection();
     }
 
     /**

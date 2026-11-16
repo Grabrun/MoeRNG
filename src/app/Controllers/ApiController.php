@@ -324,7 +324,11 @@ class ApiController extends Controller
      */
     public function stats(Request $request): void
     {
-        $totalImages = Image::count("status = 'active'");
+        // 口径必须与 /images、/random 一致：只有 process_status='done' 的行才真的
+        // 可访问（pending/processing 还没落最终存储，failed 永远不会有地址）。
+        // 此前只过滤 status='active'，于是刚上传未处理完的图会被算进总数，
+        // 而列表与随机接口都拿不到它们 —— 调用方看到的总数永远偏大。
+        $totalImages = Image::count("status = 'active' AND process_status = 'done'");
         $totalCategories = Category::count();
 
         // v1.2.1 security: version / storage_driver removed from the public

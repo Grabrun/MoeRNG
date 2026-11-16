@@ -22,7 +22,6 @@ class UserController extends Controller
 
     public function create(Request $request): void
     {
-        $this->validateCsrf();
 
         $email = $request->input('email', '');
         $username = $request->input('username', '');
@@ -71,7 +70,6 @@ class UserController extends Controller
 
     public function update(Request $request): void
     {
-        $this->validateCsrf();
         $id = (int) $request->input('id');
         $user = User::find($id);
 
@@ -114,7 +112,6 @@ class UserController extends Controller
 
     public function toggleStatus(Request $request): void
     {
-        $this->validateCsrf();
         $id = (int) $request->input('id');
         $user = User::find($id);
 
@@ -137,7 +134,6 @@ class UserController extends Controller
 
     public function delete(Request $request): void
     {
-        $this->validateCsrf();
         $id = (int) $request->input('id');
         $user = User::find($id);
 

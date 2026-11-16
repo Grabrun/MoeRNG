@@ -37,7 +37,6 @@ class CategoryController extends Controller
 
     public function create(Request $request): void
     {
-        $this->validateCsrf();
 
         $name = trim((string) $request->input('name', ''));
         $category = new Category([
@@ -77,7 +76,6 @@ class CategoryController extends Controller
 
     public function update(Request $request): void
     {
-        $this->validateCsrf();
         $id = (int) $request->input('id');
         $category = Category::find($id);
 
@@ -122,7 +120,6 @@ class CategoryController extends Controller
 
     public function delete(Request $request): void
     {
-        $this->validateCsrf();
         $id = (int) $request->input('id');
         $category = Category::find($id);
 

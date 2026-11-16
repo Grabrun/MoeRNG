@@ -132,11 +132,8 @@ class FileController extends Controller
     {
         $roots = [];
         try {
-            $default = \App\Models\StorageProfile::defaultProfile();
-            if ($default !== null && !$default->isS3() && $default->isEnabled()) {
-                $cfg = $default->config();
-                $roots[] = LocalDriver::resolveDir((string) ($cfg['path'] ?? ''));
-            }
+            // 默认实例也在 all() 里（并按 sort_order 排序），无需单独先加一次 ——
+            // 之前那个分支只是多查一次库，结果被 array_unique 吞掉。
             foreach (\App\Models\StorageProfile::all('sort_order ASC, id ASC') as $profile) {
                 if ($profile->isS3() || !$profile->isEnabled()) {
                     continue;

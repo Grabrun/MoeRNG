@@ -4,15 +4,16 @@ declare(strict_types=1);
 namespace App\Core;
 
 /**
- * File-backed sliding-window rate limiter (v1.1.0-beta.4).
+ * File-backed sliding-window rate limiter (v1.1.0-beta.4) —— **登录锁定专用**。
  *
  * Deliberately zero-dependency: writes a tiny JSON counter per bucket under
  * <root>/var/rate-limit/. Good enough for a single-application deploy and far
  * simpler to reason about than Redis when the extension is not guaranteed.
  *
- * Buckets are keyed by caller-provided strings (e.g. "login:1.2.3.4" or
- * "api:1.2.3.4"), so the same primitive serves both login lockout and the
- * public API rate limit.
+ * ⚠️ 公开 API 限流**不走这里**：那是 RateLimitMiddleware 的 DB 版本（固定窗口 +
+ * upsert 原子递增，需要跨进程精确计数）。本类只服务 AuthController 的登录失败
+ * 锁定（按 IP 计桶，`login:<ip>`）。此前注释声称"同一套原语同时服务 API"，
+ * 与实现不符 —— 两套实现的窗口语义也不同（滑动 vs 固定），改错地方等于没改。
  */
 class RateLimiter
 {
@@ -121,7 +122,7 @@ class RateLimiter
     public static function reset(string $bucket): void
     {
         $dir = self::dir();
-        if ($dir === '' || $dir === "\x00FAIL") {
+        if ($dir === "\x00FAIL") {
             return;
         }
         $file = $dir . '/' . md5($bucket) . '.json';

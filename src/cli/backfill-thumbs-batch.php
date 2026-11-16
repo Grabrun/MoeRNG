@@ -5,12 +5,15 @@ declare(strict_types=1);
  * MoeRNG - 补全缩略图（CLI 单批子进程）
  *
  * 由 backfill-thumbs.php 循环调用，每批处理 batch 张。
- * 构造带合法 CSRF 的 Request，走 ImageController::backfillThumbs()
- * （与后台「补全缩略图」按钮同一份逻辑），返回 JSON 后自然退出。
+ * 直接构造 Request 调 ImageController::backfillThumbs()（与后台「补全缩略图」按钮
+ * 同一份逻辑），返回 JSON 后自然退出。
+ *
+ * 不经 Router → 不经过 CsrfMiddleware，因此不需要伪造 CSRF token / 启动 session。
+ * （v2.0.0-beta.19：同时修掉 `''` 被传给 `array $headers` 的实参错位 ——
+ *  strict_types 下会直接 TypeError。）
  */
 
 use App\Core\Request;
-use App\Core\Session;
 use App\Controllers\Admin\ImageController;
 
 $batch = 0;   // 0 = 用 ImageController::QUEUE_BATCH_DEFAULT；clamp 放在 bootstrap 之后（常量要能看到类）
@@ -32,17 +35,10 @@ $batch = max(1, min(
     $batch > 0 ? $batch : ImageController::QUEUE_BATCH_DEFAULT
 ));
 
-// CLI 无 Web 会话：自行启动 session 并生成合法 CSRF token，
-// 使 backfillThumbs() 开头的 validateCsrf() 通过（校验的是 session 内 token）。
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-$_POST['_csrf_token'] = Session::csrfToken();
-
 $request = new Request('POST', '/admin/images/backfill-thumbs', [], [
     'scope' => $scope,
     'batch' => (string) $batch,
-], [], '');
+]);
 
 $controller = new ImageController();
 $controller->backfillThumbs($request);

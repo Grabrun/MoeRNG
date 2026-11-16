@@ -23,7 +23,6 @@ class ApiKeyController extends Controller
 
     public function create(Request $request): void
     {
-        $this->validateCsrf();
 
         $name = trim((string) $request->input('name', ''));
         if ($name === '') {
@@ -68,7 +67,6 @@ class ApiKeyController extends Controller
 
     public function update(Request $request): void
     {
-        $this->validateCsrf();
 
         $apiKey = ApiKey::find((int) $request->input('id'));
         if (!$apiKey) {
@@ -103,7 +101,6 @@ class ApiKeyController extends Controller
 
     public function toggleStatus(Request $request): void
     {
-        $this->validateCsrf();
 
         $apiKey = ApiKey::find((int) $request->input('id'));
         if (!$apiKey) {
@@ -131,7 +128,6 @@ class ApiKeyController extends Controller
 
     public function delete(Request $request): void
     {
-        $this->validateCsrf();
 
         $id = (int) $request->input('id');
         $apiKey = ApiKey::find($id);

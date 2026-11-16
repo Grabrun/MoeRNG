@@ -16,9 +16,13 @@ $router = $app->router();
 // Public admin routes (no auth required)
 $authController = \App\Controllers\Admin\AuthController::class;
 $router->get('/admin/login', [$authController, 'loginForm']);
-$router->post('/admin/login', [$authController, 'login']);
+// 登录 POST 也走统一的 CsrfMiddleware（v2.0.0-beta.19：控制器的 validateCsrf()
+// 已删除，CSRF 只在这一层校验，413/419 的判定也只在这里）。
+$router->post('/admin/login', [$authController, 'login'], [\App\Middleware\CsrfMiddleware::class]);
 // v1.3.0-beta.2 安全加固 (CVE-2026-MR-005): logout 必须是 POST + CSRF——GET 登出
 // 可被 <img src="/admin/logout"> 强制触发（Logout CSRF / 强制登出 DoS）。
+// 登出**刻意不走 CsrfMiddleware**：它是导航动作，token 失效应 flash + 302 回仪表盘，
+// 而不是给用户一个 419 JSON。AuthController::logout 里手写 verifyCsrf 即为此。
 $router->post('/admin/logout', [$authController, 'logout']);
 // v1.1.0-beta.4: captcha image (needed by the login form before auth).
 $router->get('/admin/captcha', [\App\Core\Captcha::class, 'render']);

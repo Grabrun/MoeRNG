@@ -43,3 +43,6 @@ design/_shots/
 
 design/m2-preview/
 src/config/*.php
+
+# 项目内本地开发工具链（PHP 等），不进版本库
+/.tools/

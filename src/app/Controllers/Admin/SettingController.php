@@ -150,7 +150,6 @@ class SettingController extends Controller
      */
     public function save(Request $request): void
     {
-        $this->validateCsrf();
 
         $group = (string) $request->input('group', '');
         if (!isset(self::GROUPS[$group])) {
@@ -219,7 +218,6 @@ class SettingController extends Controller
      */
     public function logoUpload(Request $request): void
     {
-        $this->validateCsrf();
 
         $file = $_FILES['logo_file'] ?? null;
         $error = self::validateLogoUpload($file);
@@ -296,7 +294,6 @@ class SettingController extends Controller
      */
     public function cacheClear(Request $request): void
     {
-        $this->validateCsrf();
         $cleared = [];
         if (function_exists('opcache_reset')) {
             $cleared[] = 'OPcache' . (opcache_reset() ? '' : '（无活动缓存）');
@@ -314,7 +311,6 @@ class SettingController extends Controller
      */
     public function backupNow(Request $request): void
     {
-        $this->validateCsrf();
         [$ok, $msg] = BackupService::create();
         AuditLog::record($ok ? 'backup_run' : 'backup_failed', ['message' => $msg]);
         Session::flash($ok ? 'success' : 'error', $msg);
@@ -326,7 +322,6 @@ class SettingController extends Controller
      */
     public function backupDelete(Request $request): void
     {
-        $this->validateCsrf();
         $stamp = (string) $request->input('stamp', '');
         $ok = $stamp !== '' && BackupService::delete($stamp);
         AuditLog::record('backup_delete', ['stamp' => $stamp, 'deleted' => $ok]);
@@ -339,7 +334,6 @@ class SettingController extends Controller
      */
     public function testMail(Request $request): void
     {
-        $this->validateCsrf();
         [$ok, $msg] = Mailer::test();
         AuditLog::record($ok ? 'mail_test_ok' : 'mail_test_failed', ['message' => $msg]);
         Session::flash($ok ? 'success' : 'error', $msg);
@@ -539,35 +533,9 @@ class SettingController extends Controller
         }
 
         // —— 1) schema completeness ——
-        $schemaChecks = [
-            ['images', 'storage',            "ADD COLUMN `storage` VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`"],
-            ['images', 'storage_provider',   "ADD COLUMN `storage_provider` VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`"],
-            // 签名 INT（不是 UNSIGNED）：须与 schema.sql:70 及 storage_profiles.id
-            // （INT AUTO_INCREMENT，有符号）一致 —— 符号不同则将来加 FK 会报 errno 1215。
-            ['images', 'storage_profile_id', "ADD COLUMN `storage_profile_id` INT NULL AFTER `storage_provider`"],
-            ['images', 'file_hash',          "ADD COLUMN `file_hash` CHAR(64) NULL DEFAULT NULL AFTER `file_size`"],
-            ['images', 'file_sha256',        "ADD COLUMN `file_sha256` CHAR(64) NULL DEFAULT NULL AFTER `file_hash`"],
-            ['images', 'process_status',     "ADD COLUMN `process_status` ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`"],
-            ['images', 'thumb_path',         "ADD COLUMN `thumb_path` VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`"],
-            ['images', 'process_error',      "ADD COLUMN `process_error` VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`"],
-            ['images', 'thumbs',             "ADD COLUMN `thumbs` VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`"],
-            ['images', 'thumb_bytes',        "ADD COLUMN `thumb_bytes` VARCHAR(255) NULL DEFAULT NULL AFTER `thumbs`"],
-            ['images', 'processing_state',   "ADD COLUMN `processing_state` JSON NULL DEFAULT NULL AFTER `thumb_bytes`"],
-            // VIRTUAL 生成列：不重建表（INSTANT），只让 thumb_meta 判据可走索引。
-            ['images', 'thumb_meta',         "ADD COLUMN `thumb_meta` VARCHAR(16) GENERATED ALWAYS AS (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '$.thumb_meta')), 'pending')) VIRTUAL"],
-            ['users',  'last_login',         "ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`"],
-            ['users',  'remember_token',     "ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`"],
-            ['users',  'remember_expires',   "ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`"],
-        ];
-        $idxChecks = [
-            ['images', 'idx_file_hash', 'file_hash'],
-            ['images', 'idx_file_sha256', 'file_sha256'],
-            ['images', 'idx_storage_profile', 'storage_profile_id'],
-            ['images', 'idx_process_status', 'process_status'],
-            // 复合索引：第 4 元素给出自定义 DDL（单列规则拼不出来）
-            ['images', 'idx_status_thumb_meta', 'thumb_meta',
-                "ADD INDEX `idx_status_thumb_meta` (`process_status`, `thumb_meta`)"],
-        ];
+        // 期望清单来自 Application::schemaExpectations()（唯一来源）。此前这里
+        // 手抄了 14 列 + 5 索引，doctor 又抄了一份，两份还抄出了差异。
+        $expect = \App\Core\Application::schemaExpectations();
         $missing = [];
         $colsCache = [];
         $idxCache = [];
@@ -583,17 +551,19 @@ class SettingController extends Controller
             }
             return $idxCache[$tbl];
         };
-        foreach ($schemaChecks as [$tbl, $col, $ddl]) {
-            if (!in_array($col, $tableCols($tbl), true)) {
-                $missing[] = [$tbl, $col, $ddl];
+        // 先列后索引：health-fix 按 $missing 的顺序执行 ALTER，索引依赖列已存在。
+        foreach ($expect['columns'] as $tbl => $cols) {
+            foreach ($cols as $col => $def) {
+                if (!in_array($col, $tableCols($tbl), true)) {
+                    $missing[] = [$tbl, $col, "ADD COLUMN `{$col}` {$def}"];
+                }
             }
         }
-        foreach ($idxChecks as $chk) {
-            [$tbl, $idx, $col] = $chk;
-            // 第 4 元素可选：复合索引的 DDL 无法由单列规则拼出，显式给出。
-            $ddl = $chk[3] ?? "ADD INDEX `{$idx}` (`{$col}`)";
-            if (in_array($col, $tableCols($tbl), true) && !isset($tableIdx($tbl)[$idx])) {
-                $missing[] = [$tbl, $idx, $ddl];
+        foreach ($expect['indexes'] as $tbl => $idxs) {
+            foreach ($idxs as $name => $ddl) {
+                if (!isset($tableIdx($tbl)[$name])) {
+                    $missing[] = [$tbl, $name, $ddl];
+                }
             }
         }
         $checks['schema'] = [
@@ -660,6 +630,32 @@ class SettingController extends Controller
             ];
         } catch (\Throwable $e) {
             $checks['thumb_backfill'] = ['ok' => true, 'detail' => '统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
+        }
+
+        // —— v2.0.0-beta.19: 历史兼容数据残留（只检测，不再运行时兼容）——
+        // 两处不再"猜/回退"的旧数据：
+        //   ① storage_profile_id 为空 → driverForImage() 现在会明确报错（不再按
+        //      storage_provider 猜实例，猜错会把图片指向别人的桶）；
+        //   ② url 列非空 → Image::url() 不再回退该列（新写入一律 ''）。
+        try {
+            $noProfile = (int) $pdo->query(
+                "SELECT COUNT(*) FROM `images` WHERE `storage_profile_id` IS NULL"
+            )->fetchColumn();
+            $urlLeft = (int) $pdo->query(
+                "SELECT COUNT(*) FROM `images` WHERE `url` IS NOT NULL AND `url` <> ''"
+            )->fetchColumn();
+            $checks['legacy_refs'] = [
+                'ok' => $noProfile === 0 && $urlLeft === 0,
+                'detail' => ($noProfile === 0 && $urlLeft === 0)
+                    ? '无历史兼容数据残留'
+                    : "{$noProfile} 张缺存储实例归属、{$urlLeft} 行残留 url 列 —— "
+                        . '运行 php src/cli/migrate-legacy-refs.php --apply 完成一次性迁移'
+                        . '（迁移前这些图片的读取会明确报错）',
+                'fixable' => false,
+                'extra' => ['no_profile' => $noProfile, 'url_left' => $urlLeft],
+            ];
+        } catch (\Throwable $e) {
+            $checks['legacy_refs'] = ['ok' => true, 'detail' => '检测失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
         // —— 3) 哈希回填统计 ——
@@ -745,7 +741,6 @@ class SettingController extends Controller
     /** POST /admin/settings/health-fix —— 执行可修复项（schema + 遗留设置行）。 */
     public function healthFix(Request $request): void
     {
-        $this->validateCsrf();
         $checks = $this->runHealthChecks();
         $applied = 0;
         $already = 0;

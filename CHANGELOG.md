@@ -7,6 +7,87 @@
 > 随后该线被 v2 重构取代（`c888590` 取消全部 v1.5 兼容与迁移）——**v1.5 系列从未正式发版**，
 > 无 tag / 无 GitHub Release，其能力已并入 v2.0.0-beta 系列。
 
+## [未发布] - 2026-11-16
+
+### 架构收敛：过度防御与重复规则治理（审计后全量修复，不新增功能）
+
+> 审计结论：真正的成本不是"抽象太多"，而是**同一规则被复制到 2–4 处**，且已出现可验证的漂移。
+> 本次按"删除 > 内联 > 收敛 > 复用"的顺序处理，未引入任何新框架/新抽象。
+
+**单一来源（消除已发生的漂移）**
+
+- Schema 期望清单四处收敛为一处：新增 `Application::schemaExpectations()`，
+  运行时自迁移、后台健康检查、`doctor.php` 全部消费它。此前 doctor 的清单缺
+  `thumb_meta` 生成列与 `idx_status_thumb_meta` / `idx_path`（真缺索引时仍报"全部就位"），
+  且把 `storage_profile_id` 写成 `INT UNSIGNED`（其余三处与 schema.sql 都是 signed INT）。
+- CSRF 单一归属 `CsrfMiddleware`：删除 `Controller::validateCsrf()` 及 38 处调用。
+  此前中间件先返回 419，控制器里为"POST 体被 post_max_size 丢弃"写的 413 提示
+  **在生产路径上永远到不了**（超大文件上传只看到"CSRF token validation failed"）。
+  413 判定随之搬进中间件；`/admin/login` 改为挂载该中间件，`/admin/logout` 保留手写
+  `verifyCsrf`（导航动作需要 flash+302，而不是 419 JSON）。
+- 存储实例解析收敛到 `StorageProfile::resolve()`（复用 `find`/`defaultProfile` 的请求级缓存），
+  删除控制器自建的第三层 memo（`$profileMemo`/`resolveProfile`，`flushCache()` 管不到它）。
+- 存储凭据必填规则收敛到 `StorageProfile::missingCredentialFields()`
+  （模型 `isUsable()` 与驱动 `assertCredentials()` 共用；此前两处各写一套 provider 规则）。
+- `S3Driver` 6 个分发工厂 + 5 条链式 `if` 折叠为单个 `sdk()` 分发点
+  （新增 provider 从改 11 处降为改 1 处）。
+
+**行为修正**
+
+- `/api/v1/stats` 的 `total_images` 改为与 `/images`、`/random` 同口径
+  （`status='active' AND process_status='done'`）。此前把 pending/processing/failed 也算进去，
+  调用方看到的总数永远大于实际可访问数。
+- 图片按钮可用性只保留 `refreshButtons()` 一份规则（`onTick('done')` 改为调用它）。
+  此前内联重算且漏了 `uploading`，两条规则已开始漂移。
+- `backfillHashes` 的 SELECT 补回 `file_sha256`：此前漏列导致 `$hasSha` 恒为 false（死判断）。
+- `StorageProfile::instanceLabel()` 修掉 `region` 未定义键警告（又拍云/OBS 无该键）。
+- `Image::driverUrlFor()` 的异常降级补 `error_log`：图片地址生成失败不再完全静默。
+- CLI 单批子进程（`process-queue-batch.php` / `backfill-thumbs-batch.php`）修掉实参错位
+  （`''` 被传给 `array $headers`，strict_types 下必然 TypeError），并删除伪造 CSRF/启动 session
+  的代码 —— 它们直接调控制器，不经过 Router 与中间件。
+- `CspNonce::token()` 改为**请求内幂等**：`bootstrap()` 两次 `sendSecurityHeaders()` 会生成
+  两个 nonce，此前只靠 `header()` 默认 replace 才没出错；合并后头与 HTML 的 nonce 必然一致。
+- SSRF 自检（MR-39）从"每次构造驱动都 error_log"前移到"保存存储实例时校验一次"：
+  合法的自建 MinIO（RFC1918）不再让每个请求都刷一条警告。
+
+**删除（无调用方 / 无收益）**
+
+- `StorageInterface::hashFile()` + 8 个驱动实现（应用代码 0 调用；去重早已改用上传端本地
+  `hash_file()`），以及随之失去消费者的 `S3Driver::hashUrl()`。
+- 9 个全局助手函数（`config/session/csrf_token/csrf_field/old/asset/url/redirect/json_response`，
+  精确匹配 0 调用，仅留 `h()`）；`Request::json()` / `Request::validate()` / `Controller::input()`。
+- `Response::text()/file()/image()`（0 调用）、`Model::exists()`、`Image::srcset()` 保留
+  （**有 2 处视图在用**，审计初判"死代码"是 grep 误报，已撤回）。
+- `stampThumbMetaState()`（纯转发）、`listFilesRecursive()` 的 `$excludeTop`（唯一调用点不传）、
+  `getCategoryAndChildIds()` 的 `$depth`（实现根本不读，两参调用会静默返回整棵子树）、
+  `assetParts()` 的 `layout` 键与 `LAYOUT_V2`（恒为 'v2' 的单值字段）。
+- `migration_images_storage` 旗标（写而不读）、`ensureStatsTables` 的 `!== false` 死判断、
+  `RateLimiter::reset()` 的不可达分支、`FileController::profileRoots()` 的重复默认实例分支。
+- 前端 6 个批量循环的请求样板收敛为 `postBatch()`（终止条件仍各自保留），
+  新增批处理入口不必再抄一遍 FormData/CSRF/解析/抛错。
+
+**兼容数据：改为"检测 + 一次性迁移"，不再运行时兼容**
+
+- `Image::url()` 不再回退 `images.url` 列（所有写入路径都写 `''`，回退永不命中）。
+- `StorageProfile::driverForImage()` 不再按 `storage_provider` 猜实例：缺 `storage_profile_id`
+  时明确报错并提示迁移。猜测会把图片指向同 provider 的另一个桶，且没有任何报错。
+- 新增 `src/cli/migrate-legacy-refs.php`（默认干跑，`--apply` 才写）：
+  回填 `storage_profile_id`、清空残留 `url`；后台健康检查与 doctor 新增
+  `legacy_refs` / `Legacy data migration` 检测项。
+
+**部署注意（覆盖部署必读）**
+
+1. 升级后先访问后台「系统设置 → 健康检查」；若 `legacy_refs` 报非零，
+   执行 `php src/cli/migrate-legacy-refs.php`（先看干跑映射），确认后加 `--apply`。
+2. 未迁移的历史图片在读取时会**明确报错**（不再是静默猜实例）。
+3. 本地开发环境：PHP 8.5 起 `$http_response_header` 有 deprecation 提示，不影响 8.4 目标版本。
+
+**验证**
+
+- PHP 语法 2918/2918（php-parser）+ 89 个非 SDK 文件 `php -l` 全绿。
+- harness 29 个脚本全部通过（含 8 个契约测试的断言同步到新实现）。
+- `click_test` / `scope_check` 以 `src/public/js/app.js` 为参数运行通过（点击矩阵与作用域链无异常）。
+
 ## [2.0.0-beta.18] - 2026-10-12
 
 ### 安全加固：深度审计 P1 修复

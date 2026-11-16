@@ -79,22 +79,19 @@ class Image extends Model
     /**
      * v2.0.0-beta.1 存储结构（资产中心布局，唯一方案）—— 布局解析与键推导。
      *
-     * 自本版本起**只认 v2 布局**，按 `images.path` 自身的形态判定（无需标志列）：
+     * 按 `images.path` 自身的形态判定（无需标志列）：
      *
-     *   唯一布局（v2）：{yyyy}/{mm}/{uuid}/original.{ext}
-     *                   {yyyy}/{mm}/{uuid}/thumb-{sm|md|lg}.webp
+     *   唯一布局：{yyyy}/{mm}/{uuid}/original.{ext}
+     *             {yyyy}/{mm}/{uuid}/thumb-{sm|md|lg}.webp
      *
      * 读取端不依赖本解析（`thumbs` JSON / `thumb_path` 列是权威登记），
      * 因此历史存量行仍可读取；解析仅用于**生成端键推导**（新上传必为 v2）。
      */
-    public const LAYOUT_V2 = 'v2';
-
     /**
      * 解析相对路径为资产各部分。
      *
-     * @return ?array{layout: string, dir: string, ext: string, uuid: string}
-     *   仅识别 v2 形态；无法识别（历史 v1 布局等）返回 null —— 生成端遇 null
-     *   抛错，绝不静默回退到旧规则。
+     * @return ?array{dir: string, ext: string, uuid: string}
+     *   无法识别（历史 v1 布局等）返回 null —— 生成端遇 null 抛错，绝不静默回退。
      */
     public static function assetParts(string $path): ?array
     {
@@ -103,7 +100,6 @@ class Image extends Model
         // 唯一布局：{yyyy}/{mm}/{uuid}/original.{ext}
         if (preg_match('#^(\d{4})/(\d{2})/([0-9a-zA-Z]{8,64})/(original)\.([a-zA-Z0-9]+)$#', $p, $m)) {
             return [
-                'layout' => self::LAYOUT_V2,
                 'dir'    => $m[1] . '/' . $m[2] . '/' . $m[3],
                 'ext'    => strtolower($m[5]),
                 'uuid'   => $m[3],
@@ -482,23 +478,18 @@ class Image extends Model
     }
 
     /**
-     * Public URL of the image.
+     * Public URL of the image —— 由 `path` 经所属存储驱动**实时生成**。
      *
-     * The URL is regenerated from `path` through the active storage driver on
-     * every call instead of trusting the `url` column. Rows written while the
-     * driver mis-resolved its base URL contain broken values like
-     * "/2026/08/x.png" (missing the /public/uploads prefix); recomputing here
-     * repairs the whole existing library without a data migration, and also
-     * keeps URLs correct after switching driver or adding a CDN domain.
+     * 不再回退 `url` 列（v2.0.0-beta.19）：所有写入路径（上传 / 转 WebP）都把它写
+     * 成空串，回退分支永远不命中；留着只会让人以为"库里还存着一份 URL"。历史行的
+     * 非空 url 由 `src/cli/migrate-legacy-refs.php` 一次性清空。
+     *
+     * 生成失败时返回空串（不抛）：渲染一页图不该因单行存储配置异常而 500。
+     * 调用方拿空串会走 404 / 占位图，同时 error_log 留下可排查的痕迹。
      */
     public function url(): string
     {
-        $path = (string) ($this->attributes['path'] ?? '');
-        if ($path !== '') {
-            $url = $this->driverUrlFor($path);
-            if ($url !== '') return $url;
-        }
-        return (string) ($this->attributes['url'] ?? '');
+        return $this->driverUrlFor((string) ($this->attributes['path'] ?? ''));
     }
 
     /**
@@ -507,7 +498,7 @@ class Image extends Model
      * 同一张图同一个键常在一页里被多次请求（`src` 取 sm，`srcset` 又含 sm；
      * displayUrl 先试请求尺寸再回退 md）—— 每调用一次就要重新签名/预签名。
      * 云端预签名是 HMAC + 客户端调用，重复计算纯属浪费，故按 (实例, 键) 记忆。
-     * 失败结果（空串）同样记忆：调用方会回退到库里的 url 列，不必反复重试。
+     * 失败结果（空串）同样记忆：同一请求内不必反复重试同一个坏配置。
      *
      * @var array<string, string>
      */
@@ -530,7 +521,10 @@ class Image extends Model
         }
         try {
             $url = (string) self::driverFor($this)->url($key);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            // 不抛（渲染不应被单行配置拖垮），但也不静默：这是"图片地址生成失败"
+            // 的唯一留痕点，缺它时线上只表现为若干张图空白、日志里什么都没有。
+            error_log('[MoeRNG] 图片 URL 生成失败（key=' . $key . '）: ' . $e->getMessage());
             $url = '';
         }
         return self::$urlMemo[$memoKey] = $url;
@@ -756,12 +750,14 @@ class Image extends Model
      *
      * MR-35: 由「逐节点递归 SELECT」改为「整表一次取出 + PHP 侧 BFS」，整请求 1 次查询。
      * 返回语义不变：含自身 + 全部后代、去重、array_values（调用方仅作 IN(...) 集合，
-     * 顺序无关）。`$depth` 参数保留仅为签名向后兼容（外部按两参调用的旧代码不破）；
-     * 脏数据自引用环由 `$seen` 集合守卫（等价原 depth>20 硬停）。
+     * 顺序无关）。脏数据自引用环由 `$seen` 集合守卫（等价原 depth>20 硬停）。
+     *
+     * v2.0.0-beta.19: 删掉从未被读取的 `$depth` 参数 —— 它保留着"可限制深度"的
+     * 假象，而实现（BFS）根本不看它，两参调用会**静默返回整棵子树**。
      *
      * @return array<int, int>
      */
-    public static function getCategoryAndChildIds(int $categoryId, int $depth = 0): array
+    public static function getCategoryAndChildIds(int $categoryId): array
     {
         $map = self::categoryChildrenMap();
 

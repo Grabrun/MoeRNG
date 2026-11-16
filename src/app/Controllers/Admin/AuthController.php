@@ -40,7 +40,6 @@ class AuthController extends Controller
 
     public function login(Request $request): void
     {
-        $this->validateCsrf();
 
         $login = trim((string) $request->input('login', ''));
         $password = (string) $request->input('password', '');
@@ -124,10 +123,9 @@ class AuthController extends Controller
     {
         // v1.3.0-beta.2 安全加固 (CVE-2026-MR-005): the route is POST-only and
         // requires a valid CSRF token — a plain <img src="/admin/logout"> can
-        // no longer force-logout a logged-in admin. Deliberately NOT using
-        // Controller::validateCsrf() here: its 419-JSON answer is meant for
-        // AJAX flows, while logout is a navigation action — a stale/expired
-        // token just bounces the user back to the dashboard with a flash.
+        // no longer force-logout a logged-in admin. 刻意**不挂 CsrfMiddleware**：
+        // 它的 419-JSON 面向 AJAX，而登出是导航动作 —— token 过期时应当
+        // flash + 302 回仪表盘，而不是给用户一屏 JSON。
         // Validation MUST run before Session::destroy() wipes the token.
         if (!Session::verifyCsrf((string) ($_POST['_csrf_token'] ?? ''))) {
             Session::flash('error', '登出请求无效或已过期，请重试。');

@@ -199,6 +199,66 @@ class Application
      * instead of swallowing it, so the operator gets the manual SQL they need
      * rather than a silent "every upload fails".
      */
+    /**
+     * 应用期望的库结构 —— **唯一来源**（v2.0.0-beta.19）。
+     *
+     * 消费方：运行时自迁移（本类）、后台健康检查（SettingController::runHealthChecks）、
+     * 部署诊断（doctor.php）。此前三处各抄一份字面量，已经抄出不一致：
+     * doctor 的清单缺 `thumb_meta` / `idx_status_thumb_meta` / `idx_path`（于是在真正
+     * 缺索引时报"全部就位"），并把 `storage_profile_id` 写成 `INT UNSIGNED`（另两处
+     * 与 schema.sql 都是 signed INT，注释还专门解释了为何必须 signed）。
+     *
+     * `columns` 的值是**列定义**（不含 `ADD COLUMN` 前缀，可直接拼在列名之后）；
+     * `indexes` 的值是完整的 `ADD INDEX …` 片段。
+     *
+     * @return array{
+     *   columns: array<string, array<string,string>>,
+     *   indexes: array<string, array<string,string>>
+     * }
+     */
+    public static function schemaExpectations(): array
+    {
+        return [
+            'columns' => [
+                'images' => [
+                    'storage'            => "VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`",
+                    'storage_provider'   => "VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`",
+                    // 签名 INT（不是 UNSIGNED）：须与 schema.sql 及 storage_profiles.id
+                    // （INT AUTO_INCREMENT）一致，符号不同则将来加 FK 会报 errno 1215。
+                    'storage_profile_id' => "INT NULL AFTER `storage_provider`",
+                    'file_hash'          => "CHAR(64) NULL DEFAULT NULL AFTER `file_size`",
+                    'file_sha256'        => "CHAR(64) NULL DEFAULT NULL AFTER `file_hash`",
+                    'process_status'     => "ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`",
+                    'thumb_path'         => "VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`",
+                    'process_error'      => "VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`",
+                    'thumbs'             => "VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`",
+                    'thumb_bytes'        => "VARCHAR(255) NULL DEFAULT NULL AFTER `thumbs`",
+                    'processing_state'   => "JSON NULL DEFAULT NULL AFTER `thumb_bytes`",
+                    // VIRTUAL 生成列：追加是 INSTANT 操作（不重建表、不锁写），
+                    // 值会物化进 idx_status_thumb_meta，覆盖索引扫描照样生效。
+                    'thumb_meta'         => "VARCHAR(16) GENERATED ALWAYS AS (COALESCE(JSON_UNQUOTE(JSON_EXTRACT("
+                        . "IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '$.thumb_meta')), 'pending')) VIRTUAL",
+                ],
+                'users' => [
+                    'last_login'       => "DATETIME NULL DEFAULT NULL AFTER `status`",
+                    'remember_token'   => "VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`",
+                    'remember_expires' => "DATETIME NULL DEFAULT NULL AFTER `remember_token`",
+                ],
+            ],
+            'indexes' => [
+                'images' => [
+                    'idx_file_hash'         => "ADD INDEX `idx_file_hash` (`file_hash`)",
+                    'idx_file_sha256'       => "ADD INDEX `idx_file_sha256` (`file_sha256`)",
+                    'idx_storage_profile'   => "ADD INDEX `idx_storage_profile` (`storage_profile_id`)",
+                    'idx_process_status'    => "ADD INDEX `idx_process_status` (`process_status`)",
+                    // VARCHAR(512) 在 utf8mb4 下全长索引会超 InnoDB 3072 字节上限。
+                    'idx_path'              => "ADD INDEX `idx_path` (`path`(191))",
+                    'idx_status_thumb_meta' => "ADD INDEX `idx_status_thumb_meta` (`process_status`, `thumb_meta`)",
+                ],
+            ],
+        ];
+    }
+
     private function runStorageMigration(): void
     {
         $migrationError = '';
@@ -207,20 +267,18 @@ class Application
             $migrationError = $this->ensureImageColumns($db);
             // v1.0.33: storage profiles (multi-instance storage config).
             $this->ensureStorageProfileTable($db);
-            $migrationError .= $this->ensureImageProfileColumn($db);
             // v1.1.0-beta.4: admin operation audit trail.
             $this->ensureAuditLogTable($db);
             // v1.2.0 迭代: daily counters for API calls & site visits.
             $this->ensureStatsTables($db);
-            // v1.2.1 UI 深度分析 (UI-10): last_login column on users.
-            $migrationError .= $this->ensureUserLastLogin($db);
-            // v1.2.1 登录增强: remember-me (auto-login) token columns on users.
-            $migrationError .= $this->ensureUserRemember($db);
-            // 收敛 images.status 的死 ENUM 值（'hidden' / 'deleted'）+ 补 path 索引。
+            // users：last_login（v1.2.1 UI-10）+ remember-me token（v1.2.1 登录增强）
+            $exp = self::schemaExpectations();
+            $userErr = $this->ensureColumns($db, 'users', $exp['columns']['users']);
+            if ($userErr !== '') {
+                $migrationError .= ($migrationError !== '' ? ' | ' : '') . $userErr;
+            }
+            // 收敛 images.status 的死 ENUM 值（'hidden' / 'deleted'）。
             $migrationError .= $this->pruneDeadStatusValues($db);
-            $migrationError .= $this->ensureImagePathIndex($db);
-            // thumb_meta 生成列 + (process_status, thumb_meta) 复合索引。
-            $migrationError .= $this->ensureThumbMetaColumn($db);
         } catch (\Throwable $e) {
             $migrationError = $migrationError !== ''
                 ? $migrationError . ' | ' . $e->getMessage()
@@ -229,10 +287,10 @@ class Application
 
         try {
             if ($migrationError === '') {
-                // v1.4.0-beta.2 性能: 只写"版本戳"（下一次请求即整体跳过迁移）。
-                // 原先成功路径要无条件写 2 条 settings —— 那是每请求 2 次写入。
+                // 只写"版本戳"：下一次请求即整体跳过迁移。
+                // （v2.0.0-beta.19 删掉从未被读取的 migration_images_storage 旗标 ——
+                //  版本戳上线后它是纯冗余写入。）
                 \App\Models\Setting::set('schema_version', self::SCHEMA_VERSION);
-                \App\Models\Setting::set('migration_images_storage', '1');
                 // 仅在值真的变化时清一次历史错误（避免每次迁移都白写一条）
                 if (Config::get('settings.migration_last_error', '') !== '') {
                     \App\Models\Setting::set('migration_last_error', '');
@@ -272,7 +330,6 @@ class Application
         // this parameter as App\Core\Database, which raised a TypeError on every
         // call — caught and swallowed by runStorageMigration, so the columns
         // never got added and every upload silently failed. PDO is the truth.
-        $needed = [];
         // v1.3.2-beta.2: 临时存放目录（storage/incoming）—— 上传先落这里，
         // web 不可达（站点根下的 storage/ 不经 public/）；.htaccess 双保险拒绝直链。
         $incoming = dirname(__DIR__, 2) . '/storage/incoming';
@@ -283,83 +340,57 @@ class Application
             @file_put_contents($incoming . '/.htaccess', "Require all denied\n");
         }
 
-        foreach (['storage', 'storage_provider', 'file_hash', 'file_sha256',
-                  'process_status', 'thumb_path', 'process_error', 'thumbs',
-                  'thumb_bytes', 'processing_state'] as $col) {
-            if (!$this->columnExists($db, 'images', $col)) {
-                $needed[] = $col;
-            }
-        }
-        if ($needed === []) {
-            return '';
-        }
-
-        $defs = [
-            'storage'          => "VARCHAR(16) NOT NULL DEFAULT 'local' AFTER `path`",
-            'storage_provider' => "VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`",
-            // v1.3.1 迭代: 上传去重 —— MD5 内容哈希（服务端计算，权威）；
-            // 旧数据为 NULL，不回填
-            'file_hash'        => "CHAR(64) NULL DEFAULT NULL AFTER `file_size`",
-            // v1.3.2 迭代: 分层校验 —— MD5 快速初筛 + SHA-256 二次验证。
-            // 旧数据为 NULL，由 tools/backfill_file_sha256.php 一次性回填。
-            'file_sha256'      => "CHAR(64) NULL DEFAULT NULL AFTER `file_hash`",
-            // v1.3.2-beta.2 迭代: 异步图片处理管线 —— 上传落临时目录即成功（pending），
-            // 队列Worker 生成缩略图并上传最终存储后置 done；存量图默认 done。
-            'process_status'   => "ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`",
-            'thumb_path'       => "VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`",
-            'process_error'    => "VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`",
-            // v1.3.2-beta.2 迭代: 多尺寸缩略图映射（JSON: 尺寸 => 存储 key）。
-            // md 仍写 thumb_path（兼容），本列存 sm/lg 等附加尺寸。
-            'thumbs'           => "VARCHAR(1200) NULL DEFAULT NULL AFTER `process_error`",
-            // v1.5.0-beta.3 迭代: 各档缩略图实测字节数（JSON: 尺寸 => bytes）+ 按处理项
-            // 的补全状态（JSON: 处理项 => pending/partial/failed/ok/skipped）。
-            // 2026-09-23 补入自迁移清单（此前只在 schema.sql / 健康检查修复清单里，
-            // 老站点升级后这两列缺失 → 队列统计直接 500，见 docs/audit/2026-09-23）。
-            'thumb_bytes'      => "VARCHAR(255) NULL DEFAULT NULL AFTER `thumbs`",
-            'processing_state' => "JSON NULL DEFAULT NULL AFTER `thumb_bytes`",
-        ];
-
+        // DDL 全部来自 schemaExpectations()（唯一来源）—— 健康检查与 doctor 用的是
+        // 同一份，三处不会再抄出「UNSIGNED vs signed」「少一项索引」这类偏差。
+        $expect = self::schemaExpectations();
         $errors = [];
-        foreach ($needed as $col) {
+
+        // —— 列：只 ALTER 缺的（1060 = 已存在，视为成功）——
+        $added = 0;
+        foreach ($expect['columns']['images'] as $col => $def) {
+            if ($this->columnExists($db, 'images', $col)) {
+                continue;
+            }
             try {
-                $db->exec("ALTER TABLE `images` ADD COLUMN `{$col}` {$defs[$col]}");
+                $db->exec("ALTER TABLE `images` ADD COLUMN `{$col}` {$def}");
+                $added++;
             } catch (\Throwable $e) {
                 $msg = $e->getMessage();
-                // Duplicate column means it already exists — treat as success.
                 if (stripos($msg, '1060') !== false || stripos($msg, 'duplicate column') !== false) {
-                    continue;
+                    continue;   // 探测失败但实际已存在（并发）→ 视为成功
                 }
                 $errors[] = "ADD COLUMN `{$col}` failed: {$msg}";
             }
         }
 
-        // v1.3.1: 去重查询索引（幂等，1061 duplicate key name 视为已存在）。
+        // —— 索引：探测后补（1061 = 已存在）——
+        // 两条"重"索引（大表加索引可能锁表/超时）失败只记日志、不进 migration_error：
+        // 否则一次超时会让 schema_version 永不写入 → 每个请求都重试 ALTER。
+        $logOnly = ['idx_path', 'idx_status_thumb_meta'];
+        $existing = [];
         try {
-            $db->exec("ALTER TABLE `images` ADD INDEX `idx_file_hash` (`file_hash`)");
-        } catch (\Throwable $e) {
-            $msg = $e->getMessage();
-            if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
-                $errors[] = "ADD INDEX idx_file_hash failed: {$msg}";
+            foreach ($db->query('SHOW INDEX FROM `images`')->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+                $existing[(string) $r['Key_name']] = true;
             }
+        } catch (\Throwable) {
+            $existing = [];   // 探测不到就交给 ALTER 的幂等错误码判断
         }
-
-        // v1.3.2-beta.2: 处理队列状态索引（幂等）。
-        try {
-            $db->exec("ALTER TABLE `images` ADD INDEX `idx_process_status` (`process_status`)");
-        } catch (\Throwable $e) {
-            $msg = $e->getMessage();
-            if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
-                $errors[] = "ADD INDEX idx_process_status failed: {$msg}";
+        foreach ($expect['indexes']['images'] as $name => $ddl) {
+            if (isset($existing[$name])) {
+                continue;
             }
-        }
-
-        // v1.3.2: SHA-256 二次验证查询索引（幂等）。
-        try {
-            $db->exec("ALTER TABLE `images` ADD INDEX `idx_file_sha256` (`file_sha256`)");
-        } catch (\Throwable $e) {
-            $msg = $e->getMessage();
-            if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
-                $errors[] = "ADD INDEX idx_file_sha256 failed: {$msg}";
+            try {
+                $db->exec("ALTER TABLE `images` " . $ddl);
+            } catch (\Throwable $e) {
+                $msg = $e->getMessage();
+                if (stripos($msg, '1061') !== false || stripos($msg, 'duplicate key name') !== false) {
+                    continue;
+                }
+                if (in_array($name, $logOnly, true)) {
+                    error_log('[MoeRNG] ADD INDEX ' . $name . ' 失败（不影响功能，仅查询变慢）: ' . $msg);
+                    continue;
+                }
+                $errors[] = "ADD INDEX {$name} failed: {$msg}";
             }
         }
 
@@ -367,11 +398,13 @@ class Application
             return implode(' | ', $errors);
         }
 
+        // 列本来就齐全（老朋友）→ 不必回填；只有首次补列时才需要。
+        if ($added === 0) {
+            return '';
+        }
+
         // Backfill existing rows with the default profile's driver/provider so
         // historically-stored files keep resolving after a driver switch.
-        // v2.0.0-beta.1: storage_profiles is the single source of truth — the
-        // legacy settings keys (settings.storage_driver / storage_s3_provider)
-        // are no longer read or written anywhere.
         try {
             $profile = \App\Models\StorageProfile::defaultProfile();
             $driver = $profile !== null ? $profile->driver : 'local';
@@ -394,56 +427,28 @@ class Application
     }
 
     /**
-     * v1.2.1 UI 深度分析 (UI-10): ensure the users.last_login column exists.
-     * Idempotent: SHOW COLUMNS probe → ALTER with 1060 swallowed.
+     * 按 schemaExpectations() 补列（任意表）—— 只 ALTER 缺的，1060 幂等。
+     *
+     * @param array<string,string> $columns 列名 => 列定义（不含 ADD COLUMN 前缀）
      */
-    private function ensureUserLastLogin(\PDO $db): string
+    private function ensureColumns(\PDO $db, string $table, array $columns): string
     {
-        try {
-            if ($this->columnExists($db, 'users', 'last_login')) {
-                return '';
+        $errors = [];
+        foreach ($columns as $col => $def) {
+            if ($this->columnExists($db, $table, $col)) {
+                continue;
             }
-            $db->exec("ALTER TABLE `users` ADD COLUMN `last_login` DATETIME NULL DEFAULT NULL AFTER `status`");
-            return '';
-        } catch (\Throwable $e) {
-            $msg = $e->getMessage();
-            if (stripos($msg, '1060') !== false || stripos($msg, 'duplicate column') !== false) {
-                return '';
-            }
-            return 'ADD COLUMN users.last_login failed: ' . $msg;
-        }
-    }
-
-    /**
-     * v1.2.1 登录增强: ensure the users.remember_token + remember_expires columns
-     * exist (remember-me / auto-login). Idempotent via columnExists probe.
-     * remember_token holds a HASH (not the raw cookie value); remember_expires
-     * bounds how long a "记住我" session may auto-login.
-     */
-    private function ensureUserRemember(\PDO $db): string
-    {
-        $err = '';
-        if (!$this->columnExists($db, 'users', 'remember_token')) {
             try {
-                $db->exec("ALTER TABLE `users` ADD COLUMN `remember_token` VARCHAR(255) NULL DEFAULT NULL AFTER `last_login`");
+                $db->exec("ALTER TABLE `{$table}` ADD COLUMN `{$col}` {$def}");
             } catch (\Throwable $e) {
                 $msg = $e->getMessage();
-                if (stripos($msg, '1060') === false && stripos($msg, 'duplicate column') === false) {
-                    $err .= 'ADD COLUMN users.remember_token failed: ' . $msg . ' | ';
+                if (stripos($msg, '1060') !== false || stripos($msg, 'duplicate column') !== false) {
+                    continue;
                 }
+                $errors[] = "ADD COLUMN {$table}.{$col} failed: {$msg}";
             }
         }
-        if (!$this->columnExists($db, 'users', 'remember_expires')) {
-            try {
-                $db->exec("ALTER TABLE `users` ADD COLUMN `remember_expires` DATETIME NULL DEFAULT NULL AFTER `remember_token`");
-            } catch (\Throwable $e) {
-                $msg = $e->getMessage();
-                if (stripos($msg, '1060') === false && stripos($msg, 'duplicate column') === false) {
-                    $err .= 'ADD COLUMN users.remember_expires failed: ' . $msg;
-                }
-            }
-        }
-        return $err;
+        return implode(' | ', $errors);
     }
 
     /**
@@ -484,75 +489,6 @@ class Application
             error_log('[MoeRNG] images.status 死值收敛失败（可忽略）: ' . $e->getMessage());
             return '';
         }
-    }
-
-    /**
-     * 为 images.path 补前缀索引（cleanupStagingFiles 逐文件按 path 反查用）。
-     *
-     * VARCHAR(512) 在 utf8mb4 下全长索引会超 InnoDB 3072 字节上限，故取前缀 191。
-     * 幂等：1061（duplicate key name）视为已存在。
-     */
-    private function ensureImagePathIndex(\PDO $db): string
-    {
-        try {
-            $db->exec("ALTER TABLE `images` ADD INDEX `idx_path` (`path`(191))");
-        } catch (\Throwable $e) {
-            $msg = $e->getMessage();
-            if (stripos($msg, '1061') !== false || stripos($msg, 'duplicate key name') !== false) {
-                return '';
-            }
-            // 大表加索引可能超时/锁表；失败只记录，不阻断站点（查询仍会走全表扫描，
-            // 只是慢，功能不受影响）。
-            error_log('[MoeRNG] ADD INDEX idx_path 失败（不影响功能）: ' . $msg);
-        }
-        return '';
-    }
-
-    /**
-     * 给 images 补 thumb_meta 生成列与 (process_status, thumb_meta) 复合索引。
-     *
-     * 目的：队列状态卡片的两个派生计数原先是
-     *   `process_status='done' AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(...)),'pending') = 'pending'`
-     * —— 谓词含 JSON_VALID/JSON_EXTRACT，**非 sargable**，且 processing_state 不在
-     * 任何索引里，于是每批轮询都要对全部 done 行回表解析 JSON。
-     *
-     * 用 **VIRTUAL** 而非 STORED：MySQL 8.0 追加 VIRTUAL 生成列是 INSTANT 操作
-     * （不重建表、不锁写），而 STORED 会整表重建 —— 本项目是覆盖部署到存量库，
-     * 不能假设有停机窗口。VIRTUAL 列的值会物化进索引，覆盖索引扫描照样生效。
-     *
-     * 全程 best-effort：两步各自 try/catch + 1060/1061 幂等，失败只 error_log。
-     * Image::thumbMetaExpr() 探测不到列时会退回原 JSON 表达式，查询结果不变（只是慢），
-     * 所以这里的失败绝不会演变成功能不可用。
-     */
-    private function ensureThumbMetaColumn(\PDO $db): string
-    {
-        if (!$this->columnExists($db, 'images', 'thumb_meta')) {
-            try {
-                $db->exec(
-                    "ALTER TABLE `images` ADD COLUMN `thumb_meta` VARCHAR(16) "
-                    . "GENERATED ALWAYS AS (COALESCE(JSON_UNQUOTE(JSON_EXTRACT("
-                    . "IF(JSON_VALID(`processing_state`), `processing_state`, NULL), '$.thumb_meta'"
-                    . ")), 'pending')) VIRTUAL"
-                );
-            } catch (\Throwable $e) {
-                $msg = $e->getMessage();
-                if (stripos($msg, '1060') === false && stripos($msg, 'duplicate column') === false) {
-                    error_log('[MoeRNG] ADD COLUMN images.thumb_meta 失败（退回 JSON 表达式，功能不受影响）: ' . $msg);
-                    return '';
-                }
-            }
-        }
-
-        try {
-            $db->exec("ALTER TABLE `images` ADD INDEX `idx_status_thumb_meta` (`process_status`, `thumb_meta`)");
-        } catch (\Throwable $e) {
-            $msg = $e->getMessage();
-            if (stripos($msg, '1061') === false && stripos($msg, 'duplicate key name') === false) {
-                // 索引缺失只是慢（列已在，谓词仍可走 process_status 前缀），不阻断站点。
-                error_log('[MoeRNG] ADD INDEX idx_status_thumb_meta 失败（不影响功能）: ' . $msg);
-            }
-        }
-        return '';
     }
 
     private function columnExists(\PDO $db, string $table, string $col): bool
@@ -631,8 +567,8 @@ class Application
         // （SHOW COLUMNS probe → ALTER，吞 duplicate-column）；新库建表已带。
         // ALTER 权限被拒时降级为「只有成功计数」（fail 恒 0），站点不受影响。
         try {
-            $colProbe = $db->query("SHOW COLUMNS FROM `api_stats` LIKE 'fail'");
-            $hasFail = $colProbe !== false && $colProbe->fetch() !== false;
+            // query() 在 ERRMODE_EXCEPTION 下不会返回 false —— 直接取列即可。
+            $hasFail = $db->query("SHOW COLUMNS FROM `api_stats` LIKE 'fail'")->fetch() !== false;
             if (!$hasFail) {
                 $db->exec("ALTER TABLE `api_stats` ADD COLUMN `fail` INT UNSIGNED NOT NULL DEFAULT 0 AFTER `count`");
             }
@@ -646,31 +582,6 @@ class Application
             `count` INT UNSIGNED NOT NULL DEFAULT 0
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         $db->exec($sql);
-    }
-
-    /**
-     * v1.0.33: add images.storage_profile_id so every row remembers WHICH
-     * storage instance it was uploaded to (multiple COS/OSS/S3 instances are
-     * now allowed). Idempotent — a 1060 duplicate column is success.
-     */
-    private function ensureImageProfileColumn(\PDO $db): string
-    {
-        if ($this->columnExists($db, 'images', 'storage_profile_id')) {
-            return '';
-        }
-        try {
-            $db->exec(
-                "ALTER TABLE `images` ADD COLUMN `storage_profile_id` INT NULL AFTER `storage_provider`, "
-                . "ADD INDEX `idx_storage_profile` (`storage_profile_id`)"
-            );
-            return '';
-        } catch (\Throwable $e) {
-            $msg = $e->getMessage();
-            if (stripos($msg, '1060') !== false || stripos($msg, 'duplicate column') !== false) {
-                return '';
-            }
-            return 'ADD COLUMN storage_profile_id failed: ' . $msg;
-        }
     }
 
     public function router(): Router

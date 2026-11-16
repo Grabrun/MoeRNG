@@ -73,43 +73,4 @@ class Response
         echo $content;
         exit;
     }
-
-    public function text(string $content, int $status = 200): never
-    {
-        http_response_code($status);
-        header('Content-Type: text/plain; charset=utf-8');
-        foreach ($this->headers as $k => $v) {
-            header("{$k}: {$v}");
-        }
-        echo $content;
-        exit;
-    }
-
-    public function file(string $path, string $mime = 'application/octet-stream'): never
-    {
-        if (!is_file($path)) {
-            $this->json(['error' => 'File not found'], 404);
-        }
-        http_response_code(200);
-        header("Content-Type: {$mime}");
-        header('Content-Length: ' . filesize($path));
-        foreach ($this->headers as $k => $v) {
-            header("{$k}: {$v}");
-        }
-        readfile($path);
-        exit;
-    }
-
-    public function image(string $path): never
-    {
-        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        $mimeTypes = [
-            'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
-            'png' => 'image/png', 'gif' => 'image/gif',
-            'webp' => 'image/webp', 'bmp' => 'image/bmp',
-            'svg' => 'image/svg+xml',
-        ];
-        $mime = $mimeTypes[$ext] ?? 'application/octet-stream';
-        $this->file($path, $mime);
-    }
 }

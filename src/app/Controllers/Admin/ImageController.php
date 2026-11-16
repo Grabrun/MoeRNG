@@ -549,32 +549,6 @@ class ImageController extends Controller
         return $img;
     }
 
-    /**
-     * v1.4.0-beta.2 性能修复: 请求内存储实例解析缓存。
-     *
-     * 处理队列 / 补全缩略图 / 哈希回填三个循环此前对**每一行**都查一次
-     * `StorageProfile::find()`（行里没记实例时还要再查一次默认实例）——这就是
-     * 典型的 N+1：同一批次里实例通常完全相同，却要被反复查询。
-     * 按 id 记忆化后，一次请求最多 1 次 find + 1 次 defaultProfile 查询。
-     *
-     * 实例属性即请求级缓存（控制器按请求实例化），无需外部传引用；
-     * 这些端点不会在本请求内修改存储实例，故不会读到脏数据。
-     */
-    private array $profileMemo = [];
-
-    private function resolveProfile(?int $profileId): ?StorageProfile
-    {
-        $key = $profileId ?? 0;
-        if (!array_key_exists($key, $this->profileMemo)) {
-            $p = $profileId !== null ? StorageProfile::find($profileId) : null;
-            if ($p === null) {
-                $p = StorageProfile::defaultProfile();
-            }
-            $this->profileMemo[$key] = $p;
-        }
-        return $this->profileMemo[$key];
-    }
-
     /** 解析 memory_limit（含 -1 = 无限制）为字节数。 */
     private static function memoryLimitBytes(): int
     {
@@ -882,7 +856,6 @@ class ImageController extends Controller
      */
     public function processQueue(Request $request): void
     {
-        $this->validateCsrf();
         $this->jsonFatalGuard('process-queue');   // 致命错误 → 合法 JSON（而非空响应）
 
         $batchSize = max(1, min(self::QUEUE_BATCH_MAX, (int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT)));
@@ -1003,7 +976,7 @@ class ImageController extends Controller
                 $gen = null;
                 // MR-05: try 外声明 —— catch 分支按此清单回滚已上传到最终存储的对象
                 // （异常可能发生在 makeThumbnails / uploadThumbs 之前，此时二者未定义）。
-                // $storage 同理：异常可能发生在 resolveProfile/driver() 之前。
+                // $storage 同理：异常可能发生在 StorageProfile::resolve() / driver() 之前。
                 $uploadedKeys = [];
                 $storage = null;
 
@@ -1012,9 +985,8 @@ class ImageController extends Controller
                         throw new \RuntimeException('临时文件不存在（可能已被清理）');
                     }
 
-                    // —— 该图所属存储实例 ——
-                    // v1.4.0-beta.2 性能: 走请求内缓存（原先每行查一次 → N+1）
-                    $profile = $this->resolveProfile(
+                    // —— 该图所属存储实例（find/defaultProfile 自带请求级缓存）——
+                    $profile = StorageProfile::resolve(
                         $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
                     );
                     if ($profile === null) {
@@ -1213,7 +1185,6 @@ class ImageController extends Controller
      */
     public function backfillThumbs(Request $request): void
     {
-        $this->validateCsrf();
         $this->jsonFatalGuard('backfill-thumbs');   // 同上（同样做 GD 解码）
         $batchSize = max(1, min(self::QUEUE_BATCH_MAX, (int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT)));
 
@@ -1340,14 +1311,13 @@ class ImageController extends Controller
                         $row['thumb_bytes'] !== null ? (string) $row['thumb_bytes'] : null
                     );
                     if ($derived === \App\Models\Image::STATE_OK) {
-                        $this->stampThumbMetaState($pdo, $id, $row['processing_state'] ?? null, $derived);
+                        $this->writeThumbMetaState($pdo, $id, $row['processing_state'] ?? null, $derived);
                         $done++;
                         $results[] = ['id' => $id, 'ok' => true, 'note' => '元数据已完整，仅登记状态'];
                         continue;
                     }
 
-                    // v1.4.0-beta.2 性能: 走请求内缓存（原先每行查一次 → N+1）
-                    $profile = $this->resolveProfile(
+                    $profile = StorageProfile::resolve(
                         $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
                     );
                     if ($profile === null) {
@@ -1491,16 +1461,6 @@ class ImageController extends Controller
     }
 
     /**
-     * 写入 thumb_meta 处理状态（**保留** processing_state 里其它处理项的键）。
-     *
-     * 单独抽出来是因为补全工具有三条成功路径都要写状态，各自拼一遍 JSON 迟早走偏。
-     */
-    private function stampThumbMetaState(\PDO $pdo, int $id, ?string $currentJson, string $state): void
-    {
-        $this->writeThumbMetaState($pdo, $id, $currentJson, $state);
-    }
-
-    /**
      * 写一行 image 的 thumb_meta 状态，可附带其它列 —— 三条成功路径的唯一出口。
      *
      * 队列处理（新行）、实测字节数、重新生成缩略图这三条路径写的列各不相同，但
@@ -1549,7 +1509,12 @@ class ImageController extends Controller
         $page    = max(1, (int) $request->input('page', '1'));
         $perPage = 50;
 
-        $filterVars = [
+        // 视图变量一次性建好：DB 失败分支只需覆盖 error（此前为失败路径单独维护
+        // 一份 11 行的 $filterVars，再加成功路径又写一遍，两套参数集需同步维护）。
+        $viewVars = [
+            'error' => '',
+            'stats' => ['pending' => 0, 'processing' => 0, 'done' => 0, 'failed' => 0,
+                        'no_thumb' => 0, 'meta_retryable' => 0, 'total' => 0],
             'rows' => [],
             'total' => 0,
             'page' => 1,
@@ -1558,16 +1523,14 @@ class ImageController extends Controller
             'status' => $status,
             'search' => $search,
             'queueTotal' => 0,
+            'incomingDir' => self::incomingDir(),
         ];
 
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->render('admin/queue', $filterVars + [
-                'error' => '数据库连接失败: ' . $e->getMessage(),
-                'stats' => ['pending' => 0, 'processing' => 0, 'done' => 0, 'failed' => 0, 'no_thumb' => 0, 'total' => 0],
-                'incomingDir' => self::incomingDir(),
-            ]);
+            $viewVars['error'] = '数据库连接失败: ' . $e->getMessage();
+            $this->render('admin/queue', $viewVars);
             return;
         }
 
@@ -1620,25 +1583,18 @@ class ImageController extends Controller
         }
         unset($r);
 
-        $this->render('admin/queue', [
-            'error' => '',
-            'stats' => $stats,
-            'rows' => $rows,
-            'total' => $total,
-            'page' => $page,
-            'pageCount' => $pageCount,
-            'perPage' => $perPage,
-            'status' => $status,
-            'search' => $search,
-            'queueTotal' => $stats['pending'] + $stats['failed'],
-            'incomingDir' => $incomingDir,
-        ]);
+        $viewVars['stats'] = $stats;
+        $viewVars['rows'] = $rows;
+        $viewVars['total'] = $total;
+        $viewVars['page'] = $page;
+        $viewVars['pageCount'] = $pageCount;
+        $viewVars['queueTotal'] = $stats['pending'] + $stats['failed'];
+        $this->render('admin/queue', $viewVars);
     }
 
     /** POST /admin/images/requeue-failed —— 把 failed 的图片重置回 pending 重试。 */
     public function requeueFailed(Request $request): void
     {
-        $this->validateCsrf();
         try {
             $pdo = \App\Core\Database::getInstance();
             $n = $pdo->exec("UPDATE `images` SET `process_status` = 'pending' WHERE `process_status` = 'failed'");
@@ -1681,7 +1637,6 @@ class ImageController extends Controller
      */
     public function requeueOne(Request $request): void
     {
-        $this->validateCsrf();
         $id = (int) $request->input('id', '0');
         if ($id <= 0) {
             $this->json(['success' => false, 'error' => '缺少有效的图片 id'], 400);
@@ -1752,7 +1707,6 @@ class ImageController extends Controller
      */
     public function convertOriginals(Request $request): void
     {
-        $this->validateCsrf();
         // v1.5.0-beta.2（线上故障修复）: 致命错误必须变成**可读 JSON**，而不是空响应。
         // 此前本端点没有守卫（6 个重型端点里只有 processQueue / backfillThumbs 有）→
         // 大图解码 OOM 或超时时，前端只看到"服务器返回空响应（HTTP 500）"，
@@ -1842,7 +1796,7 @@ class ImageController extends Controller
             $driver = null;
             $uploadedNew = null;
             try {
-                $profile = $this->resolveProfile(
+                $profile = StorageProfile::resolve(
                     $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
                 );
                 $driver = $profile?->driver();
@@ -2002,7 +1956,6 @@ class ImageController extends Controller
      */
     public function cleanupStorage(Request $request): void
     {
-        $this->validateCsrf();
         // v2.0.0-beta.1: 重型端点必须把致命错误（OOM / 超时）变成可读 JSON。
         $this->jsonFatalGuard('cleanup-storage');
         $mode = (string) $request->input('mode', 'dry-run');
@@ -2092,13 +2045,11 @@ class ImageController extends Controller
      * 列出目录下的文件（相对根的绝对路径），按路径排序保证可预期。
      *
      * - 只返回常规文件：符号链接与目录都跳过（不跟随链接，避免越界删除）；
-     * - $excludeTop 里的顶层目录整体跳过（用于保护品牌 logo）；
      * - 最多返回 $limit 个（调用方按批处理，避免一次扫描巨量文件）。
      *
-     * @param list<string> $excludeTop
      * @return list<string>
      */
-    private function listFilesRecursive(string $dir, int $limit, array $excludeTop = []): array
+    private function listFilesRecursive(string $dir, int $limit): array
     {
         $out = [];
         if (!is_dir($dir) || $limit <= 0) {
@@ -2121,9 +2072,6 @@ class ImageController extends Controller
                 continue;
             }
             if (is_dir($full)) {
-                if (in_array($entry, $excludeTop, true)) {
-                    continue;
-                }
                 foreach ($this->listFilesRecursive($full, $limit - count($out)) as $f) {
                     $out[] = $f;
                     if (count($out) >= $limit) {
@@ -2177,7 +2125,6 @@ class ImageController extends Controller
      */
     public function queueClear(Request $request): void
     {
-        $this->validateCsrf();
         $scope = (string) $request->input('scope', 'pending');
         if (!in_array($scope, ['pending', 'failed', 'all'], true)) {
             $this->json(['success' => false, 'error' => '无效的清理范围'], 400);
@@ -2368,7 +2315,6 @@ class ImageController extends Controller
      */
     public function backfillHashes(Request $request): void
     {
-        $this->validateCsrf();
         // v1.5.0-beta.2: 回填要逐行取对象字节再算哈希（云端每行一次网络往返），
         // 属于长任务 —— 致命错误同样要变成可读 JSON 而不是空响应。
         $this->jsonFatalGuard('backfill-hashes');
@@ -2394,8 +2340,9 @@ class ImageController extends Controller
 
         if ($remaining > 0) {
             $rows = $pdo->query(
-                // 显式列（同 backfillThumbs：只取实际用到的 4 列）
-                "SELECT `id`, `path`, `storage_profile_id`, `file_hash` FROM `images` "
+                // 显式列：只取实际用到的 5 列。file_sha256 必须在这里 ——
+                // 缺了它 $hasSha 恒为 false（判断成了死代码，还会误以为"该列总是空的"）。
+                "SELECT `id`, `path`, `storage_profile_id`, `file_hash`, `file_sha256` FROM `images` "
                 . "WHERE {$missingCond} ORDER BY id ASC LIMIT {$batchSize}"
             )->fetchAll(\PDO::FETCH_ASSOC);
 
@@ -2408,7 +2355,7 @@ class ImageController extends Controller
                 try {
                     // 该图所属存储实例 —— storage_profile_id 精确优先，缺省回退默认实例
                     // v1.4.0-beta.2 性能: 走请求内缓存（原先每行查一次 → N+1）
-                    $profile = $this->resolveProfile(
+                    $profile = StorageProfile::resolve(
                         $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
                     );
                     if ($profile === null) {
@@ -2491,7 +2438,6 @@ class ImageController extends Controller
 
     public function upload(Request $request): void
     {
-        $this->validateCsrf();
         // v1.5.0-beta.2: 上传路径同样做 GD 解码（原图转码 + 缩略图），必须把致命错误
         // 变成可读 JSON —— 否则一张大图就能让"上传"变成一个没有内容的 500，
         // 用户看不出是文件太大、内存不足，还是超时。
@@ -2545,7 +2491,6 @@ class ImageController extends Controller
             // Image::newAssetPath 生成，与原文件名完全解耦）。
             $originalName = mb_substr((string) $files['name'][$i], 0, 255);
             $fileSize = $files['size'][$i];
-            $mimeType = $files['type'][$i];
 
             if ($files['error'][$i] !== UPLOAD_ERR_OK) {
                 $errors[] = "{$originalName}: Upload error code {$files['error'][$i]}";
@@ -2766,7 +2711,6 @@ class ImageController extends Controller
 
     public function update(Request $request): void
     {
-        $this->validateCsrf();
         $id = (int) $request->input('id');
         $image = Image::find($id);
 
@@ -2783,7 +2727,6 @@ class ImageController extends Controller
 
     public function delete(Request $request): void
     {
-        $this->validateCsrf();
         $id = (int) $request->input('id');
         $image = Image::find($id);
 
@@ -2802,7 +2745,6 @@ class ImageController extends Controller
 
     public function batchDelete(Request $request): void
     {
-        $this->validateCsrf();
         $ids = $request->input('ids', []);
         if (!is_array($ids)) {
             $ids = $ids === null || $ids === '' ? [] : [$ids];
@@ -2854,7 +2796,6 @@ class ImageController extends Controller
      */
     public function batchCategorize(Request $request): void
     {
-        $this->validateCsrf();
         $ids = $request->input('ids', []);
         if (!is_array($ids)) {
             $ids = $ids === null || $ids === '' ? [] : [$ids];
@@ -2898,7 +2839,6 @@ class ImageController extends Controller
 
     public function sort(Request $request): void
     {
-        $this->validateCsrf();
         $order = $request->input('order', []);
         if (empty($order) || !is_array($order)) {
             $this->json(['error' => 'No order data.'], 400);

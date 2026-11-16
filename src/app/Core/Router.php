@@ -88,7 +88,9 @@ class Router
                     };
                 }
 
-                $request = new Request($method, $uri, $params, $_GET, $_POST, getallheaders() ?: [], file_get_contents('php://input') ?: '');
+                // 不读 php://input：全库没有任何调用方消费请求体（JSON body 由各
+                // 端点自己按需读取），此前 GET 请求也会白读一次。
+                $request = new Request($method, $uri, $params, $_GET, $_POST, getallheaders() ?: []);
                 return $this->invoke($handler, $request);
             }
         }

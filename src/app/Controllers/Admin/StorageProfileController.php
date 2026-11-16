@@ -34,7 +34,6 @@ class StorageProfileController extends Controller
 
     public function create(Request $request): void
     {
-        $this->validateCsrf();
         try {
             $profile = $this->buildFromRequest($request);
             if (!$profile->save()) {
@@ -60,7 +59,6 @@ class StorageProfileController extends Controller
 
     public function update(Request $request): void
     {
-        $this->validateCsrf();
         try {
             $id = (int) $request->input('id', '0');
             $profile = StorageProfile::find($id);
@@ -104,7 +102,6 @@ class StorageProfileController extends Controller
 
     public function delete(Request $request): void
     {
-        $this->validateCsrf();
         try {
             $id = (int) $request->input('id', '0');
             $profile = StorageProfile::find($id);
@@ -169,7 +166,6 @@ class StorageProfileController extends Controller
 
     public function toggle(Request $request): void
     {
-        $this->validateCsrf();
         try {
             $id = (int) $request->input('id', '0');
             $profile = StorageProfile::find($id);
@@ -194,7 +190,6 @@ class StorageProfileController extends Controller
 
     public function setDefault(Request $request): void
     {
-        $this->validateCsrf();
         try {
             $id = (int) $request->input('id', '0');
             $profile = StorageProfile::find($id);
@@ -281,6 +276,12 @@ class StorageProfileController extends Controller
             }
             if ($provider !== 'obs' && $provider !== 'upyun' && $config['region'] === '') {
                 throw new \RuntimeException('对象存储实例需填写 Region');
+            }
+            // MR-39: endpoint / source_domain 的 SSRF 自检**在配置写入边界**做一次。
+            // （v2.0.0-beta.19 之前它在 S3Driver::loadProfile() 里，每次构造驱动都
+            //  error_log：合法的自建 MinIO 会让每个请求都刷一条警告，掩盖真告警。）
+            foreach (S3Driver::endpointSafetyWarnings($config['endpoint'], $config['source_domain']) as $w) {
+                error_log('[MoeRNG] 存储实例 endpoint 检查: ' . $w);
             }
         } else {
             // v1.2.0 迭代: local storage also carries signed_ttl (signed /files links).
