@@ -3,26 +3,7 @@ declare(strict_types=1);
 
 namespace App\Storage;
 
-/**
- * Huawei Cloud OBS via the OFFICIAL esdk-obs-php SDK (Obs\ObsClient).
- *
- * Fourth storage provider (after COS / OSS / AWS S3), added in v1.0.34-beta.1.
- * The SDK lives at <root>/sdk/obs/ (Obs/ + obs-autoloader.php copied from the
- * official package, examples stripped). Its runtime dependencies (Guzzle 7 /
- * PSR-7) are served by the single shared copy at <root>/sdk/cos/vendor/ —
- * load order matters: COS vendor autoloader MUST be required before the OBS
- * autoloader so both SDKs share one Guzzle/PSR instance.
- *
- * Configuration notes:
- *  - endpoint is REQUIRED (e.g. https://obs.cn-north-4.myhuaweicloud.com).
- *    Unlike COS/OSS/AWS there is no bucket+region host construction — OBS
- *    signs against the exact endpoint you give it.
- *  - signature defaults to OBS V2 when omitted (SDK's selectConstants('')
- *    resolves to V2), which needs no region. We leave it unset on purpose.
- *  - the SDK ships a hard monolog dependency in ObsLog, but logs are only
- *    initialized when ObsClient::initLog() is called — we never call it, so
- *    no monolog copy is needed.
- */
+/** 华为云 OBS：按固定 endpoint 签名、不需要 region。 */
 class ObsSdkDriver implements StorageInterface
 {
     private string $accessKey;
@@ -52,11 +33,6 @@ class ObsSdkDriver implements StorageInterface
         $this->signedTtl = max(1, $signedTtl);
     }
 
-    /**
-     * Whether the official OBS SDK can be used on this deployment.
-     * Requires the SDK autoloader + ObsClient + the shared COS vendor
-     * (Guzzle/PSR) + simplexml/libxml.
-     */
     public static function available(): bool
     {
         static $ok = null;
@@ -78,19 +54,16 @@ class ObsSdkDriver implements StorageInterface
             return $this->client;
         }
         $root = dirname(__DIR__, 2);
-        // Dependency order is a hard rule: the one shared Guzzle/PSR copy
-        // (COS vendor) must load before the OBS SDK autoloader.
+        // 依赖顺序：共享的 Guzzle 必须先于 OBS 自动加载，两个 SDK 才共用一份。
         require_once $root . '/sdk/cos/vendor/autoload.php';
         require_once $root . '/sdk/obs/obs-autoloader.php';
         $this->client = new \Obs\ObsClient([
             'key'      => $this->accessKey,
             'secret'   => $this->secretKey,
-            // v1.2.1: custom source domain (CNAME bound to the bucket) wins
-            // over the region endpoint so presigned URLs use that domain.
+            // 自定义源站域名优先于 endpoint，预签名 URL 也用它。
             'endpoint' => $this->sourceDomain !== '' ? $this->sourceDomain : $this->endpoint,
-            // signature left unset → OBS V2 (no region required)
-            // MR-20: bound connect/socket timeouts so a stalled endpoint fails
-            // fast instead of pinning a FPM worker.
+            // 不设 signature，SDK 默认 OBS V2，无需 region。
+            // 收紧连接与请求超时，避免端点卡死占住 FPM 进程。
             'connect_timeout' => 5,
             'socket_timeout'  => 30,
             'timeout'         => 30,
@@ -100,7 +73,6 @@ class ObsSdkDriver implements StorageInterface
 
     public function upload(string $localPath, string $remotePath, string $contentType): string
     {
-        // Stream the file body (the SDK accepts a resource for Body).
         $stream = fopen($localPath, 'rb');
         if ($stream === false) {
             throw new \RuntimeException("Cannot open local file for upload: {$localPath}");
@@ -143,7 +115,7 @@ class ObsSdkDriver implements StorageInterface
 
     public function exists(string $remotePath): bool
     {
-        // OBS has no headObject — getObjectMetadata is the HEAD-object call.
+        // OBS 没有 headObject，getObjectMetadata 才是取对象元数据的调用。
         try {
             $this->client()->getObjectMetadata([
                 'Bucket' => $this->bucket,
@@ -169,7 +141,7 @@ class ObsSdkDriver implements StorageInterface
         if ($this->cdnUrl !== '') {
             return rtrim($this->cdnUrl, '/') . '/' . ltrim($remotePath, '/');
         }
-        // Private bucket by default — 7-day presigned GET.
+        // bucket 默认私有，返回短时预签名 GET 链接。
         try {
             $model = $this->client()->createSignedUrl([
                 'Method'  => 'GET',
@@ -179,8 +151,7 @@ class ObsSdkDriver implements StorageInterface
             ]);
             return (string) ($model['SignedUrl'] ?? '');
         } catch (\Throwable $e) {
-            // MR-42: 私有 bucket 的裸 URL 必然 403，直接返回等于给出一个必然失效的
-            // 链接（图片仍显示占位符，极难发现）。只有探测确认可匿名读才降级。
+            // 预签名失败时，只有裸 URL 确认可匿名读才降级，否则抛错。
             $host = $this->sourceDomain !== '' ? $this->sourceDomain : $this->endpoint;
             $bare = rtrim($host, '/') . '/' . $this->bucket . '/' . ltrim($remotePath, '/');
             if (!\App\Storage\S3Driver::isPubliclyReadable($bare)) {
@@ -192,12 +163,7 @@ class ObsSdkDriver implements StorageInterface
         }
     }
 
-    /**
-     * Real connectivity test used by doctor.php — a live PUT probe.
-     * Mirrors CosSdkDriver::testConnection(): actual upload + immediate
-     * delete, because bucket-level checks need permissions image-bucket
-     * users often lack (HeadBucket 403 ≠ broken deployment).
-     */
+    // 用真实 PUT 探测：bucket 级检查常因权限 403，不能代表上传是否可用。
     public function testConnection(): bool
     {
         $key = 'doctor-probe-' . bin2hex(random_bytes(4)) . '.txt';
@@ -216,7 +182,6 @@ class ObsSdkDriver implements StorageInterface
         try {
             $this->client()->deleteObject(['Bucket' => $this->bucket, 'Key' => $key]);
         } catch (\Throwable) {
-            // ignore
         }
         return $ok;
     }

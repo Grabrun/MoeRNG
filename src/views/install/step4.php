@@ -7,7 +7,6 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=<?= ASSET_VER ?>">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=<?= ASSET_VER ?>">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>">
-    
 </head>
 <body>
     <div class="install-container">

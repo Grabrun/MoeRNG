@@ -4,16 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= $csrf_token ?>">
-    <?php /* 队列单批张数：与 ImageController::QUEUE_BATCH_MAX 同一来源，避免前后端各写一个数字 */ ?>
+    <?php /* 队列单批张数与 ImageController::QUEUE_BATCH_MAX 同一来源。 */ ?>
     <meta name="queue-batch" content="<?= \App\Controllers\Admin\ImageController::QUEUE_BATCH_MAX ?>">
     <title><?= h($title ?? '仪表盘') ?> - MoeRNG Admin</title>
     <link rel="preconnect" href="https://miaoda.feishu.cn" crossorigin>
     <link rel="preconnect" href="https://sf3-scmcdn-cn.feishucdn.com" crossorigin>
     <link rel="dns-prefetch" href="https://miaoda.feishu.cn">
     <link rel="dns-prefetch" href="https://sf3-scmcdn-cn.feishucdn.com">
-    <!-- v2.0.0-beta.9: 字体 CSS 异步化 —— media=print 使其不阻塞首屏渲染，
-        紧随其后的 nonce 脚本立即切回 all（CSP script-src 禁 inline onload，此写法合规）。
-        display=swap 保证字体到达前以系统字体渲染，无空白。 -->
+    <!-- 字体 CSS 异步化：media=print 不阻塞首屏，nonce 脚本立即切回 all（CSP 禁 inline onload）。 -->
     <link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" id="font-css" media="print">
     <script<?= \App\Core\CspNonce::attr() ?>>
     try{var l=document.getElementById('font-css');if(l){l.media='all';}}catch(e){}
@@ -32,7 +30,7 @@
                 <a href="/admin/users" class="<?= ($title ?? '') === '用户管理' ? 'active' : '' ?>">用户管理</a>
                 <a href="/admin/apikeys" class="<?= ($title ?? '') === 'API Key 管理' ? 'active' : '' ?>">API Keys</a>
                 <a href="/" target="_blank" class="mt-3 border-top pt-3">返回前台</a>
-                <!-- v1.3.0-beta.2 (CVE-2026-MR-005): logout is POST + CSRF now -->
+                <!-- 退出登录必须 POST + CSRF：GET 链接可被 <img src> 强制触发。 -->
                 <form method="POST" action="/admin/logout" class="logout-form">
                     <input type="hidden" name="_csrf_token" value="<?= \App\Core\Session::csrfToken() ?>">
                     <button type="submit">退出登录</button>

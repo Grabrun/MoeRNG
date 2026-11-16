@@ -5,44 +5,14 @@ namespace App\Storage;
 
 interface StorageInterface
 {
-    /**
-     * Upload a file to storage
-     * @param string $localPath Local temporary file path
-     * @param string $remotePath Remote storage path/key
-     * @param string $contentType MIME type
-     * @return string Public URL of the uploaded file
-     */
     public function upload(string $localPath, string $remotePath, string $contentType): string;
 
-    /**
-     * Delete a file from storage
-     * @param string $remotePath Remote storage path/key
-     * @return bool
-     */
     public function delete(string $remotePath): bool;
 
-    /**
-     * Get the public URL of a file
-     * @param string $remotePath Remote storage path/key
-     * @return string
-     */
     public function url(string $remotePath): string;
 
-    /**
-     * Check if a file exists
-     * @param string $remotePath Remote storage path/key
-     * @return bool
-     */
     public function exists(string $remotePath): bool;
 
-    /**
-     * v1.5.0-beta.3 迭代: 各档缩略图实测字节数。
-     *
-     * 用途：缩略图的字节数在生成时入库（`thumb_bytes` 列），**存量行**需要补全，
-     * 而字节数无法从其它数据推导（取决于质量设置与 libwebp 版本）→ 只能实测。
-     *
-     * 返回 `null` 表示**未知**（对象缺失 / 网络异常 / 无法读取）。调用方必须按未知处理，
-     * **绝不能当成 0**（否则接口会把「不知道」谎报成「空文件」）。
-     */
+    /** 返回 null 表示大小未知，调用方不得当作 0。 */
     public function size(string $remotePath): ?int;
 }

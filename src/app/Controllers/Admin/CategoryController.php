@@ -14,8 +14,7 @@ class CategoryController extends Controller
     {
         $categories = Category::getTree();
 
-        // v1.2.1 UI 深度分析 (分类-02): per-category image counts for badges.
-        // One aggregate query (GROUP BY category_id) instead of N+1 lookups.
+        // 一次 GROUP BY 聚合取各类图片数，避免 N+1。
         $counts = [];
         try {
             $rows = \App\Core\Database::getInstance()
@@ -25,7 +24,7 @@ class CategoryController extends Controller
                 $counts[(int) $r['category_id']] = (int) $r['c'];
             }
         } catch (\Throwable) {
-            // images table may not exist yet (fresh install)
+            // images 表可能尚未创建（全新安装）。
         }
 
         $this->render('admin/categories', [
@@ -52,8 +51,7 @@ class CategoryController extends Controller
             $this->fail('分类名称不能为空。', 422, '/admin/categories');
         }
 
-        // slug 有 UNIQUE 约束。注意 PDO 是 ERRMODE_EXCEPTION，唯一键冲突是
-        // **抛异常**而非返回 false，只判 save() 的返回值不够。
+        // slug 有 UNIQUE 约束；PDO 是 ERRMODE_EXCEPTION，冲突会抛异常而非返回 false。
         try {
             $saved = $category->save();
         } catch (\PDOException $e) {
@@ -65,7 +63,6 @@ class CategoryController extends Controller
         if (!$saved) {
             $this->fail('分类保存失败，请重试。', 422, '/admin/categories');
         }
-        // MR-38: category mutations are referenced by Dashboard actionLabels.
         \App\Models\AuditLog::record('category_create', [
             'id'        => (int) $category->id,
             'name'      => (string) $category->name,
@@ -90,15 +87,12 @@ class CategoryController extends Controller
 
         $parentId = $request->input('parent_id');
         $parentId = $parentId !== '' && $parentId !== 'null' && $parentId !== null ? (int) $parentId : null;
-        // Guard against making a category its own parent (or a child of one of
-        // its own descendants) — that produces an infinite tree walk.
+        // 防止把分类挂到自身或后代，否则树遍历成环。
         if ($parentId !== null && $this->wouldCreateCycle($id, $parentId)) {
             $this->fail('不能把分类移动到它自己或它的子分类下。', 422, '/admin/categories');
         }
         $category->parent_id = $parentId;
 
-        // 同 create()：重复 slug 撞 UNIQUE。注意是**抛异常**（PDO ERRMODE_EXCEPTION），
-        // 必须 try/catch，不能只判返回值。
         try {
             $saved = $category->save();
         } catch (\PDOException $e) {
@@ -110,7 +104,6 @@ class CategoryController extends Controller
         if (!$saved) {
             $this->fail('分类保存失败，请重试。', 422, '/admin/categories');
         }
-        // MR-38: category edit.
         \App\Models\AuditLog::record('category_update', [
             'id'   => (int) $category->id,
             'name' => (string) $category->name,
@@ -131,10 +124,8 @@ class CategoryController extends Controller
         try {
             $category->delete();
         } catch (\RuntimeException $e) {
-            // MR-16: depth-guard / transaction rollback surfaced here instead of a 500.
             $this->fail($e->getMessage(), 422, '/admin/categories');
         }
-        // MR-38: recursive subtree deletion.
         \App\Models\AuditLog::record('category_delete', [
             'id'   => $id,
             'name' => $deletedName,
@@ -142,19 +133,12 @@ class CategoryController extends Controller
         $this->ok('分类已删除。', ['id' => $id], '/admin/categories');
     }
 
-    /**
-     * 判断 PDOException 是否为 slug 唯一键冲突（MySQL errno 1062）。
-     *
-     * categories.slug 有 UNIQUE 约束（schema.sql），重复 slug 是用户在后台新建
-     * 同名分类时最常撞到的错误。用它把「崩成 500 白屏」翻译成可读的 422 提示。
-     * 只认 1062 这一 errno，其它数据库错误照常上抛，避免掩盖真实故障。
-     */
+    /** 只认 MySQL 1062（唯一键冲突），其它数据库错误照常上抛。 */
     private function isDuplicateSlug(\PDOException $e): bool
     {
         return (int) ($e->errorInfo[1] ?? 0) === 1062;
     }
 
-    /** True when re-parenting $id under $newParentId would form a loop. */
     private function wouldCreateCycle(int $id, int $newParentId): bool
     {
         if ($id === $newParentId) return true;

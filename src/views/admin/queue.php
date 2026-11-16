@@ -1,15 +1,5 @@
 <?php
 include __DIR__ . '/helpers.php';
-/**
- * @var array  $stats
- * @var array  $rows        合并后的队列行（pending + failed）
- * @var int    $total       当前筛选下的总条数
- * @var int    $page @var int $pageCount @var int $perPage
- * @var string $status      筛选状态：all | pending | failed
- * @var string $search      搜索词（文件名或 ID）
- * @var int    $queueTotal  待处理 + 失败总数
- * @var string $incomingDir @var string $error
- */
 admin_header('图片处理', 'page-queue');
 
 $queryBase = 'status=' . urlencode($status) . '&q=' . urlencode($search);
@@ -63,13 +53,11 @@ $queryBase = 'status=' . urlencode($status) . '&q=' . urlencode($search);
 </div>
 <?php endif; ?>
 
-<!-- v1.4.0-beta.2: 待处理与失败**合并为单一队列**（按状态筛选 + 按文件名/ID 搜索） -->
 <div class="card mb-3">
     <h3 class="queue-section-head">
         <span>队列</span>
         <span class="queue-head-right">
             <small class="queue-count"><?= number_format($total) ?> 条<?= $total > $perPage ? '（第 ' . $page . '/' . $pageCount . ' 页）' : '' ?></small>
-            <!-- 危险操作移到卡片右上角：默认收起，展开为浮层（.card 无 overflow:hidden，不会被裁剪） -->
             <details class="queue-danger" id="queue-danger">
                 <summary class="btn btn-outline btn-sm queue-danger-toggle"><?= icon('trash', 16) ?> 清空队列</summary>
                 <div class="queue-danger-pop">

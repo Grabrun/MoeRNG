@@ -10,16 +10,10 @@ abstract class Model
 {
     protected static string $table;
     protected static string $primaryKey = 'id';
-    /**
-     * Whether the primary key is an AUTO_INCREMENT column.
-     * Models keyed by a natural/business key (e.g. Setting::$primaryKey = 'key')
-     * MUST set this to false, otherwise insert() would clobber the real key
-     * with lastInsertId() === "0".
-     */
+    // 自然主键模型必须设为 false，否则 insert 会用 lastInsertId()（"0"）覆盖真主键。
     protected static bool $incrementing = true;
     protected static array $fillable = [];
     protected array $attributes = [];
-    /** True once the instance is known to correspond to a persisted row. */
     protected bool $exists = false;
 
     public function __construct(array $attributes = [])
@@ -27,7 +21,6 @@ abstract class Model
         $this->fill($attributes);
     }
 
-    /** Build an instance from a DB row and flag it as persisted. */
     protected static function hydrate(array $row): static
     {
         $model = new static($row);
@@ -38,10 +31,7 @@ abstract class Model
     public function fill(array $attributes): void
     {
         foreach ($attributes as $key => $value) {
-            // The primary key must always survive hydration, otherwise every
-            // model fetched from the DB ends up with id === null (fillable acts
-            // as a mass-assignment gate and intentionally omits `id`). Without
-            // this, login writes user_id = null and the session can never stick.
+            // 主键永远放行：$fillable 不含 id，否则所有 hydrated 行的 id 都是 null。
             if ($key === static::$primaryKey || in_array($key, static::$fillable, true)) {
                 $this->attributes[$key] = $value;
             }
@@ -60,10 +50,7 @@ abstract class Model
 
     public function save(): bool
     {
-        // Auto-increment tables: presence of the id means the row already exists.
-        // Natural-key tables (Setting): the key is set even for brand new rows, so
-        // we must rely on the hydration flag instead — otherwise every new setting
-        // silently ran an UPDATE that matched zero rows and was never persisted.
+        // 自然主键表新行的 key 已存在，只能靠 exists 标记区分插入/更新。
         $shouldUpdate = static::$incrementing
             ? isset($this->attributes[static::$primaryKey])
             : $this->exists;
@@ -81,8 +68,7 @@ abstract class Model
     {
         $data = array_intersect_key($this->attributes, array_flip(static::$fillable));
 
-        // Models with a natural primary key (Setting::$primaryKey === 'key') do not
-        // list it in $fillable, so it must be carried into the INSERT explicitly.
+        // 自然主键不在 $fillable 里，需显式带进 INSERT。
         if (!static::$incrementing
             && isset($this->attributes[static::$primaryKey])
             && !array_key_exists(static::$primaryKey, $data)) {
@@ -98,8 +84,7 @@ abstract class Model
         $stmt = Database::getInstance()->prepare($sql);
 
         if ($stmt->execute(array_values($data))) {
-            // Only auto-increment tables hand back a usable lastInsertId(); for a
-            // natural key it returns "0" and would destroy the real identifier.
+            // lastInsertId 只对自增表有效，自然键会返回 "0"。
             if (static::$incrementing) {
                 $this->attributes[static::$primaryKey] = (int) Database::getInstance()->lastInsertId();
             }
@@ -111,15 +96,9 @@ abstract class Model
     protected function update(): bool
     {
         $data = array_intersect_key($this->attributes, array_flip(static::$fillable));
-        // Never write the primary key inside SET — it is the WHERE target.
         unset($data[static::$primaryKey]);
         if (empty($data)) return false;
 
-        // NOTE: the separator is ", " and NOT "`, `". Each fragment produced by
-        // array_map() is already fully back-quoted ("`name` = ?"); joining them
-        // with "`, `" injected stray back-quotes between the pairs, which is a
-        // SQL syntax error and was the source of every HTTP 500 raised by a
-        // multi-field UPDATE (API key edit, API key disable, settings save...).
         $sets = implode(', ', array_map(fn($c) => "`{$c}` = ?", array_keys($data)));
         $sql = "UPDATE `" . static::$table . "` SET {$sets} WHERE `" . static::$primaryKey . "` = ?";
 
@@ -147,13 +126,7 @@ abstract class Model
         return $row ? static::hydrate($row) : null;
     }
 
-    // ── SQL injection hardening (CVE-2026-MR-001 / MR-002) ──────────────
-    // Every dynamic SQL fragment that reaches these query helpers must pass
-    // validation. Today all callers pass hardcoded literals; these guards
-    // make it IMPOSSIBLE for a future caller to turn a user-controlled value
-    // into injected SQL.
-
-    /** Column/identifier names: strict [A-Za-z_][A-Za-z0-9_]* only. */
+    // 动态 SQL 片段一律过校验：调用方无法把外部输入变成注入。
     private static function assertIdentifier(string $name): string
     {
         if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name)) {
@@ -162,12 +135,6 @@ abstract class Model
         return $name;
     }
 
-    /**
-     * ORDER BY clauses: only "col [ASC|DESC][, col [ASC|DESC]...]" is
-     * accepted. Column names are validated as identifiers; direction tokens
-     * must be exactly ASC or DESC. Anything else (subqueries, comments,
-     * stacked statements, functions) is rejected.
-     */
     private static function assertOrderBy(string $orderBy): string
     {
         $orderBy = trim($orderBy);
@@ -187,13 +154,7 @@ abstract class Model
         return $orderBy;
     }
 
-    /**
-     * WHERE fragments are composed by INTERNAL code only (hardcoded strings
-     * with ? placeholders; user values always go through bound params). As
-     * defense-in-depth, reject comment markers / statement separators /
-     * identifier-quoting that a hardcoded fragment has no business using —
-     * the same characters an injected payload needs.
-     */
+    // WHERE 只由内部拼装；这里拒绝注释符、语句分隔符与反引号——注入载荷所需的字符。
     private static function assertWhereFragment(string $where): string
     {
         if (preg_match('/[;`]|--|\/\*|\*\//', $where)) {
@@ -243,8 +204,7 @@ abstract class Model
 
     public static function paginate(int $page = 1, int $perPage = 20, string $orderBy = '', string $where = '', array $params = []): array
     {
-        // (int) cast is defense-in-depth: LIMIT/OFFSET are interpolated, so
-        // never trust the caller to have coerced these to integers.
+        // LIMIT/OFFSET 直接插值，必须强制转 int。
         $page = max(1, (int) $page);
         $perPage = max(1, (int) $perPage);
         $orderBy = self::assertOrderBy($orderBy);

@@ -12,7 +12,6 @@
     </div>
 </div>
 
-<!-- Search & Filter -->
 <div class="card mb-3">
     <form method="GET" action="/admin/images" class="flex gap-2 flex-wrap">
         <input type="text" name="search" class="form-control" value="<?= h($search) ?>" placeholder="搜索文件名..." class="flex-1 min-w-200">
@@ -30,7 +29,6 @@
     </form>
 </div>
 
-<!-- Image Grid -->
 <div class="image-grid" id="sortable-container">
     <?php foreach ($images as $img): ?>
     <div class="image-item" draggable="true" data-id="<?= $img->id ?>" data-url="<?= h($img->url()) ?>"
@@ -58,7 +56,6 @@
     <?php endforeach; ?>
 </div>
 
-<!-- Empty state (revealed after the last image is deleted) -->
 <div id="image-empty" class="empty-state <?= empty($images) ? '' : 'hidden' ?>">
     <div class="empty-icon"><?= icon('image', 32) ?></div>
     <h3>暂无图片</h3>
@@ -68,7 +65,6 @@
     </div>
 </div>
 
-<!-- Pagination (v1.2.0 迭代: per-page selector keeps search/category params) -->
 <div class="pagination-wrap">
     <div class="pagination">
         <?php for ($i = 1; $i <= $lastPage; $i++): ?>
@@ -91,10 +87,8 @@
     </div>
 </div>
 
-<!-- Batch Bar -->
 <div id="batch-bar" class="hidden">
     <span>已选 <strong class="count">0</strong> 项</span>
-    <!-- v1.2.1 迭代: bulk re-categorize (admin UI audit I2) -->
     <select id="batch-category" class="form-control w-auto" aria-label="批量修改分类">
         <option value="">批量改分类…</option>
         <option value="0">未分类</option>
@@ -110,7 +104,6 @@
     <button class="btn btn-outline btn-sm" id="backfill-thumbs" title="为历史图片补生成缩略图（不改动处理状态，图片始终可见）">补全历史缩略图</button>
 </div>
 
-<!-- Hash backfill progress（复用轻量样式） -->
 <div id="backfill-progress" class="hidden backfill-float">
     <div class="health-progress-text" id="backfill-text">准备回填…</div>
     <div class="health-progress-track">
@@ -119,7 +112,6 @@
     <div class="health-progress-detail" id="backfill-detail"></div>
 </div>
 
-<!-- Upload Modal -->
 <div class="modal-overlay" id="upload-modal">
     <div class="modal max-w-600">
         <h2>上传图片</h2>
@@ -164,7 +156,6 @@
     </div>
 </div>
 
-<!-- Preview Modal -->
 <div class="modal-overlay" id="preview-modal">
     <div class="modal max-w-800">
         <div class="flex-between mb-2">
@@ -176,7 +167,6 @@
     </div>
 </div>
 
-<!-- Lightbox (fullscreen preview) -->
 <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="图片预览">
     <button type="button" class="lb-btn lb-close" id="lb-close" aria-label="关闭预览"><?= icon('x', 20) ?></button>
     <button type="button" class="lb-btn lb-prev" id="lb-prev" aria-label="上一张"><?= icon('chevron-left', 22) ?></button>

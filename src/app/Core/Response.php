@@ -16,13 +16,7 @@ class Response
             header("{$k}: {$v}");
         }
 
-        // v1.3.3-beta.1 修复（生产 P0）: json_encode() 失败时返回 false，直接 echo 会
-        // 输出**空响应体** —— 前端 fetch().json() 于是抛出
-        //   "Failed to execute 'json' on 'Response': Unexpected end of JSON input"
-        // 这类空响应极难定位（看不到任何错误信息）。两个措施：
-        //   1) 始终加 JSON_INVALID_UTF8_SUBSTITUTE —— 非法 UTF-8（异常消息里常带
-        //      文件名/字节序列）不再让整个编码失败，而是替换为 U+FFFD；
-        //   2) 若仍失败，输出一个**保证合法**的降级 JSON，携带 json_last_error_msg()。
+        // json_encode 失败会输出空响应体，故加 JSON_INVALID_UTF8_SUBSTITUTE；仍失败则降级为合法 JSON 并带错误原因。
         $flags |= JSON_INVALID_UTF8_SUBSTITUTE;
         $body = json_encode($data, $flags);
         if ($body === false) {
@@ -31,7 +25,6 @@ class Response
                 'error'   => 'JSON 编码失败: ' . json_last_error_msg() . '（返回数据含无法编码的内容）',
                 'json_encode_failed' => true,
             ], JSON_INVALID_UTF8_SUBSTITUTE);
-            // 降级 JSON 自身若也失败（不应发生），至少给一个合法的最小 JSON
             echo $fallback !== false ? $fallback : '{"success":false,"error":"response encoding failed"}';
             exit;
         }
@@ -41,12 +34,7 @@ class Response
 
     public function redirect(string $url, int $status = 302): never
     {
-        // v1.3.0-beta.2 安全加固 (CVE-2026-MR-010, CWE-601): defense-in-depth on
-        // every Location header. Callers today pass internal paths or object-
-        // storage URLs (the random endpoint 302s to COS/OSS), so the rule is:
-        //   - reject header injection (\r\n) unconditionally;
-        //   - absolute URLs must be http/https (no javascript:/data:/...);
-        //   - everything else must be a site-relative path starting with '/'.
+        // Location 防 CRLF 注入和开放重定向：只允许 http(s) 绝对地址或站点相对路径。
         $url = str_replace(["\r", "\0"], '', $url);
         if (str_contains($url, "\n") || str_starts_with($url, '//')
             || preg_match('/^\s*[\w.+-]+:/i', $url) && !preg_match('#^https?://#i', $url)) {

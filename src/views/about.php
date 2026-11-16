@@ -3,7 +3,6 @@
 
     <main id="main-content">
     <div class="container">
-        <!-- About (hardcoded; mirrors the GitHub repo About block) -->
         <section id="about" class="section reveal">
             <h2 class="section-title">关于</h2>
             <div class="about-grid">

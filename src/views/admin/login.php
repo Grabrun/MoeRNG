@@ -5,11 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="csrf-token" content="<?= $csrf_token ?>">
     <title>Login - MoeRNG Admin</title>
-    <!-- v1.2.0 迭代: brand favicon on the login page too -->
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=<?= ASSET_VER ?>">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=<?= ASSET_VER ?>">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>">
-    
 </head>
 <body>
     <button type="button" class="theme-toggle theme-toggle-float" id="theme-toggle" aria-label="切换深浅主题" title="切换深浅主题">

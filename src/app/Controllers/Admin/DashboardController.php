@@ -19,8 +19,6 @@ class DashboardController extends Controller
     {
         $recentImages = Image::paginate(1, 6, 'id DESC', "status = 'active'")['data'];
 
-        // 分类分布：扁平树 + 每类图片数
-        // v1.2.1 deep-audit: N+1 修复——单条 GROUP BY 聚合替代每类一次 COUNT。
         $countsByCat = [];
         try {
             $rows = Database::getInstance()
@@ -30,8 +28,6 @@ class DashboardController extends Controller
                 $countsByCat[(int) $r['category_id']] = (int) $r['c'];
             }
         } catch (\Throwable) {
-            // best-effort — 分类统计失败时降级为空数组（分类分布显示全 0），
-            // 统计查询绝不允许阻断仪表盘本身。
         }
 
         $categoryStats = [];
@@ -45,7 +41,6 @@ class DashboardController extends Controller
         }
         usort($categoryStats, fn ($a, $b) => $b['count'] <=> $a['count']);
 
-        // 存储用量（v1.2.0 迭代）
         $usageRow = Database::getInstance()
             ->query("SELECT COUNT(*) AS cnt, COALESCE(SUM(file_size), 0) AS total_bytes,
                             COALESCE(AVG(file_size), 0) AS avg_bytes,
@@ -59,7 +54,6 @@ class DashboardController extends Controller
             'max_bytes'   => (float) ($usageRow['max_bytes'] ?? 0),
         ];
 
-        // 7 天上传趋势（v1.2.0 迭代）
         $trend = [];
         $trendRows = Database::getInstance()
             ->query("SELECT DATE(created_at) AS d, COUNT(*) AS c
@@ -76,7 +70,6 @@ class DashboardController extends Controller
             $trend[] = ['day' => date('m-d', strtotime($day)), 'count' => $byDay[$day] ?? 0];
         }
 
-        // 最近操作日志（v1.2.0 迭代）
         $logs = [];
         try {
             $logRows = Database::getInstance()
@@ -107,48 +100,39 @@ class DashboardController extends Controller
             $logs = [];
         }
 
-        // 存储概览
         $storage = null;
         $default = StorageProfile::defaultProfile();
         if ($default) {
             $storage = [
                 'name'     => (string) $default->name,
-                'driver'   => (string) ($default->driver ?? 'local'), // local | s3
+                'driver'   => (string) ($default->driver ?? 'local'),
                 'provider' => (string) ($default->provider ?? ''),
                 'is_local' => !$default->isS3(),
             ];
         }
 
-        // 系统信息 —— 时区统一为规范标识 "Asia/Shanghai"，避免 PHP 某些环境
-        // 用 date_default_timezone_get() 返回别名 "PRC"（Asia/Shanghai 的合法
-        // 别名），在仪表盘上显示成 PRC 显得不专业。
+        // PHP 某些环境会返回 PRC（Asia/Shanghai 的别名），统一显示规范名。
         $system = [
             'php'      => PHP_VERSION,
             'timezone' => (date_default_timezone_get() === 'PRC') ? 'Asia/Shanghai' : date_default_timezone_get(),
             'storage'  => $storage,
         ];
 
-        // v1.2.0 迭代: API call volume & site visits (daily counters).
         $apiStats    = Stats::summary(Stats::TABLE_API);
         $visitStats  = Stats::summary(Stats::TABLE_VISITS);
         $apiSeries   = Stats::series(Stats::TABLE_API);
         $visitSeries = Stats::series(Stats::TABLE_VISITS);
 
-        // v1.2.0 迭代: server system status (best effort on each metric).
-        // No shell_exec (disabled by Baota). Memory prefers PHP-process metric
-        // (memory_get_usage / limit) and only falls back to /proc/meminfo.
         $status = ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => null, 'mem_limit' => null];
         if (function_exists('sys_getloadavg')) {
             $la = @sys_getloadavg();
             if (is_array($la)) {
-                // Core count from /proc/cpuinfo — shell_exec() is disabled by
-                // Baota's php.ini disable_functions, so nproc is unavailable.
+                // 宝塔禁用 shell_exec，核心数改从 /proc/cpuinfo 统计。
                 $cpuInfo = @file_get_contents('/proc/cpuinfo');
                 $cores = ($cpuInfo !== false) ? max(1, substr_count($cpuInfo, 'processor')) : 1;
                 $status['cpu'] = round(min(100, $la[0] / $cores * 100), 1);
             }
         }
-        // v1.2.0 迭代: PHP-process memory (preferred) → /proc/meminfo fallback.
         $status['php_mem']  = memory_get_usage(true);
         $status['mem_limit'] = (string) ini_get('memory_limit');
         $limitBytes = -1;

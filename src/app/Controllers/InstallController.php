@@ -11,9 +11,6 @@ use App\Core\Database;
 
 class InstallController extends Controller
 {
-    /**
-     * GET /install - Step 1: Environment check
-     */
     public function index(Request $request): void
     {
         $this->guardNotInstalled();
@@ -26,15 +23,7 @@ class InstallController extends Controller
         ]);
     }
 
-    /**
-     * 重装守卫：已安装站点一律重定向到首页。
-     *
-     * 没有它，任何人重放安装向导的 POST 就能覆盖 config/database.php 并重建管理员
-     * （完整接管）。所有入口（index / step2-4 / complete / showStep2-4）都必须调用，
-     * 因此收成一个私有方法 —— 原先 5 处内联复制，安全补丁要改 6 遍。
-     *
-     * v1.3.3-beta.1 附注：showStep2/3/4 只重渲染、不写入，故复用同一守卫即可。
-     */
+    /** 已安装站点禁止重装，否则可覆盖配置并重建管理员（完整接管）。 */
     private function guardNotInstalled(): void
     {
         if (\App\Core\Config::get('app.installed', false)) {
@@ -42,7 +31,6 @@ class InstallController extends Controller
         }
     }
 
-    /** GET /install/step2 —— 回到数据库配置（重渲染，不写 session）。 */
     public function showStep2(Request $request): void
     {
         $this->guardNotInstalled();
@@ -55,14 +43,12 @@ class InstallController extends Controller
         ]);
     }
 
-    /** GET /install/step3 —— 回到管理员账号（重渲染，不写 session）。 */
     public function showStep3(Request $request): void
     {
         $this->guardNotInstalled();
         $this->render('install/step3', ['error' => '']);
     }
 
-    /** GET /install/step4 —— 回到存储配置（重渲染，不写 session）。 */
     public function showStep4(Request $request): void
     {
         $this->guardNotInstalled();
@@ -73,9 +59,6 @@ class InstallController extends Controller
 
     public function step2(Request $request): void
     {
-        // Security: block reinstall on an already-installed site. Without
-        // this, anyone could POST through the wizard and overwrite
-        // config/database.php + recreate the admin account (full takeover).
         $this->guardNotInstalled();
         $this->render('install/step2', [
             'db' => [
@@ -88,16 +71,9 @@ class InstallController extends Controller
         ]);
     }
 
-    /**
-     * POST /install/step3 - Admin account
-     */
     public function step3(Request $request): void
     {
-        // Security: block reinstall on an already-installed site. Without
-        // this, anyone could POST through the wizard and overwrite
-        // config/database.php + recreate the admin account (full takeover).
         $this->guardNotInstalled();
-        // Save DB config to session
         \App\Core\Session::set('install_db', [
             'host' => $request->input('db_host', '127.0.0.1'),
             'port' => $request->input('db_port', '3306'),
@@ -106,7 +82,6 @@ class InstallController extends Controller
             'password' => $request->input('db_password', ''),
         ]);
 
-        // Test connection
         $dbConfig = \App\Core\Session::get('install_db');
         $connected = Database::test($dbConfig);
 
@@ -120,14 +95,8 @@ class InstallController extends Controller
         $this->render('install/step3', []);
     }
 
-    /**
-     * POST /install/step4 - Storage config
-     */
     public function step4(Request $request): void
     {
-        // Security: block reinstall on an already-installed site. Without
-        // this, anyone could POST through the wizard and overwrite
-        // config/database.php + recreate the admin account (full takeover).
         $this->guardNotInstalled();
         \App\Core\Session::set('install_admin', [
             'email' => $request->input('email', ''),
@@ -135,7 +104,6 @@ class InstallController extends Controller
             'password' => $request->input('password', ''),
         ]);
 
-        // Validate
         $admin = \App\Core\Session::get('install_admin');
         if (empty($admin['email']) || empty($admin['username']) || empty($admin['password'])) {
             $this->render('install/step3', [
@@ -151,29 +119,20 @@ class InstallController extends Controller
         ]);
     }
 
-    /**
-     * POST /install/complete - Execute installation
-     */
     public function complete(Request $request): void
     {
-        // Security: block reinstall on an already-installed site. Without
-        // this, anyone could POST through the wizard and overwrite
-        // config/database.php + recreate the admin account (full takeover).
         $this->guardNotInstalled();
         $dbConfig = \App\Core\Session::get('install_db');
         $adminConfig = \App\Core\Session::get('install_admin');
         $storageDriver = $request->input('storage_driver', 'local');
 
         try {
-            // Connect to database
             Database::init($dbConfig);
             $db = Database::connect();
 
-            // Run migrations
             $this->runMigrations($db);
 
-            // Create admin user (idempotent: re-running the installer on an
-            // existing database must not fail on the UNIQUE(email) constraint).
+            // 已存在库上重跑安装不因 UNIQUE(email) 失败。
             $stmt = $db->prepare(
                 "INSERT INTO users (username, email, password, role, status, created_at) "
                 . "VALUES (?, ?, ?, 'admin', 'active', NOW()) "
@@ -185,9 +144,6 @@ class InstallController extends Controller
                 password_hash($adminConfig['password'], PASSWORD_BCRYPT, ['cost' => 12]),
             ]);
 
-            // v1.0.35: storage configuration goes STRAIGHT into the
-            // storage_profiles table — settings holds site-level keys only.
-            // No settings storage_* keys are written during install anymore.
             $storageDefaultProvider = $request->input('storage_default_provider', 'cos');
             $providersPost = $request->input('storage_provider', []);
             $known = ['cos', 'oss', 'aws', 'obs'];
@@ -219,8 +175,6 @@ class InstallController extends Controller
                 $insertStmt->execute([$key, $value]);
             }
 
-            // Storage profiles (single source of truth) — one row per usable
-            // provider; default gets is_default=1; local fallback otherwise.
             $insertProfile = $db->prepare(
                 "INSERT INTO storage_profiles (name, driver, provider, config, is_default, enabled, sort_order, created_at) "
                 . "VALUES (?, ?, ?, ?, ?, 1, ?, NOW())"
@@ -259,7 +213,6 @@ class InstallController extends Controller
                 }
             }
             if (!$hasDefault) {
-                // Local fallback so a fresh install always has a usable profile.
                 $insertProfile->execute([
                     '本地存储',
                     'local',
@@ -273,7 +226,6 @@ class InstallController extends Controller
                 ]);
             }
 
-            // Write config file
             $configPath = dirname(__DIR__, 2) . '/config/app.php';
             $configData = [
                 'installed' => true,
@@ -281,15 +233,12 @@ class InstallController extends Controller
             ];
             file_put_contents($configPath, "<?php\n\nreturn " . var_export($configData, true) . ";\n", LOCK_EX);
 
-            // Write database config
             $dbConfigPath = dirname(__DIR__, 2) . '/config/database.php';
             file_put_contents($dbConfigPath, "<?php\n\nreturn " . var_export($dbConfig, true) . ";\n", LOCK_EX);
 
-            // Clear session
             \App\Core\Session::remove('install_db');
             \App\Core\Session::remove('install_admin');
 
-            // Reload config
             Config::reload();
 
             $this->render('install/complete', [
@@ -310,7 +259,6 @@ class InstallController extends Controller
     {
         $checks = [];
 
-        // PHP Version
         $checks[] = [
             'name' => 'PHP Version >= 8.4',
             'status' => version_compare(PHP_VERSION, '8.4.0', '>='),
@@ -318,7 +266,6 @@ class InstallController extends Controller
             'required' => '8.4.0',
         ];
 
-        // Extensions
         $requiredExtensions = ['pdo_mysql', 'curl', 'json', 'fileinfo', 'mbstring', 'gd'];
         foreach ($requiredExtensions as $ext) {
             $checks[] = [
@@ -329,7 +276,6 @@ class InstallController extends Controller
             ];
         }
 
-        // Directories writable
         $dirs = [
             'config/' => dirname(__DIR__, 2) . '/config',
             \App\Storage\LocalDriver::defaultRelDir() . '/' => \App\Storage\LocalDriver::defaultUploadDir(),
@@ -367,11 +313,7 @@ class InstallController extends Controller
     {
         $sql = file_get_contents(dirname(__DIR__, 2) . '/schema.sql');
         if ($sql) {
-            // 剥离整行 SQL 注释后再按分号切分。
-            //
-            // 必须先剥离整行注释再切分：schema.sql 的注释里含分号，直接
-            // explode(';') 会把 CREATE TABLE 从中间截断成语法错误片段，导致
-            // 全新安装失败。只剥离整行注释（-- 或 # 开头），不动 SQL 内容。
+            // 必须先剥离整行注释再切分：schema.sql 注释里含分号，直接 explode 会截断语句。
             $stripped = preg_replace(
                 '/^[ \t]*(?:--|#).*$/m',
                 '',

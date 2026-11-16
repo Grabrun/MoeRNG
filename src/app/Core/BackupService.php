@@ -6,26 +6,10 @@ namespace App\Core;
 use App\Core\Database;
 use App\Models\Setting;
 
-/**
- * Database + uploads backup manager (v1.1.0-beta.4).
- *
- * Pure-PHP SQL dump (SHOW CREATE TABLE + row INSERTs) so no mysqldump binary
- * is required. When the ZipArchive extension is present, the dump is packaged
- * with the uploads directory into one .zip; otherwise a bare .sql is kept.
- * Old backups are pruned to settings.backup_keep.
- */
+/** 纯 PHP 导出数据库为 .sql，有 ZipArchive 时连同 uploads 打包为 .zip，并按 settings.backup_keep 清理旧备份。 */
 class BackupService
 {
-    /**
-     * Absolute backup directory (settings.backup_path, default backups/).
-     * v1.3.0-beta.2 安全加固 (CVE-2026-MR-006, CWE-22): the configured path is
-     * operator-controlled data — a compromised setting could previously point
-     * it at ANY directory (web root, /tmp, C:\), letting a SQL dump land
-     * somewhere web-accessible. Now:
-     *   - absolute paths must resolve INSIDE the project directory;
-     *   - relative paths may not contain '..' segments (no traversal);
-     *   - anything else throws.
-     */
+    /** 备份目录：必须位于项目目录内（绝对路径不许逃逸，相对路径禁止 ..），否则抛异常。 */
     public static function dir(): string
     {
         $path = trim(Setting::get('backup_path', 'backups'));
@@ -35,8 +19,6 @@ class BackupService
         $root = dirname(__DIR__, 2);
         if (self::isAbsolute($path)) {
             $real = realpath(rtrim($path, '/\\'));
-            // Accept either the dir itself (must exist) or its nearest existing
-            // ancestor, so a not-yet-created subdir under the project still works.
             if ($real === false) {
                 $parent = rtrim($path, '/\\');
                 while ($parent !== '' && !is_dir($parent)) {
@@ -52,7 +34,6 @@ class BackupService
             return rtrim($path, '/\\');
         }
         $normalized = trim(str_replace('\\', '/', $path), '/');
-        // No traversal: every '..' segment is rejected outright.
         foreach (explode('/', $normalized) as $seg) {
             if ($seg === '..') {
                 throw new \InvalidArgumentException('备份目录不允许包含 .. 路径段。');
@@ -61,7 +42,6 @@ class BackupService
         return $root . '/' . $normalized;
     }
 
-    /** True if $path is $root itself or lives underneath it. */
     private static function pathInside(string $path, string $root): bool
     {
         $root = rtrim(str_replace('\\', '/', realpath($root) ?: $root), '/');
@@ -76,19 +56,7 @@ class BackupService
             || (bool) preg_match('#^[A-Za-z]:[\\\\/]#', $p);
     }
 
-    /**
-     * Dump every table to a single .sql file. Returns '' on success, or an
-     * error message.
-     */
-    /**
-     * Dump every table to a single .sql file. Returns '' on success, or an
-     * error message.
-     *
-     * 逐行写盘（游标 + fwrite），不把整库读进内存：原实现对每张表
-     * `SELECT *` 后 fetchAll() 再用字符串累加，10 万张图的库会一次性把整个
-     * 数据库塞进 PHP 字符串，必然 OOM。而 create() 由每请求触发的
-     * Application::maybeAutoBackup() 调用，风险面更大。
-     */
+    /** 逐表导出到单个 .sql；逐行写盘以免整库读入内存 OOM。成功返回 ''，失败返回错误信息。 */
     public static function dumpSql(string $file): string
     {
         $fh = null;
@@ -104,7 +72,6 @@ class BackupService
             foreach ($tables as $t) {
                 $create = $db->query("SHOW CREATE TABLE `{$t}`")->fetch(\PDO::FETCH_NUM);
                 fwrite($fh, "\nDROP TABLE IF EXISTS `{$t}`;\n" . ($create[1] ?? '') . ";\n");
-                // 未设置 fetch mode 时 PDOStatement 本身可迭代，逐行取，不累积。
                 $stmt = $db->query("SELECT * FROM `{$t}`", \PDO::FETCH_ASSOC);
                 foreach ($stmt as $row) {
                     $cols = implode(',', array_map(static fn($c) => "`{$c}`", array_keys($row)));
@@ -125,18 +92,14 @@ class BackupService
         }
     }
 
-    /** Run a full backup. Returns [ok, message, basename]. */
+    /** 执行完整备份，返回 [ok, message, basename]。 */
     public static function create(): array
     {
         $dir = self::dir();
         if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
             return [false, "无法创建备份目录: {$dir}", ''];
         }
-        // v1.3.0-beta.2 安全加固 (CVE-2026-MR-018): the project root IS the web
-        // doc-root, so defense at the web-server layer is mandatory. Best-effort
-        // Apache guard (no-op on nginx — operators should add a location rule);
-        // plus an unguessable random suffix on every backup filename so the
-        // files can't be enumerated even if the dir is reachable.
+        // 项目根即 web 根，故写 .htaccess/index.html 防护并给文件名加随机后缀；nginx 下 .htaccess 无效，需另配规则。
         @file_put_contents($dir . '/.htaccess', "Require all denied\n");
         @file_put_contents($dir . '/index.html', '');
         $stamp = date('Ymd-His');
@@ -156,8 +119,6 @@ class BackupService
             $zip = new \ZipArchive();
             if ($zip->open($zipFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true) {
                 $zip->addFile($sqlFile, 'moe-rng-' . $stamp . '.sql');
-                // v2.0.0-beta.1: 媒体根为 storage/uploads（web 根之外），备份收拢
-                // 当前媒体与品牌 logo，保证备份“能原样恢复”。
                 foreach (self::mediaRoots() as $spec) {
                     if (is_dir($spec['dir']) && self::hasFiles($spec['dir'], $spec['exclude'])) {
                         self::zipDir($zip, $spec['dir'], $spec['label'], $spec['exclude']);
@@ -175,15 +136,7 @@ class BackupService
         return [true, '备份完成: ' . basename($finalFile) . ' (' . self::humanSize($size) . ')', basename($finalFile)];
     }
 
-    /**
-     * v2.0.0-beta.1: 备份要收拢的媒体目录（v1.5.0 的 uploads-legacy 项已随
-     * 「取消兼容与迁移」移除 —— 旧根不再存在）。
-     *
-     *  - `uploads/`  当前媒体根（storage/uploads，web 根之外）
-     *  - `branding/` 站点 logo（public/uploads/logo）—— 站点资源，恢复要用
-     *
-     * @return list<array{label: string, dir: string, exclude: list<string>}>
-     */
+    /** @return list<array{label: string, dir: string, exclude: list<string>}> */
     private static function mediaRoots(): array
     {
         $branding = \App\Storage\LocalDriver::BRANDING_REL_DIR;
@@ -195,14 +148,12 @@ class BackupService
         ];
     }
 
-    /** 目录内是否存在文件（跳过指定的顶层目录名；找到第一个即返回，代价极低）。 */
     private static function hasFiles(string $dir, array $exclude = []): bool
     {
         $it = new \RecursiveIteratorIterator(
             new \RecursiveCallbackFilterIterator(
                 new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
                 static function (\SplFileInfo $current) use ($exclude): bool {
-                    // 顶层被排除的目录整体跳过（子目录一律保留）
                     if ($current->isDir() && in_array($current->getFilename(), $exclude, true)) {
                         return false;
                     }
@@ -240,10 +191,7 @@ class BackupService
         }
     }
 
-    /**
-     * Prune to settings.backup_keep. Groups are matched by the shared stamp
-     * (moe-rng-{stamp}.zip + .sql), so a zip and its orphan sql count as one.
-     */
+    /** 清理到 settings.backup_keep；同一 stamp 的 zip 与 sql 算一组。 */
     public static function prune(): void
     {
         $keep = max(1, (int) (Setting::get('backup_keep', '7') ?: 7));
@@ -256,7 +204,7 @@ class BackupService
         }
     }
 
-    /** List backups newest-first: each entry is ['name','size','mtime','files'=>[...]]. */
+    /** 备份列表，最新在前：每项 ['name','size','mtime','files'=>[...]]。 */
     public static function list(): array
     {
         $out = [];
@@ -286,7 +234,6 @@ class BackupService
         return $out;
     }
 
-    /** Delete one backup group (by stamp). */
     public static function delete(string $stamp): bool
     {
         $stamp = preg_replace('/[^0-9\-]/', '', $stamp);
@@ -301,7 +248,6 @@ class BackupService
         return $removed;
     }
 
-    /** Group files by their shared stamp. */
     private static function groups(): array
     {
         $dir = self::dir();
@@ -315,7 +261,6 @@ class BackupService
             }
             $groups[$m[1]][] = $f;
         }
-        // Newest stamp first.
         krsort($groups);
         return $groups;
     }

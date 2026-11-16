@@ -8,13 +8,6 @@ use App\Core\Request;
 use App\Storage\LocalDriver;
 use App\Storage\SignedUrl;
 
-/**
- * v1.2.0 迭代: signed download endpoint for LOCAL storage.
- *
- * 本地文件不再通过固定静态链接暴露，改为短时签名链接：
- *   /files?p={base64url(path)}&e={expires}&s={hmac}
- * 校验通过后流式输出文件（含 Content-Type；Cache-Control: private）。
- */
 class FileController extends Controller
 {
     public function show(Request $request): void
@@ -28,12 +21,9 @@ class FileController extends Controller
         }
         $path = SignedUrl::decodePath($encoded);
         if ($path === '' || !SignedUrl::verify($path, $expires, $sig)) {
-            $this->abort(410); // Gone / expired link
+            $this->abort(410);
         }
 
-        // v2.0.0-beta.1: 唯一本地根 `storage/uploads` 优先（零查询），未命中再查
-        // 存储实例表（自定义路径 / 多实例）。v1.5.0-beta.1 的历史根 `public/uploads`
-        // 已随「取消兼容与迁移」移除 —— 不再回退。
         $relative = ltrim(str_replace('\\', '/', $path), '/');
         $real = self::locateIn([LocalDriver::defaultUploadDir()], $relative);
         if ($real === false) {
@@ -51,10 +41,7 @@ class FileController extends Controller
             'svg' => 'image/svg+xml', 'avif' => 'image/avif',
         ][$ext] ?? 'application/octet-stream';
 
-        // v2.0.0-beta.3: 媒体文件跳过输出缓冲 —— Application::run() 对启用 gzip 的
-        // 站点会挂 ob_start('ob_gzhandler')，readfile() 会先把**整个文件**读进缓冲再
-        // gzip（图片本已压缩，压缩纯浪费 CPU，且大图下载内存翻倍、流式失效）。
-        // 清掉缓冲后恢复真流式输出：Content-Length 已知，readfile 走内核管道。
+        // 清掉输出缓冲，避免 gzip 把整个文件读进内存（否则大图内存翻倍且失去流式）。
         while (ob_get_level() > 0) {
             ob_end_clean();
         }
@@ -63,11 +50,7 @@ class FileController extends Controller
         header('Cache-Control: private, max-age=60');
         header('Content-Length: ' . (string) filesize($real));
 
-        // MR-19：nosniff + SVG 强制下载。
-        //
-        // SVG 是可执行 XML —— 内联渲染时其中的 <script> 会在本站源执行，
-        // 使 /files 成为一条可用的存储型 XSS 投递路径。故图片类型（jpg/png/
-        // webp/…，本端点主用途）保持 inline，其余一律 attachment。
+        // SVG 可执行脚本，非图片类型强制 attachment，防止本站源的存储型 XSS。
         header('X-Content-Type-Options: nosniff');
         $inlineSafe = in_array($mime, [
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -80,10 +63,7 @@ class FileController extends Controller
         exit;
     }
 
-    /**
-     * 生成安全的 Content-Disposition filename。
-     * 去掉引号/反斜杠/控制字符与路径分隔符，防止响应头注入与文件名歧义。
-     */
+    /** 去掉引号/控制字符与路径分隔符，防止响应头注入。 */
     private static function safeDownloadName(string $name): string
     {
         $name = basename($name);
@@ -94,12 +74,7 @@ class FileController extends Controller
         return $name;
     }
 
-    /**
-     * 在候选根中解析出真实文件路径（不命中返回 false）。
-     *
-     * 每个候选根都做 realpath 越权校验：解析结果必须**确实落在该根之内**
-     * （带分隔符比较，"uploads-evil" 之类不会被误放行）。
-     */
+    /** realpath 结果必须落在候选根之内，防止路径穿越。 */
     private static function locateIn(array $roots, string $relative): string|false
     {
         foreach ($roots as $root) {
@@ -119,21 +94,11 @@ class FileController extends Controller
         return false;
     }
 
-    /**
-     * 存储实例所配置的本地根（需要查库，故只在默认根未命中时才调用）：
-     * 默认实例优先，其次其余启用的本地实例。
-     *
-     * 实例表读不到时返回空数组 —— 文件服务不该因一次 DB 抖动而整片 500
-     * （调用方此时已试过默认根与历史根）。
-     *
-     * @return list<string>
-     */
+    /** 存储实例配置的本地根。@return list<string> */
     private static function profileRoots(): array
     {
         $roots = [];
         try {
-            // 默认实例也在 all() 里（并按 sort_order 排序），无需单独先加一次 ——
-            // 之前那个分支只是多查一次库，结果被 array_unique 吞掉。
             foreach (\App\Models\StorageProfile::all('sort_order ASC, id ASC') as $profile) {
                 if ($profile->isS3() || !$profile->isEnabled()) {
                     continue;
@@ -142,7 +107,7 @@ class FileController extends Controller
                 $roots[] = LocalDriver::resolveDir((string) ($cfg['path'] ?? ''));
             }
         } catch (\Throwable) {
-            // 默认根已试过，这里失败只意味着自定义路径不可用
+            // 实例表不可读时返回空，文件服务不因一次 DB 抖动整片 500。
         }
 
         return array_values(array_unique($roots));

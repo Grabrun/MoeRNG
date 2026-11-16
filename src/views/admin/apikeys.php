@@ -60,7 +60,6 @@
     </div>
 </div>
 
-<!-- API Key Modal (create / edit) -->
 <div class="modal-overlay" id="apikey-modal">
     <div class="modal">
         <h2 id="apikey-modal-title">生成 API Key</h2>
@@ -95,7 +94,6 @@
     </div>
 </div>
 
-<!-- Generated key reveal modal -->
 <div class="modal-overlay" id="newkey-modal">
     <div class="modal max-w-600">
         <h2>API Key 已生成</h2>

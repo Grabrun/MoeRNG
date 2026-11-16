@@ -13,11 +13,7 @@ class Session
             return;
         }
         if (session_status() === PHP_SESSION_NONE) {
-            // v1.2.1 security: harden the session cookie — HttpOnly + SameSite=Lax
-            // always, Secure whenever the request arrived over TLS (direct HTTPS
-            // or behind a trusted proxy that sets X-Forwarded-Proto). Also enable
-            // strict mode so PHP rejects externally-supplied session IDs (the
-            // mitigation for session fixation).
+            // 固定 HttpOnly+SameSite=Lax，TLS 时加 Secure；strict mode 拒绝外部传入的 session id（防会话固定）。
             $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
                 || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
             session_set_cookie_params([

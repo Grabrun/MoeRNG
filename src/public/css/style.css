@@ -1,6 +1,4 @@
-/* MoeRNG - 全局样式（双主题：默认深色，[data-theme=light] 浅色）
-   设计原则：萌系粉紫主调 + 薄荷辅色 + 霓虹点缀（抽卡高光）。
-   视觉基于 MoeRNG Design Tokens（软暖/圆润/治愈）；logo 保持现有品牌资产不变。 */
+/* MoeRNG 全局样式 — 默认深色，[data-theme=light] 为浅色主题 */
 :root {
     --primary: #F2789A; --primary-dark: #F88DA9; --primary-light: #3A2633;
     --accent: #7FB8A6; --accent-dark: #6AA894; --accent-light: #22332E;
@@ -22,7 +20,7 @@
     --font-display: 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
 }
 
-/* Light theme overrides（晴空画册浅色） */
+/* 浅色主题覆盖 */
 [data-theme="light"] {
     --primary: #E8597A; --primary-dark: #D14A6B; --primary-light: #FBE4EA;
     --accent: #5F9E8C; --accent-dark: #4C8374; --accent-light: #E4F0EC;
@@ -46,7 +44,6 @@ body {
     min-height: 100vh;
 }
 
-/* Background decoration — soft warm 粉紫氛围 */
 body::before {
     content: '';
     position: fixed;
@@ -67,9 +64,7 @@ body::before {
     z-index: 1;
 }
 
-/* Typography —— 全站标题尺度唯一来源
-   （v1.5.0-beta.2 对齐：此前此处与文件后段各有一套 h1-h3 定义，后段覆盖前者，
-     "改哪里才生效"不明；已合并至此。字号沿用当时实际生效的精简尺度，视觉不变。） */
+/* 标题尺度 — 全站唯一来源 */
 h1 { font-size: 1.9rem; line-height: 1.25; font-weight: 700; letter-spacing: -0.01em; font-family: var(--font-display); }
 h2 { font-size: 1.5rem; line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; font-family: var(--font-display); }
 h3 { font-size: 1.15rem; line-height: 1.35; font-weight: 600; font-family: var(--font-display); }
@@ -78,14 +73,11 @@ a { color: var(--primary); text-decoration: none; transition: color var(--transi
 a:hover { color: var(--primary-light); }
 small { font-size: 0.85rem; color: var(--text-secondary); }
 
-/* Buttons */
 .btn {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 12px 24px; border: none; border-radius: var(--radius-pill);
     font-size: 0.95rem; font-weight: 500; cursor: pointer;
     transition: all var(--transition); text-decoration: none;
-    /* v1.4.0-beta.2 UI 打磨: 按钮文字永不折行 —— 此前窄容器（如页面头部的多按钮
-       操作区）会把按钮压到换行，出现「开始处/理」这类断字。 */
     white-space: nowrap;
 }
 .btn-primary { background: var(--primary); color: #fff; }
@@ -101,7 +93,6 @@ small { font-size: 0.85rem; color: var(--text-secondary); }
 .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
 .btn-lg { padding: 14px 32px; font-size: 1.1rem; border-radius: var(--radius-pill); }
 
-/* Forms */
 .form-group { margin-bottom: 20px; }
 .form-group label {
     display: block; margin-bottom: 6px;
@@ -119,19 +110,16 @@ small { font-size: 0.85rem; color: var(--text-secondary); }
 select.form-control { cursor: pointer; }
 textarea.form-control { resize: vertical; min-height: 80px; }
 
-/* Settings grid (v1.2.1) — capped input widths, full-row for long fields */
 .settings-grid {
     display: grid;
     grid-template-columns: 1fr;
     gap: 18px;
 }
 .setting-item-wide { grid-column: 1 / -1; }
-/* Short fields get a sensible max-width; textarea/logo keep full row width */
 .setting-item input.form-control,
 .setting-item select.form-control { max-width: 420px; }
 .setting-item .toggle-wrap { max-width: 420px; }
 .setting-item textarea.form-control { width: 100%; max-width: 760px; }
-/* Mobile: let everything go full width */
 @media (max-width: 768px) {
     .setting-item input.form-control,
     .setting-item select.form-control,
@@ -140,9 +128,6 @@ textarea.form-control { resize: vertical; min-height: 80px; }
     .setting-item-wide { grid-column: auto; }
 }
 
-/* Settings group body + sticky save toolbar (v1.2.1) — button always visible,
-   but styled as a flush bottom toolbar (no floating gap / pill), so it reads as
-   an intentional footer bar instead of an opaque card hovering over content. */
 .settings-group-body { padding-top: 2px; }
 .settings-save-bar {
     margin-top: 8px;
@@ -168,9 +153,6 @@ textarea.form-control { resize: vertical; min-height: 80px; }
     [data-theme="light"] .settings-save-bar { box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.06); }
 }
 
-/* Page fills the viewport so the sticky save toolbar docks flush to the bottom.
-   .settings-group is a flex item that stretches to fill — its own bottom edge
-   becomes the stop point for the sticky bar, so no blank gap opens under it. */
 .page-settings .main-content {
     display: flex;
     flex-direction: column;
@@ -179,7 +161,6 @@ textarea.form-control { resize: vertical; min-height: 80px; }
     flex: 1 0 auto;
 }
 
-/* Cards */
 .card {
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 24px;
@@ -188,7 +169,6 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 }
 .card:hover { border-color: var(--border-light); box-shadow: var(--shadow); transform: translateY(-1px); }
 
-/* Badges */
 .badge {
     display: inline-block; padding: 4px 12px;
     border-radius: var(--radius-pill); font-size: 0.8rem; font-weight: 500;
@@ -199,7 +179,6 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 .badge-danger { background: rgba(255,122,156,0.18); color: var(--danger); }
 .badge-info { background: rgba(111,184,255,0.18); color: var(--info); }
 
-/* Alerts */
 .alert {
     padding: 12px 16px; border-radius: var(--radius-sm);
     margin-bottom: 16px; font-size: 0.9rem;
@@ -209,9 +188,7 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 .alert-warning { background: rgba(255,180,84,0.12); border: 1px solid rgba(255,180,84,0.22); color: var(--warning); }
 .alert-info { background: rgba(111,184,255,0.12); border: 1px solid rgba(111,184,255,0.22); color: var(--info); }
 
-/* Table */
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-/* v1.2.1 迭代: mobile table → stacked cards (admin UI audit U1) */
 @media (max-width: 768px) {
     table.table-card { display: block; }
     table.table-card thead { display: none; }
@@ -232,8 +209,6 @@ textarea.form-control { resize: vertical; min-height: 80px; }
         font-size: 0.78rem; flex-shrink: 0;
     }
 }
-/* 元素与类两种写法都支持：视图里写的是 <table class="table table-full">，
-   而基础样式此前只作用于 table 元素 → class="table" 是个"用了没定义"的类 */
 table, .table {
     width: 100%; border-collapse: collapse;
 }
@@ -249,17 +224,13 @@ td {
 }
 tr:hover td { background: rgba(255,255,255,0.02); }
 
-/* Grid */
 .grid { display: grid; gap: 24px; }
-/* v1.2.1 修复: minmax(0,1fr) 替代裸 1fr——轨道隐式最小尺寸 auto 会被
-   大图/长文本的固有宽度撑爆（仪表盘最近上传卡片 3889px 溢出的根因），
-   显式 min=0 让内容可收缩，全站根治此类布局溢出 */
+/* Grid 防溢出：轨道最小宽统一 minmax(0,1fr)，否则内容会被固有宽度撑爆 */
 .grid-1 { grid-template-columns: minmax(0, 1fr); }
 .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-/* Stats cards */
 .stat-card {
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 24px;
@@ -270,7 +241,6 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .stat-value { font-size: 2.2rem; font-weight: 800; color: var(--primary); font-family: var(--font-display); font-variant-numeric: tabular-nums; }
 .stat-label { font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px; }
 
-/* Pagination */
 .pagination {
     display: flex; gap: 8px; justify-content: center;
     margin-top: 24px;
@@ -285,11 +255,6 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .pagination a:hover { border-color: var(--primary); color: var(--primary); transform: translateY(-1px); }
 .pagination .active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
-/* v1.3.1 迭代: 前台图库页（/gallery 公开分页浏览）。
-   v1.3.1 排版修复：列数全部固定（手机 2 / 平板 3 / 桌面 4）——原基础规则
-   repeat(auto-fill, minmax(0,1fr)) 最小宽为 0，小屏下 auto-fill 会生成
-   大量零宽轨道把图片挤成细条。Grid 防溢出模式（同后台缩略图）：
-   minmax(0,1fr) + aspect-ratio + 绝对定位 img。 */
 .gallery-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 @media (min-width: 640px) { .gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; } }
 @media (min-width: 1024px) { .gallery-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -299,16 +264,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .gallery-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .gallery-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }
 .gallery-name { font-size: 0.82rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-/* 图库页分区间标题（v1.3.1 按分类分区改版） */
 .gallery-section { margin-bottom: 36px; }
 .gallery-section:last-child { margin-bottom: 0; }
 .gallery-cat-title { font-size: 1.05rem; font-weight: 500; margin-bottom: 14px; color: var(--text); }
 .gallery-cat-count { font-size: 0.78rem; font-weight: 400; color: var(--text-muted); margin-left: 8px; }
-/* 图库页的分页条只有一个元素，居中呈现（pagination-wrap 默认 space-between
-   是给后台「分页 + 每页选择器」双元素用的）。 */
 #gallery .pagination-wrap { justify-content: center; }
 
-/* v1.2.0 迭代: pagination + per-page selector on one row */
 .pagination-wrap {
     display: flex; justify-content: space-between; align-items: center;
     gap: 12px; flex-wrap: wrap; margin-top: 24px;
@@ -320,7 +281,6 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     .pagination-wrap { justify-content: center; }
 }
 
-/* Modal */
 .modal-overlay {
     display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(58,42,77,0.6); z-index: 1000;
@@ -336,7 +296,6 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .modal h2 { margin-bottom: 20px; }
 .modal .btn-group { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
 
-/* Progress bar */
 .progress-bar {
     height: 8px; background: var(--bg-input); border-radius: 4px;
     overflow: hidden; margin-top: 8px;
@@ -346,7 +305,6 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     transition: width 0.3s ease;
 }
 
-/* Drop zone */
 .drop-zone {
     border: 2px dashed var(--border-light); border-radius: var(--radius);
     padding: 48px; text-align: center; cursor: pointer;
@@ -358,16 +316,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 }
 .drop-zone .icon { display: flex; justify-content: center; margin-bottom: 12px; color: var(--primary); }
 
-/* Icon system: outline SVG, inherits currentColor. Never emoji. */
 .ic { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .checkbox .ic, .step-num .ic { color: #fff; }
 .image-item .checkbox .ic { opacity: 0; transition: opacity var(--transition); }
 .image-item.selected .checkbox .ic { opacity: 1; }
 
-/* Theme toggle button (admin sidebar) — shows the icon of the mode you switch TO */
 .theme-toggle {
     display: inline-flex; align-items: center; justify-content: center;
-    /* v1.2.1 迭代 (UI-02/NAV-03): 触摸目标 36px → 44px（WCAG 2.5.5 最小 44×44） */
     width: 44px; height: 44px; flex-shrink: 0;
     border: 1px solid var(--border); border-radius: var(--radius-sm);
     background: var(--bg-input); color: var(--text-secondary);
@@ -379,24 +334,20 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 [data-theme="dark"]  .theme-toggle .icon-sun  { display: inline-flex; }
 [data-theme="light"] .theme-toggle .icon-moon { display: inline-flex; }
 
-/* Floating variant for pages without the admin sidebar (login, home) */
 .theme-toggle-float {
     position: fixed; top: 20px; right: 20px; z-index: 1000;
     border-radius: 50%; box-shadow: var(--shadow-sm);
 }
 
-/* Accessibility: visible focus ring, but form controls keep their own box-shadow */
 *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
 
-/* Scrollbar polish */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 .sortable-chosen { box-shadow: var(--shadow); }
 
-/* Code blocks */
 pre {
     background: var(--bg-input); border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 16px;
@@ -411,7 +362,6 @@ code {
 }
 pre code { background: none; color: var(--text); padding: 0; }
 
-/* Tabs */
 .tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
 .tab {
     padding: 10px 20px; border: none; background: none;
@@ -421,19 +371,16 @@ pre code { background: none; color: var(--text); padding: 0; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 
-/* Toggle switch */
 .toggle {
     position: relative; display: inline-block;
     width: 44px; height: 24px;
 }
 .toggle input { display: none; opacity: 0; width: 0; height: 0; }
 
-/* Utility */
 .text-center { text-align: center; }
 .text-right { text-align: right; }
 .text-left { text-align: left; }
 
-/* ── v1.3.3-beta.1 审计补齐：JS 已在用的反馈类（此前无任何样式 → 用户看不到反馈）── */
 .image-item.image-broken { outline: 1px dashed var(--danger); outline-offset: -2px; }
 .image-broken-fallback {
     position: absolute; inset: 0; z-index: 2;
@@ -442,7 +389,6 @@ pre code { background: none; color: var(--text); padding: 0; }
 }
 .image-broken-fallback svg { width: 24px; height: 24px; }
 
-/* 新建 API Key 后的行高亮（JS 添加） */
 .row-highlight { animation: rowHighlight 2.4s ease-out 1; }
 @keyframes rowHighlight {
     0%   { background: color-mix(in srgb, var(--primary) 22%, transparent); }
@@ -467,7 +413,6 @@ pre code { background: none; color: var(--text); padding: 0; }
 .hidden { display: none !important; }
 .w-full { width: 100%; }
 
-/* Spinner */
 .spinner {
     display: inline-block; width: 20px; height: 20px;
     border: 2px solid var(--border); border-top-color: var(--primary);
@@ -475,7 +420,6 @@ pre code { background: none; color: var(--text); padding: 0; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Toast */
 .toast-container { position: fixed; top: 24px; right: 24px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; }
 .toast {
     position: relative; overflow: hidden;
@@ -489,7 +433,6 @@ pre code { background: none; color: var(--text); padding: 0; }
 .toast.warning { border-left: 3px solid var(--warning); }
 @keyframes slideIn { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
 
-/* Responsive */
 @media (max-width: 768px) {
     .container { padding: 0 16px; }
     h1 { font-size: 1.8rem; }
@@ -505,7 +448,6 @@ pre code { background: none; color: var(--text); padding: 0; }
     .btn { padding: 8px 16px; font-size: 0.85rem; }
 }
 
-/* Home page specific */
 .hero {
     text-align: center; padding: 80px 24px 60px;
     position: relative; z-index: 1;
@@ -514,10 +456,6 @@ pre code { background: none; color: var(--text); padding: 0; }
     display: block; max-width: 880px; width: 100%;
     margin: 0 auto 24px; border-radius: 18px;
     box-shadow: 0 8px 32px rgba(58,42,77,0.25);
-    /* v1.2.0 迭代: lock the box to the asset's true aspect ratio so the
-       rendered area matches the actual artwork and there is no top/bottom
-       padding (the "orange band" left by the browser when only width is
-       scaled). Matches the real 1400x466 asset. */
     aspect-ratio: 1400 / 466;
     height: auto;
 }
@@ -527,8 +465,6 @@ pre code { background: none; color: var(--text); padding: 0; }
     letter-spacing: -0.02em;
     margin-bottom: 16px;
 }
-/* v1.2.0 迭代: mobile hero — reduce padding, stack stats to 1 column,
-   shrink hero-banner rounding so it fits narrower viewports cleanly */
 @media (max-width: 768px) {
     .hero { padding: 40px 16px 32px; }
     .hero .hero-banner { border-radius: 12px; margin-bottom: 16px; }
@@ -568,7 +504,6 @@ pre code { background: none; color: var(--text); padding: 0; }
     font-size: 1.8rem; font-weight: 700;
 }
 
-/* API test tool */
 .api-tester {
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: var(--radius-lg); padding: 24px;
@@ -583,7 +518,6 @@ pre code { background: none; color: var(--text); padding: 0; }
 .preview-box img { max-width: 100%; max-height: 400px; object-fit: contain; }
 .preview-box pre { margin: 0; border: none; width: 100%; max-height: 400px; overflow: auto; border-radius: 0; }
 
-/* Docs */
 .doc-endpoint {
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: var(--radius); margin-bottom: 24px; overflow: hidden;
@@ -600,20 +534,17 @@ pre code { background: none; color: var(--text); padding: 0; }
 .doc-endpoint .method.get { background: rgba(79,211,168,0.18); color: var(--success); }
 .doc-endpoint .body { padding: 24px; }
 
-/* Footer */
 .footer {
     text-align: center; padding: 40px 24px;
     border-top: 1px solid var(--border);
     color: var(--text-muted); font-size: 0.85rem;
 }
 
-/* Image grid */
 .image-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 16px;
 }
-/* v1.2.1 迭代: mobile — 2 columns so cards aren't cramped (admin UI audit I1) */
 @media (max-width: 768px) {
     .image-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .image-item { min-height: 120px; }
@@ -645,7 +576,6 @@ pre code { background: none; color: var(--text); padding: 0; }
 .image-item:hover .overlay { opacity: 1; }
 .image-item .overlay span { color: #fff; font-size: 0.75rem; }
 
-/* Install wizard */
 .install-container {
     max-width: 640px; margin: 40px auto;
 }
@@ -693,12 +623,7 @@ pre code { background: none; color: var(--text); padding: 0; }
 .check-item .info .name { font-weight: 500; }
 .check-item .info .detail { font-size: 0.85rem; color: var(--text-muted); }
 
-/* Category tree */
 .category-tree { padding-left: 24px; }
-
-/* ==========================================================================
-   v1.0.32 UX/美观增强
-   ========================================================================== */
 
 /* --- Lightbox (image preview) --- */
 .lightbox {
@@ -733,7 +658,6 @@ pre code { background: none; color: var(--text); padding: 0; }
 .lightbox .lb-prev:hover, .lightbox .lb-next:hover { transform: translateY(-50%) scale(1.06); }
 .lightbox .lb-count { font-size: 0.8rem; color: var(--text-muted); }
 
-/* v1.2.1 迭代: hero random-demo lightbox (separate from admin gallery lightbox) */
 .lb-overlay {
     position: fixed; inset: 0; z-index: 9999;
     display: flex; align-items: center; justify-content: center;
@@ -749,7 +673,6 @@ pre code { background: none; color: var(--text); padding: 0; }
 }
 .lb-overlay .lb-close:hover { background: var(--primary); border-color: var(--primary); }
 
-/* --- Scroll reveal --- */
 .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.6s ease, transform 0.6s ease; }
 .reveal.in { opacity: 1; transform: translateY(0); }
 @media (prefers-reduced-motion: reduce) {
@@ -761,11 +684,9 @@ pre code { background: none; color: var(--text); padding: 0; }
     .gacha-flash, .gacha-pop { animation: none; }
 }
 
-/* --- Button press feedback --- */
 .btn:active { transform: translateY(0) scale(0.97); }
 .btn-primary:active { box-shadow: none; }
 
-/* --- Code block copy button --- */
 .copy-wrap { position: relative; }
 .copy-wrap pre { max-height: 320px; overflow: auto; }
 .copy-wrap pre { margin: 0; }
@@ -781,21 +702,16 @@ pre code { background: none; color: var(--text); padding: 0; }
 .copy-btn.copied { color: var(--success); border-color: var(--success); }
 .copy-btn-inline { position: static; margin-left: 8px; vertical-align: middle; }
 
-/* --- Hero random demo --- */
 .random-demo {
     margin: 40px auto 0; max-width: 460px;
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: var(--radius-lg); padding: 16px;
     box-shadow: var(--shadow);
 }
-/* v1.2.1-beta.3 迭代: hero 双栏布局中，外层 .hero-stage 承担卡片视觉，
-   .random-demo 退为透明内容区（保持独立使用时的卡片外观） */
 .hero-stage .random-demo {
     margin: 0; max-width: none; background: transparent;
     border: none; box-shadow: none; padding: 0;
 }
-/* v1.2.1-beta.3 迭代: rd-preview 容器固定 1:1（最大 480px），图片 object-fit:contain
-   保留原比例不裁切（之前 4:5 + cover 把横版图裁成近正方形失真） */
 .random-demo .rd-preview {
     border-radius: var(--radius-sm); overflow: hidden;
     width: 100%; max-width: 480px; aspect-ratio: 1 / 1;
@@ -815,14 +731,12 @@ pre code { background: none; color: var(--text); padding: 0; }
 .random-demo .rd-footer { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .random-demo .rd-footer .rd-url { flex: 1; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* --- Stat number scroll --- */
 .stat-icon {
     display: flex; align-items: center; justify-content: center;
     width: 44px; height: 44px; margin: 0 auto 10px; border-radius: 12px;
     background: var(--bg-input); border: 1px solid var(--border);
 }
 
-/* --- Image grid hover actions --- */
 .image-item .quick-actions {
     position: absolute; top: 8px; right: 8px; z-index: 3;
     display: flex; gap: 8px; opacity: 0; transition: opacity var(--transition);
@@ -835,15 +749,12 @@ pre code { background: none; color: var(--text); padding: 0; }
     transition: all var(--transition);
 }
 .image-item .quick-actions button:hover { background: var(--primary); transform: scale(1.08); }
-/* v1.2.0 迭代: reset .copy-btn global absolute positioning so the two
-   quick-actions buttons sit side-by-side instead of stacking on top. */
 .image-item .quick-actions .copy-btn {
     position: static; top: auto; right: auto; z-index: auto;
     display: flex; font-size: 0; border: none;
 }
 .image-item img.lb-failed { opacity: 0.25; filter: grayscale(1); }
 
-/* --- Mobile drawer sidebar --- */
 .sidebar-toggle {
     display: none; position: fixed; top: 14px; left: 14px; z-index: 600;
     width: 40px; height: 40px; border-radius: var(--radius-sm);
@@ -864,7 +775,6 @@ pre code { background: none; color: var(--text); padding: 0; }
     .main-content { padding-top: 64px; }
 }
 
-/* --- Empty state polish --- */
 .empty-state {
     text-align: center; padding: 72px 24px; color: var(--text-muted);
 }
@@ -876,36 +786,24 @@ pre code { background: none; color: var(--text); padding: 0; }
 .empty-state h3 { color: var(--text-secondary); margin-bottom: 8px; font-size: 1.1rem; }
 .empty-state .empty-actions { margin-top: 20px; }
 
-/* --- Toast close + stacked progress --- */
 @keyframes shimmer { to { background-position: -200% 0; } }
 
-/* --- Scroll margin for anchored sections (docs) --- */
 section[id] { scroll-margin-top: 24px; }
 html { scroll-behavior: smooth; }
 
-/* ============================================================
-   v1.1.1 — typography, interaction & responsive polish
-   ============================================================ */
-
-/* Typography hierarchy —— 已统一到文件开头「Typography」区块（单一来源） */
 body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
 p { line-height: 1.7; }
 code, pre { font-variant-ligatures: none; }
 
-/* Buttons: tactile press + focus ring */
 .btn:focus-visible, .form-control:focus-visible, a:focus-visible, button:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px;
 }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
-/* Cards: consistent hover lift */
-
-/* Tables: header tint + tighter rows + last-row border */
 th { text-transform: none; letter-spacing: 0.01em; background: color-mix(in srgb, var(--bg-card) 55%, transparent); }
 tbody tr:last-child td { border-bottom: none; }
 .table-wrap table { min-width: 560px; }
 
-/* Form controls: consistent focus + select arrow */
 select.form-control {
     appearance: none; -webkit-appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8ea6' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
@@ -913,20 +811,11 @@ select.form-control {
 }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); width: 16px; height: 16px; }
 
-/* Modal: enter animation */
 .modal { animation: modal-in 0.18s ease; }
 @keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
 
-/* v1.1.1-beta.2: lock background scroll while a modal is open */
 body.modal-open { overflow: hidden; }
 
-/* v1.1.1-beta.2: upload progress percentage label.
-   v1.2.0 迭代: absolute positioning — the fill fills the bar while the
-   label floats above the right edge, so 100% + "正在保存…" never get
-   squeezed out by the flex layout. */
-/* v1.2.0 迭代: progress unit — label row above a capsule gradient track.
-   The whole unit lives BELOW the drop-zone (own margin), so nothing floats
-   over its dashed border; the label is a normal-flow row, never clipped. */
 .progress-bar {
     display: block; position: relative;
     height: 26px; padding-top: 18px;
@@ -938,7 +827,6 @@ body.modal-open { overflow: hidden; }
     font-variant-numeric: tabular-nums; white-space: nowrap;
     line-height: 18px; z-index: 2;
 }
-/* capsule track */
 .progress-bar::before {
     content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 8px;
     background: var(--bg-input); border: 1px solid var(--border-light);
@@ -955,17 +843,14 @@ body.modal-open { overflow: hidden; }
     50% { opacity: 0.45; }
 }
 
-/* v1.2.0 迭代: pulse while the backend saves after the transfer completes */
 .progress-bar .fill.processing { animation: progress-pulse 0.9s ease-in-out infinite; }
 @keyframes progress-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.45; }
 }
 
-/* v1.1.1-beta.2: code blocks — cap height + breathing room */
 .copy-wrap .copy-btn { position: absolute; top: 10px; right: 10px; z-index: 2; }
 
-/* v1.1.1-beta.3: category management — one card per root, tree connector */
 .category-list { display: flex; flex-direction: column; gap: 16px; }
 .cat-root-card { padding: 0; overflow: hidden; }
 .cat-root-header {
@@ -1005,39 +890,27 @@ body.modal-open { overflow: hidden; }
     .cat-children::before { left: 20px; }
 }
 
-/* Toast: slide-in + stacking depth */
 .toast { animation: toast-in 0.22s ease; }
 @keyframes toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 
-/* Pagination hover state */
-
-/* Empty state refinement */
 .empty-state:hover .empty-icon { border-color: var(--primary); color: var(--primary); transform: scale(1.04); }
 
-/* Scrollbar (WebKit + Firefox) */
 * { scrollbar-width: thin; scrollbar-color: var(--border-light) transparent; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--text-muted); }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* Image grid: hover scale on thumbnails */
 .image-grid .image-item img { transition: transform var(--transition); }
 .image-grid .image-item:hover img { transform: scale(1.03); }
 
-/* Stat cards on dashboard: hover lift */
 .stat-card .stat-value { transition: color var(--transition); }
 
-/* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
     html { scroll-behavior: auto; }
 }
 
-/* --- Responsive refinements --- */
-/* 注意：断点覆盖也必须用 minmax(0,1fr)，不能退回裸 1fr ——
-   裸 1fr 的轨道隐式最小尺寸是 auto，会被长文件名/长 URL 的固有宽度撑破，
-   等于把 :258 处 v1.2.1 那次溢出修复在移动端重新引入（横向滚动条）。 */
 @media (max-width: 960px) {
     .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1055,18 +928,12 @@ body.modal-open { overflow: hidden; }
     .card { padding: 16px; }
 }
 
-/* v1.2.0 迭代: screen-reader-only text (a11y label / h1) — visible to AT but hidden visually */
 .sr-only {
     position: absolute; width: 1px; height: 1px;
     padding: 0; margin: -1px; overflow: hidden;
     clip: rect(0,0,0,0); white-space: nowrap; border: 0;
 }
 
-/* ============================================================
-   v1.2.1-beta.3 迭代: gacha 抽卡动效（Design Tokens §4）
-   霓虹边框闪动 ~500ms + 图片过冲弹入 ~400ms（cubic-bezier 过冲）
-   仅当用户未开启 prefers-reduced-motion 时由 JS 添加 class。
-   ============================================================ */
 .gacha-flash {
     animation: gacha-flash 0.55s ease-out;
 }
@@ -1085,26 +952,16 @@ body.modal-open { overflow: hidden; }
     100% { transform: scale(1); opacity: 1; }
 }
 
-
-/* ============================================================
-   CSP nonce migration: inline styles from views (V-02 fix)
-   View-level <style> blocks removed — nonce no longer needed.
-   ============================================================ */
-
-/* === Migrated from src/views/login.php (CSP nonce migration) === */
 .login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
         .login-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 40px; width: 100%; max-width: 400px; }
         .login-card .login-logo { display: block; width: 72px; height: 72px; margin: 0 auto 12px; border-radius: 16px; object-fit: contain; }
         .login-card h1 { text-align: center; margin-bottom: 8px; color: var(--primary); }
         .login-card .subtitle { text-align: center; color: var(--text-secondary); margin-bottom: 32px; }
-        /* v1.2.1 登录增强: remember-me checkbox row */
         .login-card .login-options { margin: 4px 0 16px; }
         .login-card .remember-label { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 0.88rem; color: var(--text-secondary); }
         .login-card .remember-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
         .login-card .remember-text { line-height: 1; }
 
-
-/* === Migrated from src/views/settings.php (CSP nonce migration) === */
 .toggle-wrap { display: flex; align-items: center; gap: 10px; padding-top: 4px; }
 .toggle { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
 .toggle-slider {
@@ -1119,8 +976,6 @@ body.modal-open { overflow: hidden; }
 .toggle input:checked + .toggle-slider::before { transform: translateX(20px); background: #fff; }
 .toggle-text { font-size: 0.85rem; color: var(--text-secondary); }
 
-
-/* === Migrated from src/views/helpers.php (CSP nonce migration) === */
 .sidebar-brand img { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; }
         .admin-layout { display: flex; min-height: 100vh; }
         .sidebar { width: 240px; background: var(--bg-card); border-right: 1px solid var(--border); padding: 24px 16px; position: fixed; top: 0; left: 0; bottom: 0; overflow-y: auto; z-index: 100; }
@@ -1131,7 +986,6 @@ body.modal-open { overflow: hidden; }
         .sidebar-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: all var(--transition); }
         .sidebar-nav a:hover, .sidebar-nav a.active { background: var(--bg-input); color: var(--text); }
         .sidebar-nav a.active { color: var(--primary); position: relative; }
-        /* v1.1.1: active item gets a left accent bar */
         .sidebar-nav a.active::before {
             content: ''; position: absolute; left: -16px; top: 20%; bottom: 20%;
             width: 3px; border-radius: 2px; background: var(--primary);
@@ -1140,8 +994,6 @@ body.modal-open { overflow: hidden; }
         .sidebar-footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
         .sidebar-footer a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: all var(--transition); }
         .sidebar-footer a:hover { background: var(--bg-input); color: var(--text); }
-        /* v1.3.0-beta.2 (CVE-2026-MR-005): logout is a POST form now — render the
-           form transparently and style its button exactly like the sibling links */
         .sidebar-footer .logout-form { display: contents; }
         .sidebar-footer .logout-form button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; background: none; border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 0.9rem; font-family: inherit; cursor: pointer; text-align: left; transition: all var(--transition); }
         .sidebar-footer .logout-form button:hover { background: var(--bg-input); color: var(--text); }
@@ -1151,22 +1003,10 @@ body.modal-open { overflow: hidden; }
         .page-header p { color: var(--text-secondary); font-size: 0.9rem; }
         #batch-bar { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg-card); border: 1px solid var(--primary); border-radius: var(--radius); padding: 12px 24px; display: flex; align-items: center; gap: 16px; z-index: 500; box-shadow: var(--shadow); }
         @media (max-width: 768px) {
-            /* v1.2.1 fix: don't override style.css's drawer (.sidebar translateX)
-               here — the internal <style> loads AFTER style.css and was forcing
-               the sidebar back to a full-width inline column, which crushed
-               .main-content to ~30px. Let the drawer (transform translateX(-100%))
-               defined in style.css do its job; the hamburger toggle (sidebar-toggle
-               button + sidebar.open class) reveals it. */
             .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
             .main-content { margin-left: 0; padding: 20px 16px; }
         }
 
-/* ============================================================
-   CSP nonce migration: inline styles from views (V-02 fix)
-   View-level <style> blocks removed — nonce no longer needed.
-   ============================================================ */
-
-/* === Migrated from src/views\admin\layout.php (CSP nonce migration) === */
 .admin-layout { display: flex; min-height: 100vh; }
         .sidebar {
             width: 240px; background: var(--bg-card); border-right: 1px solid var(--border);
@@ -1198,41 +1038,29 @@ body.modal-open { overflow: hidden; }
             .main-content { margin-left: 0; padding: 20px 16px; }
         }
 
-
-/* === Migrated from src/views\install\complete.php (CSP nonce migration) === */
 .install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; } .install-header { text-align: center; margin-bottom: 40px; } .install-header h1 { color: var(--primary); font-size: 2.2rem; }
 
-
-/* === Migrated from src/views\install\step1.php (CSP nonce migration) === */
 .install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; }
         .install-header { text-align: center; margin-bottom: 40px; }
         .install-header h1 { color: var(--primary); font-size: 2.2rem; }
         .install-logo { display: block; width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 14px; }
 
-
-/* === Migrated from src/views/home.php (CSP nonce migration, V-02 fix, recovered from git) === */
-/* v1.2.1-beta.3 迭代: hero 双栏布局（Design Tokens §5 两栏 hero-grid） */
         .hero { padding: 96px 24px 64px; }
         .hero-inner { max-width: var(--maxw, 1120px); margin: 0 auto; padding: 0 24px; }
         .hero-grid {
             display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px;
-            /* v1.2.1-beta.3 迭代: start 对齐——两栏按内容自然高度，不互相拉伸 */
             align-items: start;
         }
-        /* v1.2.1-beta.3 迭代: grid item 默认 min-width:auto 会让内容撑爆布局
-           （banner 图/文字溢出导致整体左栏文字被截断），强制 min-width:0 */
         .hero-left, .hero-stage { min-width: 0; }
         .hero-sub {
             font-size: 1.125rem; color: var(--text-secondary);
             max-width: 520px; margin-bottom: 24px; line-height: 1.7;
         }
-        /* v1.2.1-beta.3 迭代: hero CTA 按钮组居中（用户反馈电脑端按钮没居中） */
         .hero .btn-group { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
         .hero-stage {
             background: var(--bg-card); border: 1px solid var(--border);
             border-radius: var(--radius-lg); padding: 24px;
             box-shadow: var(--shadow-floating);
-            /* v1.2.1-beta.3 迭代: 撑满 hero 右栏，按内容自然高度（不被左栏 banner 拉伸） */
             width: 100%; align-self: start;
         }
         .hero-banner-wrap { display: block; margin-bottom: 24px; }
@@ -1242,8 +1070,6 @@ body.modal-open { overflow: hidden; }
         }
         .hero h1 { font-size: 4rem; margin-bottom: 12px; }
         .hero .subtitle { font-size: 1.25rem; color: var(--text-secondary); margin-bottom: 8px; }
-        /* v1.2.1 迭代: bolder stat numbers (UI audit V2) — 纯色粉紫（禁止渐变文字铁律）
-           → 具体数值已收敛到文件末尾「首页 hero 统计」单一来源块（2026-09-14 对齐修复） */
         .endpoint-path { 
             font-family: var(--font-mono); color: var(--accent);
             font-size: 1.1rem; word-break: break-all;
@@ -1254,7 +1080,6 @@ body.modal-open { overflow: hidden; }
         .rate-tier .tier-card { background: var(--bg-input); border-radius: var(--radius-sm); padding: 16px; text-align: center; border: 1px solid var(--border); }
         .rate-tier .tier-card .tier-name { font-weight: 600; margin-bottom: 4px; }
         .rate-tier .tier-card .tier-limit { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
-        /* v1.1.0-beta.7: fixed top navigation bar (brand left, links + theme right) */
         .site-nav {
             position: fixed; top: 0; left: 0; right: 0; z-index: 300;
             display: flex; align-items: center; gap: 24px;
@@ -1262,17 +1087,12 @@ body.modal-open { overflow: hidden; }
             background: color-mix(in srgb, var(--bg) 84%, transparent);
             border-bottom: 1px solid var(--border);
         }
-        /* v1.2.1-beta.3 迭代: nav-links 居中显示——<details> flex:1 占满剩余空间，
-           内容居中；logo 左、theme-toggle 右、链接居中 */
         .site-nav-menu { flex: 1; display: flex; justify-content: center; }
-        /* v1.2.0 迭代: mobile nav — collapse 5 links into a hamburger button
-           so the fixed header stops hogging space and overlapping content. */
         .site-nav-menu > summary { display: none; cursor: pointer; list-style: none; }
         .site-nav-menu > summary::-webkit-details-marker { display: none; }
         .site-nav-menu > summary svg { display: block; }
         @media (max-width: 768px) {
             .site-nav { gap: 8px; }
-            /* v1.2.1-beta.3 迭代: 移动端取消 flex 居中，让 details 收缩到 summary 宽度 */
             .site-nav-menu { flex: 0; justify-content: flex-end; }
             .site-nav-menu > summary {
                 display: inline-flex; align-items: center; justify-content: center;
@@ -1299,21 +1119,18 @@ body.modal-open { overflow: hidden; }
             transition: opacity var(--transition);
         }
         .site-nav-brand:hover { opacity: 0.85; }
-        /* v1.2.1-beta.3 迭代: 导航 logo 放大（40px，设计规范桌面 ≥32px） */
         .site-nav-brand img { max-height: 40px; max-width: 180px; object-fit: contain; display: block; }
         .site-nav-links { display: flex; align-items: center; gap: 2px; margin-left: auto; }
         .site-nav-links a {
             padding: 6px 14px; border-radius: var(--radius-pill);
             color: var(--text-secondary); text-decoration: none;
             font-size: 0.9rem; transition: all var(--transition); white-space: nowrap;
-            /* v1.2.1-beta.3 迭代: 菜单文字居中（横排/汉堡展开两态一致） */
             display: inline-flex; align-items: center; justify-content: center; text-align: center;
         }
         .site-nav-links a:hover { background: var(--bg-input); color: var(--text); }
         .site-nav-links a.active { color: var(--primary); font-weight: 600; }
         .site-nav .theme-toggle-float { position: static; border-radius: var(--radius-sm); box-shadow: none; }
         html { scroll-padding-top: 76px; }
-        /* v1.1.1: nav wraps on small screens so all items stay reachable */
         @media (max-width: 640px) {
             .site-nav { gap: 8px; padding: 8px 12px; height: auto; min-height: 52px; flex-wrap: wrap; }
             .site-nav-brand { font-size: 1rem; }
@@ -1322,11 +1139,9 @@ body.modal-open { overflow: hidden; }
             .site-nav-links a { padding: 5px 10px; font-size: 0.85rem; flex-shrink: 0; }
             .site-nav .theme-toggle-float { margin-left: auto; }
         }
-        /* v1.1.1: hero hierarchy polish */
         .hero h1 { font-weight: 800; letter-spacing: -0.02em; }
         .hero .stat { transition: transform var(--transition); }
         .hero .stat:hover { transform: translateY(-2px); }
-        /* v1.1.1: docs & tester polish */
         .section-title { letter-spacing: -0.01em; }
         #tester .api-tester { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
         @media (max-width: 768px) {
@@ -1334,10 +1149,6 @@ body.modal-open { overflow: hidden; }
             .hero { padding: 60px 16px 40px; }
         }
 
-/* ============================================================
-   v1.2.1 UI 深度分析 (DOC-01): docs 锚点导航侧边栏
-   桌面端 sticky 目录 + 滚动高亮；移动端降为横向滚动条
-   ============================================================ */
 .docs-layout { display: grid; grid-template-columns: 200px 1fr; gap: 32px; align-items: start; }
 .docs-sidebar {
     position: sticky; top: 80px;
@@ -1355,7 +1166,6 @@ body.modal-open { overflow: hidden; }
 .docs-sidebar a.active::before { content: ''; position: absolute; left: -15px; width: 3px; height: 20px; background: var(--primary); border-radius: 2px; }
 .docs-sidebar a { position: relative; }
 .docs-content { min-width: 0; }
-/* API 文档 tab 切换: 默认只显示 active 导航对应的 pane，其余隐藏 */
 .docs-content .doc-pane { display: none; }
 .docs-content .doc-pane.active { display: block; }
 @media (max-width: 900px) {
@@ -1365,7 +1175,6 @@ body.modal-open { overflow: hidden; }
     .docs-sidebar a { white-space: nowrap; }
 }
 
-/* v1.2.1 UI 深度分析 (HERO-05): 统计来源说明小字 */
 .stats-note {
     grid-column: 1 / -1; text-align: center;
     font-size: 0.72rem; color: var(--text-muted); margin: 4px 0 0;
@@ -1373,7 +1182,6 @@ body.modal-open { overflow: hidden; }
 .feature-card h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .feature-card h3 .badge { font-size: 0.68rem; padding: 2px 8px; }
 
-/* v1.2.1 UI 深度分析 (DASH-04): 快捷操作网格 */
 .quick-actions {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 12px; margin-bottom: 24px;
@@ -1391,11 +1199,6 @@ body.modal-open { overflow: hidden; }
 }
 .action-icon { color: var(--primary); display: inline-flex; }
 
-/* ============================================================
-   v1.2.1 CSP 合规迁移：dashboard 工具类
-   （CSP style-src 禁止 unsafe-inline → 内联 style 属性会被拦截，
-     布局必须走 CSS 类；script-src 保持 nonce 严格不变）
-   ============================================================ */
 .vstack { display: flex; flex-direction: column; gap: 8px; }
 .c-primary { color: var(--primary); }
 .c-accent { color: var(--accent); }
@@ -1403,7 +1206,6 @@ body.modal-open { overflow: hidden; }
 .c-warning { color: var(--warning); }
 .text-small { font-size: 0.85rem; }
 
-/* 最近上传 3 列缩略图网格 */
 .recent-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .tile {
     position: relative; display: block; min-width: 0;
@@ -1414,14 +1216,12 @@ body.modal-open { overflow: hidden; }
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
 }
 
-/* 分类分布条形图 */
 .cat-row { display: flex; align-items: center; gap: 10px; }
 .cat-name { width: 120px; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat-bar { flex: 1; height: 8px; border-radius: 999px; background: var(--bg-input); overflow: hidden; }
 .cat-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--primary), var(--accent)); }
 .cat-count { width: 40px; text-align: right; font-size: 0.85rem; color: var(--text-secondary); }
 
-/* 7 天上传趋势条形图 */
 .trend-chart { display: flex; align-items: flex-end; gap: 6px; height: 90px; padding-top: 8px; }
 .trend-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .trend-num { font-size: 0.7rem; color: var(--text-secondary); }
@@ -1431,12 +1231,10 @@ body.modal-open { overflow: hidden; }
 }
 .trend-day { font-size: 0.65rem; color: var(--text-muted); }
 
-/* 最近操作列表 */
 .log-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
 .log-action { background: var(--bg-input); color: var(--text-secondary); padding: 2px 8px; border-radius: 6px; white-space: nowrap; flex-shrink: 0; }
 .log-time { margin-left: auto; white-space: nowrap; }
 
-/* 流量统计 + 运行状态（CSP 合规迁移续） */
 .flow-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.88rem; }
 .flow-box { padding: 10px 12px; border-radius: var(--radius); background: var(--bg-input); }
 .flow-note { font-size: 0.78rem; }
@@ -1468,7 +1266,6 @@ body.modal-open { overflow: hidden; }
 .env-row { padding: 4px 0; }
 .vstack-0 { gap: 0; }
 
-/* v1.2.1 CSP 合规迁移：home/tester/about/footer 工具类 */
 .rd-meta { font-size: 0.82rem; color: var(--text-secondary); margin-top: 8px; }
 .rd-cat-select { width: 150px; flex-shrink: 0; }
 .doc-endpoint-label { margin-left: auto; }
@@ -1484,7 +1281,6 @@ body.modal-open { overflow: hidden; }
 .about-list { font-size: 0.92rem; line-height: 1.9; padding-left: 18px; margin: 0; }
 .footer-link { color: inherit; text-decoration: none; }
 
-/* v1.2.1 CSP 合规：通用布局/文字工具类 */
 .gap-4 { gap: 4px; } .gap-6 { gap: 6px; } .gap-8 { gap: 8px; }
 .gap-10 { gap: 10px; } .gap-12 { gap: 12px; }
 .align-center { align-items: center; } .align-end { align-items: flex-end; }
@@ -1512,7 +1308,6 @@ body.modal-open { overflow: hidden; }
 .alert-inline-danger { margin-bottom: 16px; padding: 12px 16px; border-radius: var(--radius-sm); background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3); color: var(--text); }
 .alert-inline-success { margin-bottom: 16px; padding: 12px 16px; border-radius: var(--radius-sm); background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); color: var(--text); }
 
-/* v1.2.1 CSP 合规迁移：补充工具类（settings/logs/install 等） */
 .no-underline { text-decoration: none; }
 .font-normal { font-weight: 400; }
 .max-w-260 { max-width: 260px; }
@@ -1524,7 +1319,6 @@ body.modal-open { overflow: hidden; }
 .provider-legend { padding: 0 8px; font-weight: 600; }
 .span-all { grid-column: 1 / -1; }
 
-/* ── v1.3.2 迭代: 健康检查 / 哈希回填面板（nonce-CSP：禁止内联 style，样式一律走类）── */
 .health-backfill-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 .health-backfill-head { gap: 8px; }
 .health-progress-track { height: 8px; border-radius: 4px; background: rgba(128,128,128,.25); overflow: hidden; margin: 8px 0 6px; }
@@ -1535,7 +1329,6 @@ body.modal-open { overflow: hidden; }
 .backfill-float .health-progress-text { margin-bottom: 8px; }
 .backfill-float .health-progress-detail { margin-top: 6px; }
 
-/* ── v1.3.2 审计补齐：对齐设计体系的缺失类 ── */
 .justify-center { justify-content: center; }
 .font-mono { font-family: ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace; }
 .logo-upload-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -1543,12 +1336,10 @@ body.modal-open { overflow: hidden; }
 .log-detail { color: var(--text-muted, rgba(255,255,255,.62)); font-size: 0.85rem; }
 .footer-custom { color: var(--text-muted, rgba(255,255,255,.62)); font-size: 0.85rem; opacity: .85; }
 
-/* ── v1.3.2-beta.2: 图片处理队列状态徽章 ── */
 .proc-badge { position: absolute; top: 8px; left: 8px; z-index: 3; font-size: 11px; line-height: 1; padding: 4px 7px; border-radius: var(--radius-pill); color: #fff; letter-spacing: .3px; }
 .proc-pending { background: var(--info); }
 .proc-failed { background: var(--danger); }
 
-/* ── v1.4.0-beta.2: 合并队列的筛选栏与行内错误（原失败明细面板已并入单一列表）── */
 .queue-filter {
     display: flex; align-items: center; gap: 8px;
     flex-wrap: wrap; margin: 0 0 12px;
@@ -1560,9 +1351,6 @@ body.modal-open { overflow: hidden; }
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px;
 }
 
-/* ── v1.4.0-beta.2 UI 打磨: 图片处理页信息层次 ──
-   设计目标：头部只放"队列操作"（3 个按钮，不折行）；破坏性操作与说明改为折叠，
-   统计卡压缩高度；列表计数只在有内容时出现（不再与统计卡重复）。 */
 .page-actions {
     display: flex; align-items: center; gap: 8px;
     flex-wrap: wrap; justify-content: flex-end;
@@ -1577,8 +1365,6 @@ body.modal-open { overflow: hidden; }
 .queue-count { font-weight: 400; font-size: 0.85rem; color: var(--text-secondary); }
 .queue-empty { margin: 0; font-size: 0.9rem; color: var(--text-secondary); }
 
-/* v1.4.0-beta.2: 危险操作移到队列卡片右上角（触发器 + 下拉浮层）
-   —— .card 没有 overflow:hidden，浮层不会被裁剪 */
 .queue-head-right {
     display: inline-flex; align-items: center; gap: 10px;
     font-weight: 400; text-transform: none; letter-spacing: 0;
@@ -1600,63 +1386,38 @@ body.modal-open { overflow: hidden; }
 }
 .queue-danger-scope { width: auto; min-width: 150px; }
 
-/* ============================================================
-   v1.5.0-beta.2 — 全站排版与样式对齐（design-system alignment）
-   ------------------------------------------------------------
-   审计发现的三类"没对齐"：
-     a) .page-header 此前**只在媒体查询里出现**，没有任何基础规则 →
-        页头节奏全靠各页 markup 里的 mb-* 工具类接力，页与页不一致；
-     b) 卡片标题的上下间距由浏览器默认 margin 决定（h1 0.67em / h3 1em），
-        再被各页零散的 mb-* 覆盖 → 同一种标题在不同页面间距不同；
-     c) 若干语义类被 markup 使用但从未定义（.pv-* / .setting-* / .stats-grid
-        / .rd-image-preview），靠工具类兜底，语义形同注释。
-   本节把这三件事收成单一来源。**只做对齐，不换风格**。
-   ============================================================ */
-
-/* a) 页头：统一底部节奏与标题间距。
-      刻意不设 display:flex —— 有操作区的页面用 .flex-between（左右分栏），
-      没有操作区的页面（仪表盘 / 系统设置）保持块级流，两者都成立。 */
 .page-header { margin-bottom: 24px; }
 .page-header h1 { margin: 0; }
 .page-header p { margin: 6px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
 .page-header > div { min-width: 0; }
 
-/* b) 卡片：标题字号与首末间距统一（只作用于直接子元素，
-      避免影响 .empty-state 等嵌套结构的内部标题） */
 .card > h1, .card > h2, .card > h3 {
     margin: 0 0 14px;
-    font-size: 1.15rem;          /* 卡片标题统一 h3 级字号，与用哪级标签无关 */
+    font-size: 1.15rem;
     line-height: 1.35;
 }
 .card > :first-child { margin-top: 0; }
 .card > :last-child { margin-bottom: 0; }
 
-/* c) 统计卡网格：四张卡之间 16px 比 24px 更聚拢（24px 会显得彼此无关） */
 .stats-grid { gap: 16px; }
 
-/* d) 存储实例字段（.pv-*）：此前无任何定义。
-      .pv-req 原来是 label 之后的独立行内元素，而 label 是 display:block，
-      于是必填星号被挤到下一行、单独占一行 —— 现移入 label 内部并用此处定位。 */
 .pv-field { margin-bottom: 16px; }
 .pv-label { display: block; margin-bottom: 6px; font-size: 0.9rem; font-weight: 500; color: var(--text-secondary); }
 .pv-req { color: var(--danger); margin-left: 2px; }
 
-/* e) 系统设置页：工具条 / 标签行 / 字段帮助 / 保存提示 */
 .settings-toolbar {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     margin-bottom: 16px;
 }
-.settings-tabs { display: flex; flex-wrap: wrap; gap: 8px; }   /* 4px 太挤，标签几乎连成一片 */
+.settings-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
 .setting-label { display: block; }
 .setting-help { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 0.8rem; }
 .save-hint { color: var(--text-secondary); font-size: 0.85rem; }
 
-/* f) 首页随机图预览（此前靠 .random-demo .rd-preview img 兜底，语义类无定义） */
 .rd-image-preview { display: block; width: 100%; }
-/* g) 审计用「空白名单」实测后只剩这三个"用了没定义"的类，一并补齐 */
 .count {
     color: var(--primary); font-size: 1.05rem;
-    font-variant-numeric: tabular-nums;   /* 选中数量变化时不抖动 */
+    font-variant-numeric: tabular-nums;
 }
 .lb-url {
     display: inline-block; vertical-align: middle;
@@ -1664,27 +1425,16 @@ body.modal-open { overflow: hidden; }
     color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* ── 系统设置页（v1.5.0-beta.2 对齐）────────────────────────────
-   问题：① 分组说明塞在 <h3 class="flex flex-between"> 里 → 长句被拉到两端并折行，
-   标题区看起来像两段正文挤在一起；② 四个批处理面板各写一遍 markup，间距各不相同；
-   ③ 设置项单列排布 → 1180px 宽下每行右侧大片空白、页面极长；
-   ④ 字段帮助文本挂了 5 个类（text-muted text-small text-secondary text-xs + block），
-   其中 text-muted 与 text-secondary 同色、text-small 与 text-xs 冲突。
-   ──────────────────────────────────────────────────────────── */
-
-/* 分组说明独立一行：标题归标题、说明归说明 */
 .setting-group-desc {
     margin: 4px 0 16px;
     color: var(--text-secondary); font-size: 0.85rem; line-height: 1.75;
 }
 
-/* 批处理面板（存储迁移 / 清理残留 / 转换原图 / 健康检查）统一内部节奏 */
 .batch-panel { display: flex; flex-direction: column; gap: 12px; }
 .batch-summary { margin: 0; color: var(--text-secondary); font-size: 0.85rem; line-height: 1.75; }
 .batch-stat { margin: 0; color: var(--text-secondary); font-size: 0.85rem; }
 .batch-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-/* 面板内的长说明默认折叠（此前 4 个面板堆了 9 段正文，页面被文案淹没） */
 .batch-help { font-size: 0.85rem; }
 .batch-help summary {
     cursor: pointer; color: var(--text-secondary); list-style: none;
@@ -1698,32 +1448,14 @@ body.modal-open { overflow: hidden; }
 .batch-help p { margin: 8px 0 0; color: var(--text-secondary); line-height: 1.75; }
 .batch-help code { font-size: 0.95em; }
 
-/* 设置项：宽屏两列（.setting-item-wide 的 grid-column: 1/-1 至此才真正有意义） */
 @media (min-width: 900px) {
     .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* ============================================================
-   首页 hero 统计：单一来源 + 行盒统一（2026-09-14 对齐修复）
-   ------------------------------------------------------------
-   修复前，这一个视觉位置散着 10 条规则，且是**两套等特异度规则互相覆盖**：
-     · `.hero .stats .stat-value`（原 1285 行）实际只赢到了 line-height
-     · `.hero .stat .num`（原 1373 行，文件更靠后）赢到了 font-size / font-weight
-   —— 同一个数字被两条规则各管一半，"改哪里才生效"无从判断；
-   而**第三个数字的 markup 只挂了 `num`、没挂 `stat-value`**，于是拿不到
-   line-height：它的行盒是 2.2rem × 1.6（继承 body）≈ 3.52rem，另两个是
-   2.2rem × 1.15 ≈ 2.53rem，**高出约 16px** → 它的标签被推低 16px，
-   数字本身也在更高的行盒里居中而显得偏低偏大（线上截图即此现象）。
-   顺带发现：移动端的 1.6 / 1.4rem 收缩（原 555 / 561 行）同样被 1373 行覆盖，
-   **从未生效** —— 这里按注释里记的原始意图（v1.2.0「stack stats, shrink」）恢复。
-
-   现在收敛为**一条**规则，并把 line-height 显式写死：
-   三个数字的**行盒等高 ⇒ 标签必然共线**。这是结构上的保证，
-   不依赖"三项内容恰好同高"这种巧合。
-   ============================================================ */
+/* 首页 hero 统计 — 单一来源：line-height 显式写死，三个数字行盒等高，标签必然共线 */
 .hero .stats {
     display: flex;
-    flex-direction: column;       /* 移动优先：窄屏竖排 */
+    flex-direction: column;
     align-items: center;
     gap: 16px;
     margin: 20px 0;
@@ -1732,12 +1464,12 @@ body.modal-open { overflow: hidden; }
 
 .hero .stats .num,
 .hero .stats .stat-value {
-    font-size: 1.4rem;            /* 手机 */
+    font-size: 1.4rem;
     font-weight: 800;
-    line-height: 1.15;            /* ★ 三个数字共用同一行高 → 标签必然共线 */
+    line-height: 1.15;
     color: var(--primary);
     font-family: var(--font-display);
-    font-variant-numeric: tabular-nums;   /* 等宽数字：数值变化时宽度不跳 */
+    font-variant-numeric: tabular-nums;
 }
 .hero .stats .label {
     margin-top: 4px;
@@ -1751,7 +1483,7 @@ body.modal-open { overflow: hidden; }
 @media (min-width: 769px) {
     .hero .stats {
         flex-direction: row;
-        align-items: flex-start;  /* 而非 stretch：三项各按内容高度，行盒一致即齐平 */
+        align-items: flex-start;
         justify-content: center;
         gap: 40px;
         margin: 28px 0;
@@ -1760,7 +1492,6 @@ body.modal-open { overflow: hidden; }
     .hero .stats .stat-value { font-size: 2.2rem; }
 }
 
-/* Settings UI v2.0.0-beta.4 */
 .settings-tab{cursor:pointer;font-weight:600;border-radius:var(--radius-pill);padding:7px 16px}.settings-tab:not(.btn-primary):hover{background:var(--bg-card-hover);border-color:var(--primary);color:var(--primary)}.settings-tab.btn-primary{background:linear-gradient(135deg,var(--primary),var(--accent-dark));border:none;box-shadow:var(--shadow)}.settings-toolbar .form-control{flex:1 1 200px;min-width:140px}
 .settings-group .card h3{position:relative;padding-left:14px}.settings-group .card h3::before{content:"";position:absolute;left:0;top:.18em;bottom:.18em;width:4px;border-radius:var(--radius-pill);background:linear-gradient(180deg,var(--primary),var(--accent))}.settings-group .card>.setting-group-desc{padding-left:14px;margin-bottom:16px}
 .setting-item{padding:10px 12px;border-radius:var(--radius-sm)}.setting-item:hover{background:var(--bg-card-hover)}.setting-label{font-weight:600}
@@ -1768,15 +1499,10 @@ body.modal-open { overflow: hidden; }
 #health-results{display:flex;flex-direction:column;gap:6px}#health-results .health-ok,#health-results .health-bad{display:inline-block;padding:2px 10px;border-radius:var(--radius-pill);font-size:.78rem;font-weight:700}#health-results .health-ok{background:color-mix(in srgb,var(--success) 14%,transparent);color:var(--success)}#health-results .health-bad{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
 .save-hint{color:var(--warning);font-weight:600}
 
-
-/* 晴空画册 · M2 前台/后台增强（v2.0.0-beta.5） */
 .hero-kicker{display:inline-flex;align-items:center;gap:8px;font-size:.82rem;font-weight:500;color:var(--accent);background:var(--accent-light);padding:6px 14px;border-radius:var(--radius-pill);margin-bottom:16px}
 .hero-banner-wrap{border-radius:var(--radius-lg);overflow:hidden}
 @media(min-width:769px){.hero .stats{border-top:1px solid var(--border);padding-top:20px}.hero .stats .stat{border-left:1px solid var(--border);padding-left:20px}.hero .stats .stat:first-child{border-left:none;padding-left:0}}
 
-/* API 测试器结果区 + API Key 预览。
-   原为 JS 内联 style 属性，经 innerHTML 解析后会被 CSP style-src（无 unsafe-inline）
-   静默丢弃导致样式失效；改为 class 走本文件。详见 helpers.js:renderSafeText 注释。 */
 .test-result-error{color:var(--danger);white-space:pre-wrap;word-break:break-word}
 .test-result-raw{white-space:pre-wrap;word-break:break-word}
 .key-preview{font-size:.8rem}

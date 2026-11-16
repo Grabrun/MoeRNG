@@ -11,10 +11,6 @@ use App\Models\Category;
 
 class HomeController extends Controller
 {
-    /**
-     * v1.3.1 迭代: 前台由单页拆分为多页导航（/ /docs /tester /about）。
-     * 每页共享同一组站点数据，只有首屏统计只在首页计算。
-     */
     private function frontData(): array
     {
         return [
@@ -22,7 +18,6 @@ class HomeController extends Controller
             'siteSlogan' => Config::get('settings.site_slogan', '随机二次元图片 API 服务'),
             'logoUrl' => Config::get('settings.logo_url', '') ?: '/assets/logo.png',
             'baseUrl' => Config::get('app.base_url', ''),
-            // v1.1.0-beta.4: footer site info (editable via 系统设置).
             'siteDescription' => Config::get('settings.site_description', ''),
             'icpNumber' => Config::get('settings.icp_number', ''),
             'copyright' => str_replace(
@@ -31,13 +26,11 @@ class HomeController extends Controller
                 (string) Config::get('settings.copyright', '© {year} MoeRNG. All rights reserved.')
             ),
             'footerHtml' => Config::get('settings.footer_html', ''),
-            // v1.1.0-beta.8: GitHub repo link (nav + about), configured in 系统设置.
             'githubUrl' => Config::get('settings.github_url', ''),
             'categories' => $this->safeCategories(),
         ];
     }
 
-    /** Category list that never breaks the page when the DB is unavailable. */
     private function safeCategories(): array
     {
         try {
@@ -49,24 +42,18 @@ class HomeController extends Controller
 
     public function index(Request $request): void
     {
-        // v1.2.0 迭代: site visit counter (best effort, never breaks the page).
         \App\Core\Stats::bump(\App\Core\Stats::TABLE_VISITS);
 
         $data = $this->frontData();
-        // v1.2.1 修复: 移除文件缓存——宝塔 open_basedir（防跨站）会拦截项目根
-        // var/ 路径的文件读写，首页直接报「跨目录读取已被拦截」。COUNT 查询
-        // 走索引很快，直接查询即可，不引入文件系统依赖。
         $data['totalImages'] = 0;
         $data['totalCategories'] = 0;
-        $data['availability'] = null; // null = 无样本 → 视图显示默认 99.9%
+        $data['availability'] = null;
         try {
             $data['totalImages'] = Image::count("status = 'active'");
             $data['totalCategories'] = Category::count();
-            // v2.0.0-beta.2: 前台服务可用性 —— 近 7 天 API 请求成功率（4xx 视为可用、
-            // 5xx 计失败）。内部已 best-effort，DB 不可用时保持 null。
+            // 近 7 天 API 成功率：4xx 视为可用，5xx 计失败。
             $data['availability'] = \App\Core\Stats::availability();
         } catch (\Throwable) {
-            // DB may not be available
         }
 
         $this->render('home', $data);
@@ -88,10 +75,6 @@ class HomeController extends Controller
         ]);
     }
 
-    /**
-     * v1.3.1 图库页（v2 改版）: 按分类分区展示，每个分类随机 12 张，
-     * 不再做全量分页列表。未分类图片单独一个区块放在最后；空分类不显示。
-     */
     public function gallery(Request $request): void
     {
         $sections = [];
@@ -102,13 +85,11 @@ class HomeController extends Controller
                     $sections[] = ['name' => $cat->name, 'images' => $images];
                 }
             }
-            // 未分类图片收尾区块
             $uncategorized = Image::randomBatch(null, 12);
             if ($uncategorized) {
                 $sections[] = ['name' => '未分类', 'images' => $uncategorized];
             }
         } catch (\Throwable) {
-            // DB unavailable — empty gallery instead of an error page
         }
 
         $this->render('gallery', $this->frontData() + [

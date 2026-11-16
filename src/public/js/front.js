@@ -1,17 +1,5 @@
-// MoeRNG - Front-site JavaScript (v2.0.0-beta.9 性能优化拆分)
-//
-// 本文件是 app.js 的前台子集，只包含前台页面（home/gallery/docs/tester/about）
-// 实际使用的功能；后台管理页仍加载完整的 app.js（本文件不与之同页加载，无冲突）。
-// 来源保持与 app.js 逐字节一致（由 docs/scripts/patch_m6_perf.py 按行切片生成），
-// 任何前台交互的修改应同步到 app.js 或回归本文件。
+// 前台页面子集（home/gallery/docs/tester/about），相关改动需与 app.js 同步。
 
-// ---------- Toast (app.js L1-L23) ----------
-// MoeRNG - Frontend JavaScript
-
-// Toast notifications. Default lifetime is 5s; clicking a toast dismisses it
-// early. The lifetime is deliberately generous — admin mutations (category
-// create/update/delete) reload the page after a short delay, and we want the
-// success message to stay readable instead of being wiped by the reload.
 window.showToast = function(message, type = 'info', duration = 5000) {
     const container = document.querySelector('.toast-container') || createToastContainer();
     const toast = document.createElement('div');
@@ -30,7 +18,6 @@ function createToastContainer() {
     return container;
 }
 
-// ---------- copyText (app.js L113-L128) ----------
 window.copyText = async function(text) {
     if (navigator.clipboard && window.isSecureContext) {
         try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall through */ }
@@ -48,7 +35,6 @@ window.copyText = async function(text) {
     return ok;
 };
 
-// ---------- initApiTester (app.js L131-L309) ----------
 function initApiTester() {
     const tester = document.getElementById('api-tester');
     if (!tester) return;
@@ -64,15 +50,11 @@ function initApiTester() {
     const durationEl = document.getElementById('test-duration');
     const metaBox = document.getElementById('test-meta');
 
-    // v1.2.1 UI 深度分析 (TEST-01): 最近 10 次请求历史（localStorage 文本记录，
-    // 与已移除的随机图缩略图历史不同——这里保存的是请求/响应文本，不依赖签名 URL）。
     const TEST_HISTORY_KEY = 'moerng_test_history';
 
     function showMeta(status, statusText, ms) {
         if (!metaBox) return;
         const ok = status >= 200 && status < 400;
-        // v1.2.1 修复: test-meta carries a 'hidden' class, use classList (inline
-        // display would lose to the !important rule).
         metaBox.classList.remove('hidden');
         if (statusBadge) {
             statusBadge.textContent = status + ' ' + statusText;
@@ -93,16 +75,11 @@ function initApiTester() {
         } catch (e) { /* private mode — ignore */ }
     }
 
-    // v1.5.0-beta.2: 参数构造与路径拼装**只有这一份** —— URL 展示、cURL 提示、
-    // 实际发出的请求全部由它派生。此前 updateUrl() 与点击处理器各写一遍参数逻辑，
-    // 加了 size 之后必然漂移：页面显示的 URL 与实际请求不一致，测试页就失去了
-    // "所见即所测"的意义。
+    // 参数与路径只此一份：URL 展示、cURL 提示、真实请求都由它派生
     function buildParams() {
         const params = new URLSearchParams();
         if (categorySelect.value) params.set('category', categorySelect.value);
         if (typeSelect.value) params.set('type', typeSelect.value);
-        // 空值 = 不传 size：由服务端决定缺省（JSON 为 md、redirect 为原图），
-        // 测试页因此也能验证「向后兼容」这一条。
         if (sizeSelect && sizeSelect.value) params.set('size', sizeSelect.value);
         return params;
     }
@@ -124,35 +101,22 @@ function initApiTester() {
     updateUrl();
 
     runBtn.addEventListener('click', async function() {
-        // v1.2.1-beta.3: 守卫式禁用 + 视觉 Loading 反馈（防止用户在异步完成前重复点击）
         runBtn.disabled = true;
         runBtn.textContent = '加载中…';
         resultBox.innerHTML = '<div class="spinner"></div>';
         if (metaBox) metaBox.classList.add('hidden');
 
         const type = typeSelect.value;
-        // 与 updateUrl() 同源：页面上显示的 URL 与实际请求只差一个 origin 前缀
         const apiPath = buildApiPath();
         const t0 = performance.now();
 
-        // Promise wrapper so finally runs in BOTH json/redirect branches,
-        // regardless of which branch executes. Without this, the redirect
-        // branch returns immediately (Image is async) and the user could
-        // click again before the previous request finishes — dev tools
-        // would show no second request because the first click handler
-        // hadn't completed. We resolve the promise on Image load/error.
+        // redirect 分支靠 Image 异步完成，用 Promise 让 finally 两条分支都执行
         let resolveRequest;
         const requestDone = new Promise(r => { resolveRequest = r; });
 
         try {
             if (type === 'redirect') {
-                // fetch() following a 302 to a cross-origin object-storage URL
-                // (e.g. COS bucket) blows up with "Failed to fetch" when the
-                // bucket doesn't serve CORS headers — yet the image itself
-                // loads fine in <img>. So we test the redirect target as an
-                // Image element: it auto-follows the 302, doesn't require
-                // CORS for the <img> render path, and correctly reports
-                // load/error so the tester reflects real-world usability.
+                // 跨域 302 目标无 CORS 头时 fetch 失败，改用 Image 探测（img 渲染不受 CORS 限制）
                 const tester = new Image();
                 tester.alt = '随机图片';
                 tester.style.cssText = 'max-width:100%;max-height:400px;object-fit:contain;';
@@ -178,11 +142,7 @@ function initApiTester() {
                     saveTestHistory(apiPath, '加载失败（' + formatDuration(ms) + '）');
                     resolveRequest();
                 };
-                // v1.2.1-beta.3 修复: 重复点击无请求 —— 服务器 redirect 响应未带
-                // Cache-Control:no-store，浏览器会把 302 + 图片按启发式规则缓存；
-                // 第二次设置相同 src 时直接命中缓存，不发任何请求（devtools 无记录，
-                // 页面只有闪一下的 UI 反馈）。给 URL 追加一次性时间戳 + 随机数 query
-                // 强制绕过缓存——即使快速双击落在同一毫秒，随机数也能保证 src 唯一。
+                // 302+图片会被启发式缓存，追加时间戳+随机数强制重新请求
                 var cacheBust = (apiPath.indexOf('?') > -1 ? '&' : '?') + '_=' + Date.now() + Math.random();
                 tester.src = apiPath + cacheBust;
             } else {
@@ -192,14 +152,11 @@ function initApiTester() {
                 let pretty;
                 try { pretty = JSON.stringify(JSON.parse(text), null, 2); }
                 catch (e) { pretty = text; }
-                // v2.0.0-beta.5: 非 2xx 响应优雅化 —— JSON 错误体直接展示服务端 message
-                // （空库引导等）；非 JSON 体（nginx 默认错误页等）说明网关/伪静态未配置，
-                // 请求根本没到应用层，给可读提示而不是裸「404 Not Found / nginx」。
                 if (!resp.ok) {
                     let hint = '';
                     try { const j = JSON.parse(text); hint = (j && (j.message || j.error)) || ''; }
                     catch (e2) { /* non-JSON body */ }
-                    // 修复 XSS + CSP：改用 textContent + CSS class（见 helpers.js:renderSafeText）
+                    // 用 renderSafeText（textContent）避免存储型 XSS，见 helpers.js
                     window.renderSafeText(resultBox,
                         '请求失败（HTTP ' + resp.status + '）'
                         + (hint ? '\n' + hint : '\n接口返回了非 JSON 错误体 —— 多为网关/伪静态（URL Rewrite）未配置，请求未到达应用层。')
@@ -222,7 +179,7 @@ function initApiTester() {
             window.renderSafeText(resultBox, '错误：' + e.message, 'test-result-error');
             showMeta(0, '网络错误', ms);
             saveTestHistory(apiPath, '错误：' + e.message);
-            // v1.2.1-beta.3 修复: 异常分支也要 resolve，否则 await requestDone 永远挂起 → 按钮卡 Loading
+            // 异常分支也要 resolve，否则 await requestDone 永久挂起
             resolveRequest();
         }
 
@@ -231,7 +188,6 @@ function initApiTester() {
     });
 }
 
-// ---------- initCopyButtons (app.js L1267-L1285) ----------
 function initCopyButtons() {
     document.querySelectorAll('.copy-btn').forEach(btn => {
         btn.addEventListener('click', async function() {
@@ -252,7 +208,6 @@ function initCopyButtons() {
     });
 }
 
-// ---------- parseJsonResponse (app.js L1363-L1381) ----------
 async function parseJsonResponse(resp, label) {
     const where = label ? (label + '：') : '';
     let raw;
@@ -273,7 +228,6 @@ async function parseJsonResponse(resp, label) {
     }
 }
 
-// ---------- UX_ICON (app.js L2351-L2359) ----------
 const UX_ICON = {
     close: '<svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>',
     prev: '<svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7"/></svg>',
@@ -284,7 +238,6 @@ const UX_ICON = {
     menu: '<svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>'
 };
 
-// ---------- initReveal (app.js L2464-L2480) ----------
 function initReveal() {
     const els = document.querySelectorAll('.reveal');
     if (!els.length) return;
@@ -303,7 +256,6 @@ function initReveal() {
     els.forEach(el => io.observe(el));
 }
 
-// ---------- initRandomDemo (app.js L2483-L2612) ----------
 function initRandomDemo() {
     const demo = document.querySelector('.random-demo');
     if (!demo) return;
@@ -323,10 +275,9 @@ function initRandomDemo() {
 
     let currentUrl = '';
     let currentName = '';
-    let currentLbUrl = '';   // v1.3.2-beta.2: 灯箱用的 lg 缩略图（回退原图）
+    let currentLbUrl = '';
 
-    // v1.3.2-beta.2: thumbs 为 API 返回的多尺寸映射（sm/md/lg）——预览框用 md
-    // （CSS 上限 480px），灯箱用 lg；下载与复制链接始终是原图 url。
+    // 预览框用 md、灯箱用 lg；下载与复制链接始终是原图
     function showImage(url, category, thumbs) {
         const t = thumbs || {};
         currentLbUrl = t.lg || url;
@@ -335,25 +286,18 @@ function initRandomDemo() {
         imgBox.removeAttribute('srcset');
         imgBox.src = t.md || url;
         imgBox.alt = category ? '随机图片：' + category : '随机图片';
-        // v1.2.1 修复: imgBox/zoomBtn/dlBtn carry a 'hidden' class (display:none
-        // !important) in the markup, so toggle via classList — an inline
-        // style.display would be overridden by the !important rule.
         imgBox.classList.remove('hidden');
         if (placeholder) placeholder.style.display = 'none';
         if (urlEl) urlEl.textContent = url;
         if (zoomBtn) zoomBtn.classList.remove('hidden');
         if (dlBtn) dlBtn.classList.remove('hidden');
-        // v1.2.1-beta.3 修复: "已签名"判断从 p= 改为 query 存在性——
-        // COS/OSS 签名 URL 用 q-sign-* 参数（无 p=），本地 /files 用 p=，
-        // 统一按「含 query 即临时签名链接」判断。
+        // 含 query 即临时签名链接（COS/OSS 用 q-sign-*，本地 /files 用 p=）
         const isSigned = url.includes('?') || url.includes('&');
         if (metaEl) {
             metaEl.textContent = (isSigned ? '临时签名链接' : '永久链接') + (category ? ' · 分类：' + category : '');
             metaEl.classList.remove('hidden');
         }
-        // v1.2.1-beta.3 迭代: gacha 抽卡动效 — 霓虹边框闪动 + 过冲弹入（可关）。
-        // 仅在用户未通过 prefers-reduced-motion 关闭动效时执行。
-        // v1.2.1-beta.3 移除: 历史缩略图（签名 URL 默认 5 分钟 TTL，过期后图裂）已删除。
+        // 抽卡动效仅在未开启 prefers-reduced-motion 时执行
         const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (!reduceMotion) {
             const stage = imgBox.closest('.rd-preview');
@@ -370,8 +314,6 @@ function initRandomDemo() {
         }
     }
 
-    // v1.2.1 迭代: view-large (lightbox)
-    // v1.2.1-beta.3 修复: 之前只有图片本体有点击事件，眼睛图标按钮（zoomBtn）无反应
     function openLightbox() {
         if (!currentUrl) return;
         if (lbImg) { lbImg.removeAttribute('srcset'); lbImg.src = currentLbUrl || currentUrl; }
@@ -394,7 +336,6 @@ function initRandomDemo() {
     }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && lb && !lb.classList.contains('hidden')) closeLb(); });
 
-    // v1.2.1 迭代: download button
     if (dlBtn) {
         dlBtn.addEventListener('click', () => {
             if (!currentUrl) return;
@@ -432,10 +373,8 @@ function initRandomDemo() {
         }
     });
 
-    // v1.2.1-beta.3 移除: 历史缩略图已删除（renderHistory / saveHistory 一并移除）
 }
 
-// ---------- initStatCount (app.js L2653-L2679) ----------
 function initStatCount() {
     const els = document.querySelectorAll('.stat-value[data-count]');
     if (!els.length) return;
@@ -464,7 +403,6 @@ function initStatCount() {
     els.forEach(el => io.observe(el));
 }
 
-// ---------- applyDynamicStyles (app.js L2684-L2697) ----------
 function applyDynamicStyles() {
     document.querySelectorAll('[data-h]').forEach(function (el) {
         var h = parseInt(el.getAttribute('data-h'), 10);
@@ -480,7 +418,6 @@ function applyDynamicStyles() {
     });
 }
 
-// ---------- Init on DOM ready (front-site subset) ----------
 document.addEventListener('DOMContentLoaded', function() {
     initThemeToggle();   // defined in helpers.js (loaded first)
     initApiTester();

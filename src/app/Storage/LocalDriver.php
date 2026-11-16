@@ -5,18 +5,10 @@ namespace App\Storage;
 
 class LocalDriver implements StorageInterface
 {
-    /**
-     * v2.0.0-beta.1: 本地媒体根**唯一**默认在 **web 根之外**（`storage/uploads`）。
-     *
-     * v1.5.0-beta.1 之前默认是 `public/uploads`（web 根之下）：即便 MoeRNG 自己的
-     * URL 早已走短时签名端点（见 url()），文件仍能被 Web 服务器按静态路径直接
-     * 读到，签名机制形同虚设；同时 `public/` 目录语义被媒体文件污染。
-     * 「取消兼容与迁移」后，`public/uploads` 历史根不再作为读取回退（见
-     * FileController），历史根文件需在升级前迁移至本目录。
-     */
+    /** 媒体根默认在 web 根之外，避免被 Web 服务器静态直读绕过签名。 */
     private const DEFAULT_REL_DIR = 'storage/uploads';
 
-    /** 品牌 logo 目录：站点静态资源（非用户媒体），与媒体根无关。 */
+    /** 站点 logo 目录，位于 web 根下（非用户媒体）。 */
     public const BRANDING_REL_DIR = 'public/uploads/logo';
 
     private string $uploadDir;
@@ -24,23 +16,11 @@ class LocalDriver implements StorageInterface
     private string $cdnOverride;
     private int $signedTtl;
 
-    /**
-     * v1.0.35: path/cdn are ALWAYS injected from the owning StorageProfile —
-     * there is no settings fallback anymore (profiles are the single source
-     * of truth).
-     * v1.2.0 迭代: $signedTtl — local files are served through the signed
-     * /files endpoint (default 300s) instead of a permanent static URL.
-     *
-     * @param string $path     Relative (to project root) or absolute upload dir.
-     * @param string $cdn      Optional CDN base URL for this instance.
-     * @param int    $signedTtl Signed link lifetime in seconds.
-     */
     public function __construct(string $path = '', string $cdn = '', int $signedTtl = 300)
     {
         $this->cdnOverride = $cdn;
         $this->signedTtl = max(1, $signedTtl);
 
-        // 相对路径锚定项目根（见 resolveDir）；空值即默认布局 storage/uploads。
         $this->uploadDir = self::resolveDir($path);
         $this->baseUrl = $this->resolveBaseUrl();
 
@@ -49,22 +29,13 @@ class LocalDriver implements StorageInterface
         }
     }
 
-    /**
-     * Informational prefix for locally stored files (displayed by doctor.php).
-     *
-     * v2.0.0-beta.1: 本地文件的**实际**读取路径始终是签名端点（见 url()），
-     * 所以这里只回答一个问题 —— 这个目录**能不能被 Web 服务器静态直读**：
-     *   1. 配了 CDN 域名         → 该域名（文件由 CDN 回源，仍需回源映射）
-     *   2. 目录位于 web 根之下    → 该静态路径（可直读 —— 签名形同虚设，建议迁出）
-     *   3. 目录在 web 根之外      → '/files'（只能走短时签名，默认布局即此）
-     */
+    /** 此处只回答一个问题：该目录能否被 Web 服务器静态直读。 */
     private function resolveBaseUrl(): string
     {
         if ($this->cdnOverride !== '') {
             return rtrim($this->cdnOverride, '/');
         }
 
-        // 只有「确实位于 web 文档根之下」才谈得上静态直读。
         $docRoot = trim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
         $docRoot = $docRoot !== '' ? realpath($docRoot) : '';
         $realUpload = realpath($this->uploadDir);
@@ -78,12 +49,7 @@ class LocalDriver implements StorageInterface
         return '/files';
     }
 
-    /**
-     * 把配置里的（相对/绝对）目录解析为绝对路径。
-     *
-     * 相对路径一律锚定**项目根**，绝不跟随 PHP-FPM 的工作目录 —— 否则同一个
-     * 配置在不同上下文下会指向不同目录（历史 bug 源头）。
-     */
+    /** 相对路径一律锚定项目根，不跟随 PHP-FPM 工作目录。 */
     public static function resolveDir(string $path = ''): string
     {
         $dir = trim($path);
@@ -96,13 +62,11 @@ class LocalDriver implements StorageInterface
         return dirname(__DIR__, 2) . '/' . trim(str_replace('\\', '/', $dir), '/');
     }
 
-    /** 默认媒体根（绝对路径）—— 单测/备份共用同一来源。 */
     public static function defaultUploadDir(): string
     {
         return self::resolveDir('');
     }
 
-    /** 默认媒体根的**相对**形态（存储实例 config.path 里记录的形式）。 */
     public static function defaultRelDir(): string
     {
         return self::DEFAULT_REL_DIR;
@@ -115,28 +79,9 @@ class LocalDriver implements StorageInterface
             || (bool) preg_match('#^[A-Za-z]:[\\\\/]#', $path);
     }
 
-    /**
-     * MR-18: resolve a storage key to an absolute path INSIDE the media root.
-     *
-     * The driver previously trusted caller-supplied keys and only did
-     * ltrim('/', $key). A key containing `..` (e.g. a future second key source,
-     * dirty thumbs JSON, or a migration script) would escape uploadDir and turn
-     * delete() into an arbitrary-file unlink primitive. All filesystem join
-     * points now go through this single normaliser:
-     *   1. backslashes are normalised to '/' (uniform Windows/Linux behaviour);
-     *   2. absolute paths (root-relative '/' or drive letters) are rejected —
-     *      a storage key is ALWAYS relative to the media root;
-     *   3. any `..` segment is rejected outright (current key sources never emit
-     *      it; defence-in-depth, mirroring FileController's realpath containment
-     *      check on the read side).
-     *
-     * @throws \RuntimeException when the key would escape the media root.
-     */
+    /** 拒绝绝对路径与 .. 段：否则路径可逃出媒体根，delete() 会变成任意文件删除。 */
     private function resolveKeyPath(string $remotePath): string
     {
-        // Normalise Windows separators and strip a leading slash (a leading '/'
-        // is harmless once trimmed — it does not escape the root; the old code
-        // did ltrim('/') at every join point, so keep that tolerant behaviour).
         $p = ltrim(str_replace('\\', '/', trim($remotePath)), '/');
         if ($p === '' || (bool) preg_match('#^[A-Za-z]:#', $p)) {
             throw new \RuntimeException("Invalid storage key (must be relative): {$remotePath}");
@@ -161,9 +106,6 @@ class LocalDriver implements StorageInterface
             throw new \RuntimeException("Upload directory is not writable: {$targetDir}");
         }
 
-        // A silent copy() failure used to return a perfectly valid-looking URL
-        // for a file that was never written — the classic "upload succeeded,
-        // image 404s" report. Fail loudly instead.
         $moved = is_uploaded_file($localPath)
             ? @move_uploaded_file($localPath, $targetPath)
             : @copy($localPath, $targetPath);
@@ -182,11 +124,7 @@ class LocalDriver implements StorageInterface
         if (is_file($filePath)) {
             return @unlink($filePath);
         }
-        // MR-40: idempotent delete — a key that does not exist is already
-        // "deleted", matching the cloud drivers (deleteObject on a missing key
-        // returns 204/true). The old `return false` made deleting a history row
-        // whose thumb file was already gone count as a storage failure and flood
-        // the audit log with image_delete_storage_failed noise.
+        // 键不存在也算删除成功（与云驱动一致），避免历史行清理被误判为失败。
         return true;
     }
 
@@ -197,9 +135,7 @@ class LocalDriver implements StorageInterface
             return '';
         }
 
-        // v1.2.0 迭代: CDN keeps its permanent URL; otherwise hand back a
-        // short-lived signed link served by the /files endpoint (no more
-        // permanent static URLs for local files).
+        // 本地文件不提供永久静态 URL，无 CDN 时一律走 /files 短时签名。
         if ($this->cdnOverride !== '') {
             return rtrim($this->cdnOverride, '/') . '/' . $remotePath;
         }
@@ -222,19 +158,16 @@ class LocalDriver implements StorageInterface
         return ($n === false || $n <= 0) ? null : (int) $n;
     }
 
-        /** Absolute filesystem directory currently in use (used by doctor.php). */
     public function uploadDir(): string
     {
         return $this->uploadDir;
     }
 
-    /** Public URL prefix currently in use (used by doctor.php). */
     public function baseUrl(): string
     {
         return $this->baseUrl;
     }
 
-    /** 读取方式：'cdn'（配了 CDN 域名）或 'signed'（/files 短时签名）。 */
     public function servingMode(): string
     {
         return $this->cdnOverride !== '' ? 'cdn' : 'signed';

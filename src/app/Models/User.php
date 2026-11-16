@@ -35,7 +35,6 @@ class User extends Model
         return self::firstWhere('username', $username);
     }
 
-    /** v1.2.1 登录增强: resolve a user by either email or username. */
     public static function findByLogin(string $login): ?self
     {
         $login = trim($login);
@@ -45,19 +44,16 @@ class User extends Model
         return self::findByEmail($login) ?: self::findByUsername($login);
     }
 
-    // ── remember-me (auto-login) helpers ────────────────────────────────
-
-    /** Create a fresh remember token; returns the RAW value for the cookie. */
+    /** 返回明文 token 给 cookie，库里只留 SHA-256 哈希。 */
     public function makeRememberToken(): string
     {
         $raw = bin2hex(random_bytes(32));
         $this->remember_token = hash('sha256', $raw);
-        $this->remember_expires = date('Y-m-d H:i:s', time() + 7 * 86400); // 7 days
+        $this->remember_expires = date('Y-m-d H:i:s', time() + 7 * 86400);
         $this->save();
         return $raw;
     }
 
-    /** Verify a raw remember cookie value against this user's stored hash. */
     public function verifyRememberToken(string $raw): bool
     {
         if ($this->remember_token === null || $this->remember_token === '' || $this->remember_expires === null) {
@@ -69,7 +65,6 @@ class User extends Model
         return hash_equals((string) $this->remember_token, hash('sha256', $raw));
     }
 
-    /** Resolve a user from a raw remember cookie value (or null if invalid). */
     public static function findByRememberToken(string $raw): ?self
     {
         if ($raw === '') {
@@ -83,7 +78,6 @@ class User extends Model
         return $user;
     }
 
-    /** Clear the remember token on logout (logout also removes the cookie). */
     public function clearRememberToken(): void
     {
         $this->remember_token = null;

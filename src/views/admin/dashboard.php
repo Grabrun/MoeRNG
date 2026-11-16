@@ -1,5 +1,4 @@
 <?php
-// 人类可读大小
 function human_bytes($b) {
     $b = (float) $b;
     if ($b < 1024) return (int) $b . ' B';
@@ -7,8 +6,7 @@ function human_bytes($b) {
     foreach ($units as $u) { $b /= 1024; if ($b < 1024) return round($b, 1) . ' ' . $u; }
     return round($b, 1) . ' PB';
 }
-// v1.2.0 迭代: defensive defaults — a partially-overwritten deploy must
-// never 500; every block degrades gracefully.
+// 防止部署不完整导致 500：缺失的变量全部兜底。
 $stats        ??= [];
 $recentImages ??= [];
 $categoryStats ??= [];
@@ -29,7 +27,6 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     <p>欢迎回到 MoeRNG 管理面板</p>
 </div>
 
-<!-- v1.2.1 UI 深度分析 (DASH-04): 快捷操作入口 -->
 <div class="quick-actions reveal">
     <a href="/admin/images" class="action-btn">
         <span class="action-icon"><?= icon('upload', 22) ?></span>
@@ -57,7 +54,6 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     </a>
 </div>
 
-<!-- 1. 顶部统计卡 -->
 <div class="grid grid-4">
     <div class="stat-card">
         <div class="stat-icon c-primary"><?= icon('image', 24) ?></div>
@@ -81,7 +77,6 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     </div>
 </div>
 
-<!-- 2. 最近上传 + 分类分布 -->
 <div class="grid grid-2 mt-3 reveal">
     <div class="card">
         <div class="flex flex-between">
@@ -91,10 +86,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
         <?php if (empty($recentImages)): ?>
             <p class="text-muted">暂无图片，去 <a href="/admin/images">图片管理</a> 上传第一张吧。</p>
         <?php else: ?>
-        <!-- v1.2.1 修复（第二轮）: img 绝对定位填充——之前 img height:100% 依赖
-             a 的高度，而 a 默认 align-self:stretch 又依赖行高，行高被大图固有
-             高度撑爆 → aspect-ratio:1 失效、图片溢出卡片。绝对定位让 img 脱离
-             行高计算，a 的尺寸完全由 aspect-ratio:1 × 轨道宽度决定 -->
+        <!-- img 绝对定位：避免图片固有高度撑爆卡片，导致 aspect-ratio 失效。 -->
         <div class="recent-grid">
             <?php foreach ($recentImages as $img): ?>
             <a href="/admin/images" class="tile" title="<?= h($img->original_name ?? '') ?>">
@@ -126,7 +118,6 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     </div>
 </div>
 
-<!-- 3. 存储用量 + 7 天上传趋势 -->
 <div class="grid grid-1 mt-3 reveal">
     <div class="card">
         <div class="flex flow-summary-head">
@@ -161,7 +152,6 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     </div>
 </div>
 
-<!-- 4. 最近操作 -->
 <div class="grid grid-1 mt-3 reveal">
     <div class="card">
         <h3 class="mb-2">最近操作</h3>
@@ -181,16 +171,13 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     </div>
 </div>
 
-<!-- 5. 流量统计（含总流量）+ 运行状态（合并系统概览与状态） -->
 <div class="grid grid-2 mt-3 reveal">
-    <!-- 流量统计 -->
     <div class="card">
         <div class="flex flow-summary-head">
             <h3 class="mb-2">流量统计</h3>
             <?php $grandTotal = (int)$apiStats['total'] + (int)$visitStats['total']; ?>
             <span class="text-small">总流量：<strong class="c-primary"><?= number_format($grandTotal) ?></strong> 次请求</span>
         </div>
-        <!-- 概览：今日 + 累计（API+访问） -->
         <div class="grid grid-2 traffic-summary">
             <div>
                 <div class="traffic-num primary"><?= number_format((int)$apiStats['today'] + (int)$visitStats['today']) ?></div>
@@ -201,7 +188,6 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
                 <div class="stat-label">累计总请求</div>
             </div>
         </div>
-        <!-- API/访问 分项 -->
         <div class="flow-grid">
             <div class="flow-box">
                 <div class="flex"><span class="text-muted">API 调用</span><strong><?= number_format((int)$apiStats['today']) ?></strong></div>
@@ -231,10 +217,8 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
         </div>
     </div>
 
-    <!-- 运行状态（合并：原系统概览 + 系统状态） -->
     <div class="card">
         <h3 class="mb-2">运行状态</h3>
-        <!-- 实时指标（CPU / PHP 进程内存 / 磁盘） -->
         <div class="metric-stack">
             <?php
             $metrics = [
@@ -257,7 +241,6 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
             <?php endforeach; ?>
         </div>
         <p class="text-muted foot-note">CPU 为 1 分钟负载均值 / 核数；PHP 内存 = 当前进程 / memory_limit；磁盘 = 项目盘占用率。</p>
-        <!-- 环境信息（原「系统概览」） -->
         <div class="env-list">
             <div class="flex flex-between env-row"><span class="text-muted">PHP 版本</span><span><?= h($system['php']) ?></span></div>
             <div class="flex flex-between env-row"><span class="text-muted">内存上限</span><span><?= h($status['mem_limit'] ?? '-') ?></span></div>

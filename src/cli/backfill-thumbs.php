@@ -2,27 +2,13 @@
 declare(strict_types=1);
 
 /**
- * MoeRNG - 一键补全缩略图（CLI 父脚本）
- *
- * 用法（服务器部署目录下执行）：
- *   php src/cli/backfill-thumbs.php [--batch 10] [--retry]
- *
- * 作用：把「process_status='done' 但 thumb_meta 为 pending（无缩略图）」的
- * 历史图片批量补齐缩略图（sm 320 / md 640 / lg 1280 WebP），补齐后前台
- * /gallery 图库自动改用缩略图（不再回退原图）。
- *
- * 实现：每批调用一次子进程（src/cli/backfill-thumbs-batch.php），子进程
- * 构造 Request 走 ImageController::backfillThumbs()（同一份生成/上传/落库
- * 逻辑，零分叉），父脚本按返回的 remaining 循环直到队列清空。
- * 选择子进程而非同进程多轮：backfillThumbs 内部以 json() 结束（exit），
- * 单进程无法循环调用。
- *
- * 可选 --retry：额外对 thumb_meta 为 partial/failed 的行做定向重试。
+ * 一键补全缩略图（CLI 父脚本），逐批起子进程调 ImageController::backfillThumbs()。
+ * 用法: php src/cli/backfill-thumbs.php [--batch=张数] [--retry]；--retry 额外重试 partial/failed 行
  */
 
 use App\Core\Database;
 
-$batch = 0;   // 0 = 用 ImageController::QUEUE_BATCH_DEFAULT；clamp 放在 bootstrap 之后（常量要能看到类）
+$batch = 0;   // 0 = 用 QUEUE_BATCH_DEFAULT，clamp 需在 bootstrap 之后
 $withRetry = false;
 foreach (array_slice($argv, 1) as $arg) {
     if ($arg === '--retry') {
@@ -34,7 +20,7 @@ foreach (array_slice($argv, 1) as $arg) {
 
 require dirname(__DIR__) . '/bootstrap.php';
 
-// 上限只认 ImageController::QUEUE_BATCH_MAX —— 原先 5 处各写一个 10，改一处等于没改。
+// 上限只认 QUEUE_BATCH_MAX（单一来源）。
 $batch = max(1, min(
     \App\Controllers\Admin\ImageController::QUEUE_BATCH_MAX,
     $batch > 0 ? $batch : \App\Controllers\Admin\ImageController::QUEUE_BATCH_DEFAULT
@@ -100,14 +86,13 @@ while ($remaining > 0) {
     echo sprintf("第 %d 批：成功 %d 张，失败 %d 张，剩余 %d 张\n",
         $round, $doneThis, $failedThis, $remaining);
 
-    // 硬失败（原图取不到/存储不可达）不写状态、remaining 不推进 —— 多批无进展则中止
+    // 硬失败不写状态、remaining 不推进，多批无进展则中止。
     if ($doneThis === 0 && $failedThis > 0 && $remaining > 0) {
         echo "连续失败（本批 0 成功）：可能存在硬失败（原图缺失/存储不可达）。\n";
         echo "请先检查存储实例与 incoming 目录，再重新执行。剩余 {$remaining} 张未处理。\n";
         exit(1);
     }
 
-    // 防死循环：多批无进展则中止
     if ($round > 500) {
         echo "达到批次上限（500），中止。剩余 {$remaining} 张。\n";
         break;

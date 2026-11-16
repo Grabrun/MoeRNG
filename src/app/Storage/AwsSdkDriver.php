@@ -3,16 +3,6 @@ declare(strict_types=1);
 
 namespace App\Storage;
 
-/**
- * AWS S3 via the OFFICIAL AWS SDK for PHP (aws/aws-sdk-php, bundled in
- * sdk/aws/). This is the third and final SDK-backed driver — after v1.0.28 no
- * hand-rolled signing remains anywhere in the project.
- *
- * Runtime dependencies (Guzzle 7 / PSR-7 / Promises / psr/http-message) are
- * provided by sdk/cos/vendor; sdk/aws/ ships only Aws\ + JmesPath\ sources.
- * If the SDK is missing, S3Driver throws a clear error (no built-in fallback
- * anymore — the user asked for self-built signing to be removed).
- */
 class AwsSdkDriver implements StorageInterface
 {
     private string $accessKey;
@@ -66,8 +56,8 @@ class AwsSdkDriver implements StorageInterface
             return $this->client;
         }
         $base = dirname(__DIR__, 2) . '/sdk';
-        require_once $base . '/cos/vendor/autoload.php'; // shared Guzzle / PSR-7
-        require_once $base . '/aws/autoload.php';        // Aws\ + JmesPath\
+        require_once $base . '/cos/vendor/autoload.php';
+        require_once $base . '/aws/autoload.php';
 
         $args = [
             'version'     => 'latest',
@@ -76,24 +66,17 @@ class AwsSdkDriver implements StorageInterface
                 'key'    => $this->accessKey,
                 'secret' => $this->secretKey,
             ],
-            // MR-20: bound the per-request time so a hung/TCP-stalled endpoint
-            // fails fast instead of pinning a PHP-FPM worker until the OS TCP
-            // timeout. connect_timeout=5s handshake, timeout=30s whole request.
+            // 收紧单请求超时，避免 TCP 卡死把 FPM 进程占住。
             'http'        => [
                 'timeout'         => 30,
                 'connect_timeout' => 5,
             ],
         ];
-        // Custom endpoint (S3-compatible gateways such as MinIO) — AWS S3
-        // itself resolves the endpoint from region, so this stays empty there.
-        // v1.2.1: a custom source domain bound to the bucket (CNAME, e.g.
-        // images.example.com → {bucket}.s3.{region}.amazonaws.com) wins over
-        // the gateway endpoint and keeps virtual-hosted style (bucket.sourcedomain).
+        // 自建网关填 endpoint；自定义源站域名优先，且保持 virtual-hosted 风格。
         $hostOverride = $this->sourceDomain !== '' ? $this->sourceDomain : $this->endpoint;
         if ($hostOverride !== '') {
             $args['endpoint'] = rtrim($hostOverride, '/');
-            // Path-style only for explicit gateways; a source domain is a
-            // virtual-hosted CNAME (bucket.sourcedomain), so no path style.
+            // 只有显式网关用 path-style；源站域名是 CNAME，不能开。
             $args['use_path_style_endpoint'] = $this->sourceDomain === '';
         }
         $this->client = new \Aws\S3\S3Client($args);
@@ -173,8 +156,7 @@ class AwsSdkDriver implements StorageInterface
             $request = $this->client()->createPresignedRequest($cmd, '+' . $this->signedTtl . ' seconds');
             return (string) $request->getUri();
         } catch (\Throwable $e) {
-            // MR-42: 私有 bucket 的裸 URL 必然 403，直接返回等于给出一个必然失效的
-            // 链接（图片仍显示占位符，极难发现）。只有探测确认可匿名读才降级。
+            // 预签名失败时，只有裸 URL 确认可匿名读才降级，否则抛错。
             $host = $this->sourceDomain !== ''
                 ? rtrim($this->sourceDomain, '/')
                 : ($this->endpoint !== ''
@@ -190,12 +172,7 @@ class AwsSdkDriver implements StorageInterface
         }
     }
 
-    /**
-     * Real connectivity test used by doctor.php — a live PUT probe.
-     * NOT headBucket: bucket-level permission checks 403 for many image-bucket
-     * users even though uploads work. An actual upload probe mirrors the real
-     * operation; the probe object is deleted immediately.
-     */
+    // 用真实 PUT 探测：bucket 级检查常因权限 403，不能代表上传是否可用。
     public function testConnection(): bool
     {
         $key = 'doctor-probe-' . bin2hex(random_bytes(4)) . '.txt';
@@ -214,7 +191,6 @@ class AwsSdkDriver implements StorageInterface
         try {
             $this->client()->deleteObject(['Bucket' => $this->bucket, 'Key' => $key]);
         } catch (\Throwable) {
-            // ignore
         }
         return $ok;
     }

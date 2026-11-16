@@ -3,25 +3,10 @@ declare(strict_types=1);
 
 namespace App\Storage;
 
-/**
- * 临时链接签名工具（v1.2.0 迭代，v1.2.1 安全加固）：
- * - 本地存储下载端点 /files 使用 HMAC-SHA256 签名（key = expires + path）
- * - secret 使用独立随机签名密钥（config/signing_key.php，首次调用自动生成），
- *   不再从数据库密码派生——DB 密码泄露不再等于签名密钥泄露（审计 V-01）
- */
+/** 本地 /files 下载链接签名（HMAC-SHA256），密钥独立于数据库。 */
 class SignedUrl
 {
-    /**
-     * HMAC signing secret, stored in config/signing_key.php (file, NOT DB).
-     *
-     * v1.2.1 security (audit V-01): the signing key is FULLY independent of
-     * the database — neither derived FROM the DB password nor stored IN the
-     * DB (a DB credential leak must not expose the signing key). Resolution:
-     *   1) config/signing_key.php (authoritative file storage)
-     *   2) fresh random 256-bit key written to the file; a failed write
-     *      throws RuntimeException so ops must fix permissions — there is
-     *      deliberately NO fallback that touches the database.
-     */
+    /** 签名密钥存 config/signing_key.php，写不进去直接抛错，绝不回退数据库。 */
     public static function secret(): string
     {
         static $secret = null;
@@ -36,7 +21,6 @@ class SignedUrl
                 return $secret;
             }
         }
-        // Generate a fresh random key and persist it to the file.
         $newKey = bin2hex(random_bytes(32));
         $ok = @file_put_contents(
             $keyFile,
@@ -49,26 +33,21 @@ class SignedUrl
                 . 'so the HMAC signing key can be persisted (no DB fallback).'
             );
         }
-        // MR-28: lock the key file down to owner read/write (0640), matching
-        // CredentialCipher's credentials.php. Without this the file inherits the
-        // umask (often 022 → 0644), letting other local accounts on a shared host
-        // read the HMAC key and forge arbitrary /files signed URLs.
-        // Note: chmod is a no-op on Windows (expected) — this only hardens Unix.
+        // 0640 防止同机其他账号读取密钥伪造签名链接（Windows 上是 no-op）。
         @chmod($keyFile, 0640);
-        // Re-read to survive concurrent first calls that raced each other.
+        // 重新读取，兼容并发首次调用。
         $re = @include $keyFile;
         $written = is_array($re) ? (string) ($re['signing_key'] ?? '') : '';
         $secret = $written !== '' ? $written : $newKey;
         return $secret;
     }
 
-    /** Sign a download URL: sig = HMAC-SHA256(expires|path, secret). */
+    /** sig = HMAC-SHA256(expires|path, secret)。 */
     public static function sign(string $path, int $expires): string
     {
         return hash_hmac('sha256', $expires . '|' . $path, self::secret());
     }
 
-    /** Verify a download URL. Returns true when valid and not expired. */
     public static function verify(string $path, int $expires, string $sig): bool
     {
         if ($expires <= time()) {
@@ -77,32 +56,9 @@ class SignedUrl
         return hash_equals(self::sign($path, $expires), (string) $sig);
     }
 
-    /**
-     * v1.5.0-beta.1 性能修复: 签名有效期按**时间窗口对齐**。
-     *
-     * 此前 `expires = time() + ttl` —— 同一张图每秒都产生一个不同的 URL，
-     * 浏览器把每次渲染都当作新资源，于是 `Cache-Control` 完全失效、每个页面
-     * 浏览都要把图片全部重新下载一遍（"图片加载慢"的隐藏根因）。
-     *
-     * 现在把**签发时间**对齐到窗口起点，过期时间 = 窗口起点 + ttl：
-     *   - 同一窗口内（默认 60s）对同一路径生成的 URL **完全一致** → 浏览器命中缓存
-     *   - 剩余有效期恒在 [ttl - 窗口, ttl] 之间（默认 240~300s），不会瞬过期
-     *   - 窗口 ≤ ttl；ttl 很短时窗口自动收缩，保证仍然可用
-     *
-     * 与响应头 `Cache-Control: private, max-age=60` 配套：缓存窗口 ≈ URL 轮换周期。
-     */
+    /** 签发时间对齐到 60s 窗口：同窗口内同一路径 URL 相同，浏览器才能命中缓存。 */
     private const URL_WINDOW = 60;
 
-    /**
-     * MR-41: window-aligned expiry, shared by the local /files signed URL and
-     * the Qiniu / Upyun private-space signatures.
-     *
-     * Snapping the issued time to the start of a URL_WINDOW-sized window means
-     * that repeated renders of the same path within one window produce an
-     * identical `expires` value (and therefore an identical signed URL), so the
-     * browser actually reuses the cached image instead of re-downloading it on
-     * every page view. Remaining lifetime stays in [ttl - window, ttl].
-     */
     public static function alignedExpiry(int $ttl): int
     {
         $ttl = max(1, $ttl);
@@ -111,7 +67,6 @@ class SignedUrl
         return $issued + $ttl;
     }
 
-    /** Build the signed local download URL (relative — resolves on the host). */
     public static function url(string $path, int $ttl): string
     {
         $expires = self::alignedExpiry($ttl);
@@ -119,7 +74,6 @@ class SignedUrl
         return '/files?p=' . $p . '&e=' . $expires . '&s=' . self::sign($path, $expires);
     }
 
-    /** Decode the base64url path segment. */
     public static function decodePath(string $p): string
     {
         $b64 = strtr($p, '-_', '+/');

@@ -3,7 +3,6 @@
 
     <main id="main-content">
     <div class="container">
-        <!-- API Documentation -->
         <section id="docs" class="section reveal">
             <h2 class="section-title">API 文档</h2>
 
@@ -241,7 +240,6 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
             </div>
         </section>
 
-        <!-- Rate Limits -->
         <section id="rate-limits" class="section reveal">
             <h2 class="section-title">速率限制</h2>
             <div class="card">

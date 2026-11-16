@@ -61,9 +61,7 @@ class Router
         $uri = '/' . trim(parse_url($uri, PHP_URL_PATH) ?: '', '/');
         $uri = $uri === '/' ? '/' : rtrim($uri, '/');
 
-        // v1.2.1 security/info: HEAD requests are routed as GET (health
-        // checks & scanners probe with HEAD; previously every dynamic route
-        // answered 404 which also polluted monitor alerts).
+        // HEAD 按 GET 路由，避免健康检查/扫描器探测时 404 并污染监控告警。
         if ($method === 'HEAD') {
             $method = 'GET';
         }
@@ -76,43 +74,27 @@ class Router
             if (preg_match($route['pattern'], $uri, $matches)) {
                 $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
 
-                // Execute middleware chain
                 $handler = $route['handler'];
                 foreach (array_reverse($route['middleware']) as $mwClass) {
                     $next = $handler;
                     $handler = function (Request $request) use ($mwClass, $next) {
                         $mw = new $mwClass();
-                        // Wrap the inner handler so the middleware invokes it
-                        // through invoke() (which instantiates array handlers).
                         return $mw->handle($request, fn($req) => $this->invoke($next, $req));
                     };
                 }
 
-                // 不读 php://input：全库没有任何调用方消费请求体（JSON body 由各
-                // 端点自己按需读取），此前 GET 请求也会白读一次。
+                // 不读 php://input：没有调用方消费请求体，避免 GET 也白读一次。
                 $request = new Request($method, $uri, $params, $_GET, $_POST, getallheaders() ?: []);
                 return $this->invoke($handler, $request);
             }
         }
 
-        // 404（错误响应统一带 success:false）
         http_response_code(404);
         $response = new Response();
         return $response->json(['success' => false, 'error' => 'Not Found', 'message' => 'The requested route does not exist.'], 404);
     }
 
-    /**
-     * Resolve a route handler and invoke it with the request.
-     *
-     * Route handlers are registered as arrays [ControllerClass, 'action'].
-     * Controller action methods are non-static instance methods, so a
-     * class-string entry must be instantiated before being called. Calling
-     * an array callable directly ($handler($request)) resolves to a static
-     * call and throws "Non-static method ... cannot be called statically".
-     *
-     * Also handles an already-instantiated object [instance, 'action'] and
-     * plain callables (closures from the middleware chain).
-     */
+    /** 处理器为 [ControllerClass, 'action'] 时须实例化后再调用，直接调用会被当作静态方法而报错。 */
     private function invoke(mixed $handler, Request $request): mixed
     {
         if (is_array($handler) && count($handler) === 2) {

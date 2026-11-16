@@ -2,21 +2,8 @@
 declare(strict_types=1);
 
 /**
- * MoeRNG - 历史兼容数据一次性迁移（干跑优先）
- *
- * v2.0.0-beta.19 起，运行时不再为两类旧数据保留兼容分支：
- *   ① images.storage_profile_id 为空 —— 读取时会**明确报错**，不再按
- *      storage / storage_provider 去猜实例（猜错会把图片指向另一个桶，
- *      表现为"图片 404 / 读到别人的图"，且没有任何报错）；
- *   ② images.url 非空 —— URL 一律由 path + 存储驱动实时生成，该列不再被读取。
- *
- * 迁移逻辑只在这里跑一次（可观察、可干跑），而不是每个请求都猜一遍。
- *
- * 用法：
- *   php src/cli/migrate-legacy-refs.php            # 干跑：打印将要做的映射
- *   php src/cli/migrate-legacy-refs.php --apply    # 执行
- *
- * 幂等：只处理 storage_profile_id IS NULL 的行、只清非空 url；重复执行无副作用。
+ * 历史兼容数据一次性迁移：回填 images.storage_profile_id、清空 images.url。
+ * 用法: php src/cli/migrate-legacy-refs.php [--apply]；默认干跑，幂等
  */
 
 use App\Core\Database;
@@ -38,8 +25,6 @@ try {
     exit(1);
 }
 
-/* ── 候选实例 ─────────────────────────────────────────────────────────── */
-
 $default = StorageProfile::defaultProfile();
 $all     = StorageProfile::all('sort_order ASC, id ASC');
 
@@ -56,7 +41,6 @@ foreach ($all as $p) {
     }
 }
 
-/** 从候选里挑一个：优先默认实例，否则排序第一个。 */
 $pick = static function (array $cands) use ($default): ?StorageProfile {
     if ($cands === []) {
         return null;
@@ -69,15 +53,13 @@ $pick = static function (array $cands) use ($default): ?StorageProfile {
     return $cands[0];
 };
 
-/* ── ① 回填 storage_profile_id ────────────────────────────────────────── */
-
 $rows = $pdo->query(
     "SELECT `id`, `path`, `storage`, `storage_provider` FROM `images` "
     . "WHERE `storage_profile_id` IS NULL ORDER BY `id` ASC"
 )->fetchAll(\PDO::FETCH_ASSOC);
 
-$resolved  = [];   // id => profileId
-$unmatched = [];   // 无法自动判定的行（保持原样，打印出来人工处理）
+$resolved  = [];
+$unmatched = [];
 
 foreach ($rows as $r) {
     $id     = (int) $r['id'];
@@ -96,8 +78,6 @@ foreach ($rows as $r) {
 $urlLeft = (int) $pdo->query(
     "SELECT COUNT(*) FROM `images` WHERE `url` IS NOT NULL AND `url` <> ''"
 )->fetchColumn();
-
-/* ── 报告 ─────────────────────────────────────────────────────────────── */
 
 printf("%s 待回填存储归属: %d 行；无法自动判定: %d 行；待清空 url: %d 行%s",
     $apply ? '[执行]' : '[干跑]',
@@ -129,8 +109,6 @@ if (!$apply) {
         . '  php src/cli/migrate-legacy-refs.php --apply' . PHP_EOL;
     exit(0);
 }
-
-/* ── ② 执行 ───────────────────────────────────────────────────────────── */
 
 $updatedProfile = 0;
 if ($resolved !== []) {

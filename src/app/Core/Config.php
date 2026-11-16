@@ -21,11 +21,7 @@ class Config
         }
         self::$loaded = true;
 
-        // First-deploy self-heal: the release archive intentionally ships NO
-        // config/ directory, so that extracting an update over a live site
-        // never clobbers the installed config/app.php (which would reset the
-        // "installed" flag and bounce every request back to /install). If the
-        // file is missing, create a safe default so the installer can boot.
+        // 发布包不含 config/，缺失时生成默认 app.php 供安装器启动；解压更新不会覆盖线上配置。
         $appFile = self::$configPath . '/app.php';
         if (!is_file($appFile)) {
             if (!is_dir(self::$configPath)) {

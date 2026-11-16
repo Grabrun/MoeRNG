@@ -6,27 +6,13 @@ namespace App\Models;
 use App\Core\Model;
 use App\Core\Database;
 
-/**
- * Admin operation audit trail (v1.1.0-beta.4).
- *
- * Every mutating admin action worth remembering lands here: settings changes
- * (with a field-level diff), login attempts, cache clears, backups, storage
- * profile changes. Logging is best-effort — a failure must never break the
- * request that triggered it.
- */
+/** 后台操作审计；写入是 best-effort，失败绝不影响主流程。 */
 class AuditLog extends Model
 {
     protected static string $table = 'audit_logs';
     protected static array $fillable = ['user_id', 'username', 'action', 'detail', 'ip', 'created_at'];
 
-    /**
-     * Append one audit entry. Never throws — logging is fire-and-forget.
-     *
-     * @param string $action  stable slug: settings_update / login_success /
-     *                        login_failed / cache_clear / backup_run /
-     *                        backup_delete / mail_test / ...
-     * @param array  $detail  human-readable context, JSON-encoded on the row.
-     */
+    /** 追加一条审计记录，永不抛异常。 */
     public static function record(
         string $action,
         array $detail = [],
@@ -49,7 +35,6 @@ class AuditLog extends Model
                 substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
             ]);
         } catch (\Throwable) {
-            // never break the request because logging failed
         }
     }
 }

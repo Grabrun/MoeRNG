@@ -3,7 +3,6 @@
 
     <main id="main-content">
     <div class="container">
-        <!-- API Tester -->
         <section id="tester" class="section reveal">
             <h2 class="section-title">在线测试</h2>
             <div class="api-tester" id="api-tester">
@@ -24,9 +23,7 @@
                             <option value="redirect">重定向（直接输出图片）</option>
                         </select>
                     </div>
-                    <!-- v1.5.0-beta.2: 图片尺寸。首项 value="" 表示**不传 size** ——
-                         保持既有语义（缺省即原图，JSON 与 Redirect 一致），
-                         这样测试页也能验证"向后兼容"这一条；显式选值才传参。 -->
+                    <!-- 首项 value="" 表示不传 size，保持缺省即原图的既有语义。 -->
                     <div class="form-group tester-field">
                         <label for="test-size">图片尺寸</label>
                         <select class="form-control" id="test-size">

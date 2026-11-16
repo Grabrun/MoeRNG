@@ -41,8 +41,7 @@
             </thead>
             <tbody>
                 <?php foreach ($profiles as $p):
-                    // MR-12: 行内 data-config 只下发非凭据字段；secret/key/token_key 类
-                    // 一律不进 HTML（前端编辑时留空=保持原值，见 helpers.js）。
+                    // data-config 只下发非凭据字段，secret/key/token_key 一律不进 HTML。
                     $__pubCfg = [];
                     foreach ($p->config() as $__pk => $__pv) {
                         if (!\App\Core\CredentialCipher::isSecretField((string) $__pk)) {
@@ -91,7 +90,6 @@
     </div>
 </div>
 
-<!-- Create / Edit Modal -->
 <div class="modal-overlay" id="profile-modal">
     <div class="modal max-w-620">
         <h2 id="profile-modal-title">新增存储实例</h2>
@@ -119,13 +117,11 @@
                 </div>
             </div>
 
-            <!-- Local fields -->
             <div id="profile-local-fields">
                 <div class="form-group">
                     <label>本地存储路径 <small class="text-muted">（相对项目根目录，可空默认 public/uploads）</small></label>
                     <input type="text" name="cfg_path" id="profile-cfg-path" class="form-control" placeholder="public/uploads">
                 </div>
-                <!-- v1.2.1 迭代: local CDN override (LocalDriver already supports it) -->
                 <div class="form-group">
                     <label>CDN 加速域名（可选） <small class="text-muted">（本地图片经 CDN 域名提供，留空用本站地址）</small></label>
                     <input type="text" name="cfg_cdn_local" id="profile-cfg-cdn-local" class="form-control" placeholder="https://cdn.example.com">
@@ -136,7 +132,6 @@
                 </div>
             </div>
 
-            <!-- Object storage fields -->
             <div id="profile-s3-fields" class="hidden">
                 <div class="grid grid-2">
                     <div class="form-group pv-field" data-field="key">
@@ -171,8 +166,7 @@
                         <label class="pv-label">签名链接有效期（秒）<span class="pv-req">*</span></label>
                         <input type="text" name="cfg_signed_ttl" id="profile-cfg-signed-ttl" class="form-control" placeholder="300（默认 5 分钟）">
                     </div>
-                    <!-- MR-04: 又拍云 CDN Token 防盗链密钥（仅 upyun 显示，其他服务商由 applyProvider 隐藏）。
-                         留空 = 不签名，返回裸 URL（见 UpyunSdkDriver::url），故**非必填**，不加星号。 -->
+                    <!-- 又拍云 Token 防盗链密钥（仅 upyun 显示）；留空 = 不签名，故非必填。 -->
                     <div class="form-group pv-field" data-field="token_key">
                         <label class="pv-label">Token 防盗链密钥（仅又拍云可选）</label>
                         <input type="password" name="cfg_token_key" id="profile-cfg-token-key" class="form-control" placeholder="" autocomplete="new-password">

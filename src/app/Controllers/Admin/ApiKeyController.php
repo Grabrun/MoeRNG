@@ -29,9 +29,7 @@ class ApiKeyController extends Controller
             $this->fail('请填写 API Key 名称。', 422, self::PAGE);
         }
 
-        // MR-03: generate the plaintext exactly once, persist only its hash +
-        // a 16-char display prefix, and hand the plaintext back through the
-        // separate 'plain_key' field (one-time reveal). The DB never sees it.
+        // 明文只下发一次，库里只存哈希与 16 位展示前缀。
         $plainKey = ApiKey::generateKey();
 
         $apiKey = new ApiKey([
@@ -48,17 +46,13 @@ class ApiKeyController extends Controller
             $this->fail('API Key 创建失败，请重试。', 500, self::PAGE);
         }
 
-        // MR-38: key issuance is sensitive. Never log the plaintext key — only
-        // the 16-char prefix already stored for display.
+        // 审计只记录前缀，绝不记录明文密钥。
         \App\Models\AuditLog::record('apikey_create', [
             'id'     => (int) $apiKey->id,
             'name'   => (string) $apiKey->name,
             'prefix' => (string) $apiKey->key_prefix,
         ]);
 
-        // The plaintext key is returned exactly once, right here, so the UI can
-        // show it in a modal with a copy button. It is NEVER persisted: only
-        // key_hash (SHA-256) and the 16-char key_prefix are stored.
         $this->ok('API Key 已生成。', [
             'item' => $this->present($apiKey),
             'plain_key' => $plainKey,
@@ -83,13 +77,10 @@ class ApiKeyController extends Controller
         $apiKey->rate_window = $this->positiveInt($request->input('rate_window'), (int) $apiKey->rate_window);
         $apiKey->permissions = json_encode($this->normalizePermissions($request), JSON_UNESCAPED_UNICODE);
 
-        // Model::update() previously produced invalid SQL for multi-column
-        // updates, which is what made this endpoint answer HTTP 500.
         if (!$apiKey->save()) {
             $this->fail('API Key 更新失败。', 500, self::PAGE);
         }
 
-        // MR-38: permission / quota changes are sensitive.
         \App\Models\AuditLog::record('apikey_update', [
             'id'          => (int) $apiKey->id,
             'name'        => (string) $apiKey->name,
@@ -112,7 +103,6 @@ class ApiKeyController extends Controller
             $this->fail('状态切换失败。', 500, self::PAGE);
         }
 
-        // MR-38: enabling/disabling a key gates API access.
         \App\Models\AuditLog::record('apikey_status', [
             'id'     => (int) $apiKey->id,
             'name'   => (string) $apiKey->name,
@@ -139,7 +129,6 @@ class ApiKeyController extends Controller
             $this->fail('API Key 删除失败。', 500, self::PAGE);
         }
 
-        // MR-38: irreversible revocation — audit which key was removed.
         \App\Models\AuditLog::record('apikey_delete', [
             'id'     => $id,
             'name'   => (string) $apiKey->name,
@@ -149,9 +138,6 @@ class ApiKeyController extends Controller
         $this->ok('API Key 已删除。', ['id' => $id], self::PAGE);
     }
 
-    // ---------------------------------------------------------------- helpers
-
-    /** @return array<int, string> */
     private function normalizePermissions(Request $request): array
     {
         $allowed = ['read', 'write', 'admin'];
@@ -170,15 +156,8 @@ class ApiKeyController extends Controller
         return $int > 0 ? $int : max(1, $fallback);
     }
 
-    /** @return array<string, mixed> */
     private function present(ApiKey $apiKey): array
     {
-        // v1.3.0-beta.2 安全加固 (CVE-2026-MR-011, CWE-312): list/edit responses
-        // must never carry the full plaintext key — only the 16-char preview.
-        // The full value is handed out exactly once, in create(), via the
-        // separate 'plain_key' field (one-time reveal, same flow as major
-        // token providers). MR-03: the preview now comes from key_prefix
-        // (stored 16-char prefix); the plaintext column no longer exists.
         return [
             'id' => (int) $apiKey->id,
             'name' => (string) $apiKey->name,

@@ -1,41 +1,18 @@
 <?php
 declare(strict_types=1);
 
-/**
- * MoeRNG Diagnostic Tool
- *
- * Standalone self-check. Does NOT depend on the application bootstrap, so it
- * still works when the app itself is broken.
- *
- * Usage:  https://your-domain/doctor.php     or     php doctor.php
- * Delete this file once the deployment is verified.
- */
+/** 独立自检工具：不依赖应用 bootstrap，应用故障时仍可运行。 */
 
 define('MOERNG_DEBUG_AUTOLOAD', true);
 
 $cli = PHP_SAPI === 'cli';
 
-// v1.3.2 迭代: 遗留问题清理开关。默认仅【检测并报告】; 加 --fix 才执行清理。
-// 用法:
-//   php doctor.php               -> 健康检查 + 遗留问题报告（dry-run）
-//   php doctor.php --fix         -> 健康检查 + 执行可安全清理的项
-//   https://site/doctor.php      -> 健康检查 + 遗留问题报告
-//   https://site/doctor.php?type=fix -> 健康检查 + 执行可安全清理的项
-//
-// 注: HTTP 访问仅当登录后可达（见下方 Access control）。无论 CLI/HTTP，
-//     --fix / ?type=fix 二选一即可触发清理; 清理幂等。
+// 默认仅检测；--fix（CLI）或 ?type=fix（HTTP）才执行清理，且清理幂等。
 $doctorFix = $cli
     ? in_array('--fix', $argv ?? [], true)
     : (($_GET['type'] ?? '') === 'fix');
 
-/* -------------------------------------------------------------------------
- * Access control.
- *
- * This report exposes absolute paths and database connection details. Once the
- * site is installed it must not be reachable over HTTP by anonymous visitors.
- * Before installation there is nothing sensitive to leak, so web access is
- * allowed to help debug a fresh deployment.
- * ---------------------------------------------------------------------- */
+// 已安装站点必须登录后才能访问（报告含绝对路径与数据库信息）。
 if (!$cli) {
     header('Content-Type: text/plain; charset=utf-8');
     header('X-Robots-Tag: noindex, nofollow');
@@ -47,9 +24,7 @@ if (!$cli) {
         $authorized = false;
 
         if (session_status() === PHP_SESSION_NONE) {
-            // 本文件刻意不依赖 bootstrap（部署早期也要能跑），因此绕开了
-            // Session::start() 的加固。这里补上等价参数，否则 cookie 会退回
-            // PHP 默认值（use_strict_mode=0 = 可会话固定，且缺 HttpOnly/SameSite）。
+            // 本文件绕开 bootstrap，这里补齐 Session 的 cookie 加固参数。
             session_set_cookie_params([
                 'httponly' => true,
                 'samesite' => 'Lax',
@@ -107,7 +82,6 @@ line('Generated: ' . date('Y-m-d H:i:s'));
 line('Root:      ' . __DIR__);
 line(str_repeat('=', 70));
 
-/* ------------------------------------------------------------------ */
 section('Runtime environment');
 
 check('PHP >= 8.4', PHP_VERSION_ID >= 80400, PHP_VERSION);
@@ -118,7 +92,6 @@ foreach (['pdo_mysql', 'curl', 'json', 'fileinfo', 'mbstring'] as $ext) {
 }
 check('Extension: gd (thumbnails)', extension_loaded('gd'), extension_loaded('gd') ? 'loaded' : 'optional', true);
 
-/* ------------------------------------------------------------------ */
 section('Filesystem layout');
 
 $mustExist = [
@@ -133,10 +106,7 @@ foreach ($mustExist as $rel) {
     check("File: {$rel}", is_file(__DIR__ . '/' . $rel));
 }
 
-// v1.5.0-beta.1: 媒体根已迁到 web 根之外（storage/uploads）；public/uploads 仅
-// 保留品牌 logo。目录尚未创建时以「父目录可写」为通过判据（否则新装站点会
-// 因为还没上传过东西就报 FAIL）。字面量在此处故意不引用 App 类 —— 本区块在
-// 自动加载器注册之前执行，常量一致性由后面「Storage layout」一节显式校验。
+// 目录未创建时以父目录可写为通过；此处刻意用字面量（自动加载器尚未注册）。
 $writable = [
     'config' => 'config',
     'storage/uploads (媒体根)' => 'storage/uploads',
@@ -155,9 +125,7 @@ foreach ($writable as $label => $rel) {
     check("Writable: {$label}/", $ok, $detail);
 }
 
-/* ------------------------------------------------------------------ */
 section('Autoloader');
-
 $autoloaderFile = __DIR__ . '/app/Autoloader.php';
 if (!is_file($autoloaderFile)) {
     check('Autoloader present', false, 'app/Autoloader.php missing - cannot continue');
@@ -168,8 +136,7 @@ if (!is_file($autoloaderFile)) {
     $prefixes = \App\Autoloader::registeredPrefixes();
     check('Root namespace registered', isset($prefixes['App\\']), 'App\\ => ' . implode(', ', $prefixes['App\\'] ?? ['(none)']));
 
-    // v1.5.0-beta.1: 上面的可写性检查用的是字面量路径，这里校验它与代码里的唯一
-    // 来源一致 —— 常量漂移会让 doctor 的报告与实际行为对不上（比不检查更危险）。
+    // 校验字面量与 LocalDriver 常量一致，漂移会让报告失真。
     if (class_exists(\App\Storage\LocalDriver::class)) {
         $relDir = \App\Storage\LocalDriver::defaultRelDir();
         check('Storage layout constant', $relDir === 'storage/uploads',
@@ -177,7 +144,6 @@ if (!is_file($autoloaderFile)) {
             . ($relDir === 'storage/uploads' ? ' [OK]' : ' ← 与 doctor 预期不一致，请核对'));
     }
 
-    // Every class declared under app/ must be autoloadable.
     $declared = [];
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__ . '/app', FilesystemIterator::SKIP_DOTS));
     foreach ($it as $f) {
@@ -198,9 +164,6 @@ if (!is_file($autoloaderFile)) {
 
     $bad = [];
     foreach ($declared as $cls) {
-        // Skip classes that are already defined (avoids a redundant probe that
-        // would otherwise re-require the file). require_once in the autoloader
-        // makes even a redundant probe safe, but this keeps the check clean.
         if (class_exists($cls, false) || interface_exists($cls, false) || trait_exists($cls, false)) {
             continue;
         }
@@ -214,17 +177,12 @@ if (!is_file($autoloaderFile)) {
         $bad === [] ? 'all resolved' : 'unresolved: ' . implode(', ', $bad)
     );
 
-    // The exact class from the reported fatal error.
     check('Class App\\Storage\\S3Driver', class_exists(\App\Storage\S3Driver::class));
     check('Class App\\Storage\\CosSdkDriver', class_exists(\App\Storage\CosSdkDriver::class));
     check('Class App\\Storage\\OssSdkDriver', class_exists(\App\Storage\OssSdkDriver::class));
     check('Class App\\Storage\\AwsSdkDriver', class_exists(\App\Storage\AwsSdkDriver::class));
 
-    // v1.3.2 迭代: Storage 接口完整性 —— 所有实现类都必须实现接口声明的每一个
-    // 方法。缺方法会让 PHP 报"contains N abstract methods" fatal 并使上传整条
-    // 链路瘫痪——此检查把这类回归提前到 doctor 阶段捕获（方法清单按接口反射，
-    // 接口增删方法后无需改这里）。
-    // 遍历 App\Storage\ 下实现 StorageInterface 的所有类，反射验证非抽象。
+    // 反射校验所有 StorageInterface 实现类，缺方法会让上传链路 fatal。
     $storageChkBad = [];
     foreach (glob(__DIR__ . '/app/Storage/*.php') as $storageFile) {
         $baseCls = 'App\\Storage\\' . basename($storageFile, '.php');
@@ -236,8 +194,6 @@ if (!is_file($autoloaderFile)) {
         }
         try {
             $rc = new \ReflectionClass($baseCls);
-            // 反射该类所有接口方法的实际可调用性 —— newInstance 若含抽象方法
-            // 会抛错；用反射检查是否仍未实现接口方法。
             $missing = [];
             foreach ($rc->getInterfaces() as $iface) {
                 foreach ($iface->getMethods() as $im) {
@@ -259,7 +215,6 @@ if (!is_file($autoloaderFile)) {
             : 'MISSING: ' . implode('; ', $storageChkBad));
 }
 
-/* ------------------------------------------------------------------ */
 section('Configuration');
 
 $cfgApp = __DIR__ . '/config/app.php';
@@ -277,15 +232,9 @@ if (is_file($cfgDb)) {
             $pdo = new PDO($dsn, $db['username'] ?? '', $db['password'] ?? '', [PDO::ATTR_TIMEOUT => 5]);
             check('MySQL connection', true, ($db['host'] ?? '') . '/' . ($db['database'] ?? ''));
 
-            // v1.1.0-beta.2: prime the app-level Database singleton with the
-            // same config. StorageProfile::defaultProfile()/all() (used by the
-            // storage checks below) resolve through Database::getInstance() —
-            // without init() it would try an empty config and fail with
-            // "Connection refused" while doctor's own $pdo is healthy.
+            // 用同一配置初始化 Database 单例，后面存储检查才走对连接。
             \App\Core\Database::init($db);
 
-            // If there is no active admin user, login is physically impossible
-            // and the user is stuck bouncing between /admin and /admin/login.
             $adminCnt = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role='admin' AND status='active'")->fetchColumn();
             check('Admin account exists', $adminCnt > 0,
                 $adminCnt > 0 ? "{$adminCnt} active admin(s)" : 'NO active admin user - login is impossible',
@@ -300,15 +249,7 @@ if (is_file($cfgDb)) {
     check('config/database.php', false, 'not installed yet - visit /install', true);
 }
 
-/* ------------------------------------------------------------------ */
-// Load persisted settings from the database so the storage checks below
-// report the REAL driver/provider instead of the hardcoded 'local' default.
-//
-// The runtime Application::loadSettings() populates Config::settings.* from the
-// `settings` table at bootstrap, but doctor deliberately skips the app
-// bootstrap (so it still works when the app is broken). Without this load,
-// Config::get('settings.storage_driver') always falls back to 'local' and the
-// report wrongly claims object storage is inactive even when it is enabled.
+// doctor 跳过 bootstrap，这里手动载入 settings，否则存储报告会错报 local。
 if (isset($pdo)) {
     try {
         $rows = $pdo->query("SELECT `key`, `value` FROM `settings`")->fetchAll(PDO::FETCH_KEY_PAIR);
@@ -316,21 +257,15 @@ if (isset($pdo)) {
             \App\Core\Config::set('settings.' . $k, $v);
         }
     } catch (Throwable) {
-        // settings table may not exist on a fresh install — ignore
     }
 }
 
 section('Storage driver');
 
-// Storage misconfiguration is the root cause of the "upload succeeds but the
-// image 404s" report: an empty cdn_url plus a relative path anchored to the
-// wrong directory made url() silently drop the /public/uploads prefix. Verify
-// the resolved directory and public URL prefix here.
 if (class_exists(\App\Storage\LocalDriver::class)) {
     \App\Core\Config::init(__DIR__ . '/config');
     \App\Core\Config::load();
 
-    // v1.0.35: storage state comes from storage_profiles, never settings.
     $defaultProfile = null;
     $defaultProfileError = '';
     if (class_exists(\App\Models\StorageProfile::class)) {
@@ -353,8 +288,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
     }
 
     try {
-        // Local-dir sanity only makes sense when the default profile is local
-        // (or a local profile exists to inspect); skip for s3-only installs.
         $localProfile = null;
         if ($defaultProfile !== null && !$defaultProfile->isS3()) {
             $localProfile = $defaultProfile;
@@ -373,8 +306,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             $dirOk = is_dir($dir) && is_writable($dir);
             check('Local upload dir', $dirOk, $dirOk ? $dir : ($dir . ' (missing or not writable)'));
 
-            // v1.5.0-beta.1: 本地文件始终经签名端点读取（url() → /files），
-            // 因此 baseUrl 只回答一个问题 —— 该目录能否被静态直读。
             $mode = method_exists($driver, 'servingMode') ? $driver->servingMode() : 'signed';
             check('Local serving mode', true, $mode === 'cdn'
                 ? 'cdn — ' . $driver->baseUrl() . '（CDN 需回源到 ' . $dir . '）'
@@ -397,10 +328,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             check('Public URL prefix', true, 's3-only install — skipped', true);
         }
 
-        // v1.5.0-beta.1 性能: 云端图片若走**预签名直链**，URL 每次渲染都不同
-        // （签名里含签发时间），浏览器把每次浏览都当成新资源 → 缓存必然 miss，
-        // 图片每次全量重下。绑定 CDN / 自定义源站域名后 URL 才是稳定地址，
-        // 浏览器与边缘缓存才生效。只提示、不判失败（取决于运维的接入方式）。
+        // 预签名 URL 每次渲染都变，浏览器缓存必 miss；绑定 CDN 后地址才稳定。
         if ($defaultProfile !== null && $defaultProfile->isS3()) {
             $s3cfg = $defaultProfile->config();
             $domain = trim((string) ($s3cfg['cdn'] ?? ''));
@@ -416,20 +344,11 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
         check('LocalDriver init', false, $e->getMessage());
     }
 
-    // Schema check for the per-image storage columns. The upload flow writes
-    // `storage` / `storage_provider`; on a hosted MySQL the app user may lack
-    // ALTER, so Application::runStorageMigration can fail silently. Detect that
-    // here and hand the operator the exact SQL to run with a privileged account.
     if (isset($pdo)) {
         try {
-            // v2.0.0-beta.19: 期望清单来自 Application::schemaExpectations()（唯一
-            // 来源）。此前这里是手抄的第二份，已抄出偏差：缺 thumb_meta 生成列与
-            // idx_status_thumb_meta / idx_path（真缺索引时照样报"全部就位"），
-            // 且 storage_profile_id 写成 INT UNSIGNED（其余三处都是 signed INT）。
             $expect = \App\Core\Application::schemaExpectations();
             $schemaMissing = [];
-            // 每表缓存一次列/索引清单（SHOW INDEX 的 FETCH_COLUMN 取的是第一列
-            // `Table`，不是 Key_name —— 必须用 FETCH_ASSOC 收 Key_name）
+            // SHOW INDEX 必须取 Key_name（FETCH_COLUMN 拿到的是 Table 列）。
             $colsCache = [];
             $idxCache = [];
             $tableCols = function (string $tbl) use ($pdo, &$colsCache): array {
@@ -462,8 +381,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             }
             if ($schemaMissing === []) {
                 check('Schema migration completeness', true, 'all columns + indexes expected by the app are present');
-                // v1.3.2: schema 列已就位后，统计缺哈希的历史图片。
-                // 这些图片需运行回填脚本（对象存储会拉临时文件算 MD5+SHA-256）。
                 try {
                     $noMd5 = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE file_hash IS NULL OR file_hash=''")->fetchColumn();
                     $noSha = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE file_sha256 IS NULL OR file_sha256=''")->fetchColumn();
@@ -477,7 +394,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                     check('Image hash backfill', true, '统计失败（忽略）: ' . $e->getMessage(), true);
                 }
 
-                // v1.3.2-beta.2: 历史缩略图缺失（存量图）
                 try {
                     $noThumb = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'done' AND " . \App\Models\Image::thumbMetaPendingSql())->fetchColumn();
                     if ($noThumb === 0) {
@@ -491,7 +407,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                     check('Image thumbnails', true, '统计失败（忽略）: ' . $e->getMessage(), true);
                 }
 
-                // v1.3.2-beta.2: 图片处理队列积压（pending/failed）
                 try {
                     $qPending = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'pending'")->fetchColumn();
                     $qFailed = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE process_status = 'failed'")->fetchColumn();
@@ -517,9 +432,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                             $applied++;
                         } catch (Throwable $e) {
                             $msg = $e->getMessage();
-                            // 1060 duplicate column / 1061 duplicate key name =
-                            // 已存在，视为幂等成功。其余（如 1142 ALTER denied）
-                            // 是真实错误，必须透出而不是笼统报"权限不足"。
+                            // 1060/1061 视为已存在；其余错误必须透出，不能笼统报权限不足。
                             if (stripos($msg, '1060') !== false || stripos($msg, '1061') !== false
                                 || stripos($msg, 'duplicate') !== false) {
                                 $already++;
@@ -528,7 +441,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                             }
                         }
                     }
-                    // 修复后重新验证 —— 以实际结构为准，而不是 ALTER 计数
                     $stillMissing = [];
                     foreach ($expect['columns'] as $tbl => $cols) {
                         $have = $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN);
@@ -569,8 +481,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             check('images schema probe', false, $e->getMessage());
         }
 
-        // v2.0.0-beta.19: 历史兼容数据残留 —— 运行时不再"猜实例 / 回退 url 列"，
-        // 只在这里与后台健康检查里检测；迁移走 cli/migrate-legacy-refs.php。
         try {
             $noProfile = (int) $pdo->query(
                 "SELECT COUNT(*) FROM `images` WHERE `storage_profile_id` IS NULL"
@@ -590,27 +500,17 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             check('Legacy data migration', true, '检测失败（忽略）: ' . $e->getMessage(), true);
         }
 
-        // Surface any error the automatic migration captured (e.g. ALTER denied).
         try {
             $merr = $pdo->query("SELECT `value` FROM `settings` WHERE `key` = 'migration_last_error'")->fetchColumn();
             if ($merr !== false && $merr !== null && $merr !== '') {
                 check('Storage migration', false, 'last error: ' . $merr);
             }
         } catch (Throwable) {
-            // settings table shape differs / unavailable — ignore
         }
     }
 
-    // Object storage (S3 / OSS / COS / OBS) live connectivity. Since v1.0.35
-    // every configured object-storage *profile* is probed individually with a
-    // live PUT probe (v1.0.31 semantics — mirrors the real upload operation,
-    // not a bucket-level HEAD that image-bucket IAM users often lack).
     if (class_exists(\App\Storage\S3Driver::class)) {
 
-        // Official COS SDK availability. When deployed, COS operations are
-        // delegated to qcloud/cos-sdk-v5; when missing, S3Driver falls back to
-        // the built-in v1.0.24 signing (both are valid — this check is
-        // informational, not a hard gate).
         $cosSdkAutoload = __DIR__ . '/sdk/cos/vendor/autoload.php';
         check('COS SDK (qcloud/cos-sdk-v5)', is_file($cosSdkAutoload),
             is_file($cosSdkAutoload) ? 'present — COS uses official SDK' : 'MISSING — COS falls back to built-in signing', true);
@@ -618,43 +518,30 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
         check('COS SDK extensions', $sdkExtOk,
             extension_loaded('simplexml') ? 'simplexml + libxml loaded' : 'simplexml/libxml MISSING — SDK cannot run', true);
 
-        // Alibaba Cloud OSS SDK (alibabacloud/oss-v2) availability. Same
-        // delegation pattern: present → OSS uses the official SDK; missing →
-        // built-in OSS4 signing fallback.
         $ossSdkAutoload = __DIR__ . '/sdk/oss/autoload.php';
         check('OSS SDK (alibabacloud/oss-v2)', is_file($ossSdkAutoload) && is_file(__DIR__ . '/sdk/oss/src/Client.php'),
             (is_file($ossSdkAutoload) && is_file(__DIR__ . '/sdk/oss/src/Client.php'))
                 ? 'present — OSS uses official SDK' : 'MISSING — OSS falls back to built-in signing', true);
 
-        // AWS SDK for PHP (aws/aws-sdk-php) availability. Since v1.0.28 there
-        // is NO built-in signing fallback anymore — a missing SDK is a hard
-        // failure for that provider, so this check is informational only.
         $awsSdkAutoload = __DIR__ . '/sdk/aws/autoload.php';
         check('AWS SDK (aws/aws-sdk-php)', is_file($awsSdkAutoload) && is_file(__DIR__ . '/sdk/aws/Aws/S3/S3Client.php'),
             (is_file($awsSdkAutoload) && is_file(__DIR__ . '/sdk/aws/Aws/S3/S3Client.php'))
                 ? 'present — S3 uses official SDK' : 'MISSING — S3 uploads will fail with a clear error', true);
 
-        // Huawei Cloud OBS SDK (esdk-obs-php) availability. Its runtime deps
-        // (Guzzle/PSR-7) are served by the shared sdk/cos/vendor copy.
         $obsSdkAutoload = __DIR__ . '/sdk/obs/obs-autoloader.php';
         check('OBS SDK (esdk-obs-php)', is_file($obsSdkAutoload) && is_file(__DIR__ . '/sdk/obs/Obs/ObsClient.php'),
             (is_file($obsSdkAutoload) && is_file(__DIR__ . '/sdk/obs/Obs/ObsClient.php'))
                 ? 'present — OBS uses official SDK' : 'MISSING — OBS uploads will fail with a clear error', true);
 
-        // v1.1.1 迭代: UPYUN USS official SDK (Guzzle/PSR-7 from the shared cos vendor).
         check('UPYUN SDK (upyun/sdk)', is_file(__DIR__ . '/sdk/upyun/autoload.php') && is_file(__DIR__ . '/sdk/upyun/src/Upyun/Upyun.php')
                 && is_file(__DIR__ . '/sdk/cos/vendor/autoload.php'),
             (is_file(__DIR__ . '/sdk/upyun/autoload.php') && is_file(__DIR__ . '/sdk/upyun/src/Upyun/Upyun.php'))
                 ? 'present — UPYUN uses official SDK' : 'MISSING — UPYUN uploads will fail with a clear error', true);
 
-        // v1.1.1 迭代: Qiniu Kodo official SDK (self-contained curl, no Guzzle).
         check('Qiniu SDK (qiniu/php-sdk)', is_file(__DIR__ . '/sdk/qiniu/autoload.php') && is_file(__DIR__ . '/sdk/qiniu/src/Qiniu/Storage/UploadManager.php'),
             (is_file(__DIR__ . '/sdk/qiniu/autoload.php') && is_file(__DIR__ . '/sdk/qiniu/src/Qiniu/Storage/UploadManager.php'))
                 ? 'present — Qiniu uses official SDK' : 'MISSING — Qiniu uploads will fail with a clear error', true);
 
-        // v1.0.35: profiles are the single source of truth — probe every
-        // enabled object-storage profile with a live PUT probe. A read failure
-        // is surfaced explicitly (never silently treated as "table empty").
         $profiles = [];
         $profileLoadError = '';
         if (class_exists(\App\Models\StorageProfile::class)) {
@@ -693,8 +580,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                     $s3 = new \App\Storage\S3Driver();
                     $s3->loadProfile($p);
                     $ok = $s3->testConnection();
-                    // testConnection() runs a live PUT probe (upload + immediate
-                    // delete of a tiny object), mirroring the real operation.
                     check('Storage profile「' . $p->name . '」upload probe', $ok,
                         $ok ? 'PUT+DELETE probe OK (auth OK)' : 'probe failed - check credentials/bucket and PutObject/DeleteObject permission');
                 } catch (Throwable $e) {
@@ -706,9 +591,6 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                 check('Object storage profile', false, 'no object-storage (S3) profile configured — uploads use local', true);
             }
         } else {
-            // v1.0.35: profiles are the single source of truth — an empty
-            // profiles table is a real configuration gap, not a cue to fall
-            // back to legacy settings probing.
             check('Storage profiles', false,
                 'storage_profiles 表为空 — 未配置任何存储实例。请到后台「存储管理」新增存储实例。', true);
         }
@@ -717,16 +599,13 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
     check('Storage driver class', false, 'App\\Storage\\LocalDriver not found');
 }
 
-// v1.2.0 迭代: signed links — local files now go through the /files endpoint;
-// object storage uses short-lived presigned URLs. No server-side proxying.
 check('Signed links (short-lived)', is_file(__DIR__ . '/app/Controllers/FileController.php')
         && is_file(__DIR__ . '/app/Storage/SignedUrl.php'),
     (is_file(__DIR__ . '/app/Controllers/FileController.php') && is_file(__DIR__ . '/app/Storage/SignedUrl.php'))
         ? 'present — local /files endpoint + object-storage presign (no proxy)'
         : 'MISSING — file URLs would fall back to permanent links', true);
 
-// v1.2.1 迭代: signing key must be STABLE and INDEPENDENT (no DB fallback).
-// Verify sign()==verify() round-trip + a second sign() for stability.
+// 校验签名 key 稳定且不依赖数据库：sign()==verify() 且二次 sign() 结果相同。
 $keyFileProbe = __DIR__ . '/config/signing_key.php';
 check('Signing key file (config/signing_key.php)',
     is_file($keyFileProbe),
@@ -746,19 +625,13 @@ try {
     check('Signing key stable + round-trip', false, 'exception: ' . $e->getMessage(), true);
 }
 
-/* ------------------------------------------------------------------ */
 section('Session persistence');
 
-// Login relies on the session surviving the redirect from /admin/login to
-// /admin. If the session save path is not writable, data is never persisted
-// and the user is silently bounced back to the login page.
+// 会话保存路径不可写会导致登录后数据丢失、被静默弹回登录页。
 $sp = session_save_path();
 if ($sp === '' || $sp === false) {
     $sp = sys_get_temp_dir();
 }
-// v1.1.0-beta.4: audit log table (created by the Application migration on
-// boot — a missing table means the migration did not run / PHP-FPM restart
-// was skipped after deploying).
 if (isset($pdo)) {
     try {
         $auditOk = $pdo->query("SHOW TABLES LIKE 'audit_logs'")->fetchColumn() !== false;
@@ -772,9 +645,7 @@ if (isset($pdo)) {
         check('Audit log table', false, $e->getMessage());
     }
 }
-// When sessions are backed by Redis/Memcached, save_path looks like
-// "tcp://127.0.0.1:6379" — is_dir() cannot stat such a URI and emits a
-// warning. The round-trip test below is the authoritative check in that case.
+// Redis/Memcached 的 save_path 是 URI，is_dir() 无法 stat，直接跳过。
 $isRemoteScheme = is_string($sp) && preg_match('#^[a-z]+://#i', $sp);
 if ($isRemoteScheme) {
     check('Session save path writable', true, $sp . ' (remote handler - verified by round-trip below)', true);
@@ -783,7 +654,6 @@ if ($isRemoteScheme) {
     check('Session save path writable', $spWritable, $sp === '' ? 'empty (system default)' : $sp);
 }
 
-// Round-trip test: write a value, close, reopen, read it back.
 $diagKey = '__moerng_diag_' . crc32(__FILE__);
 $diagVal = 'ok_' . time();
 
@@ -806,7 +676,6 @@ check(
     $diagRead === $diagVal ? "id {$id1}" : 'value lost after reload (session not persisted)'
 );
 
-/* ------------------------------------------------------------------ */
 section('Web server rewrite');
 
 if ($cli) {
@@ -822,13 +691,10 @@ if ($cli) {
             true
         );
     }
-    // v1.1.1-beta.5: auto-probe /config/database.php over HTTP instead of
-    // asking the user to verify by hand. Expected: 403/404 (web layer denies).
-    // A 200 here is a real leak — the DB password file is publicly readable.
+    // 实测 /config/database.php 是否可被公网读取：期望 403/404，200 需检查响应体。
     $isNginx = stripos($server, 'nginx') !== false;
     $htaccessPresent = is_file(__DIR__ . '/config/.htaccess');
     if (!$isNginx || !$htaccessPresent) {
-        // Apache honors .htaccess, or no .htaccess to be inert — nothing to prove.
         check('Config dir not web-exposed', true, 'no inert .htaccess on this server');
     } else {
         $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
@@ -845,10 +711,7 @@ if ($cli) {
                 $status = (int) $m[1];
             }
         }
-        // v1.1.1-beta.5.1 (local): HTTP 200 is NOT automatically a leak. Many
-        // servers (Baota / open_basedir / WAF) return 200 with a friendly
-        // "PHP execution blocked" page rather than a 403. Inspect the body
-        // to tell those apart from a real database password leak.
+        // HTTP 200 不一定是泄漏，宝塔/WAF 会返回 200 的拦截页，需看响应体区分。
         $body = '';
         if ($probe !== '') {
             $ctx = stream_context_create([
@@ -860,7 +723,6 @@ if ($cli) {
         if ($status >= 400 && $status < 500) {
             check('Config dir not web-exposed', true, "/config/database.php -> HTTP {$status} (denied)");
         } elseif ($status === 200) {
-            // Strip whitespace for keyword matching.
             $sample = trim(preg_replace('/\s+/', ' ', $body));
             $sample = mb_substr($sample, 0, 160);
             $safeHints = ['禁止执行', '防跨站', '禁止访问', 'waf', 'blocked', 'open_basedir', 'directory protection', 'forbidden'];
@@ -888,17 +750,10 @@ if ($cli) {
     }
 }
 
-/* ------------------------------------------------------------------
- * v1.3.2 迭代: 遗留问题清理（数据库残留 / 无用文件）。
- * ----------------------------------------------------------------
- * 默认仅【检测+报告】；加 --fix 才执行清理。
- * 所有清理幂等、可重复执行；只处理【确认无用】的项，绝不误删。
- */
-    section('Legacy cleanup');
+section('Legacy cleanup');
 
-// —— 收集 DB 中已无引用的设置行（代码里再无读取的 key）——
 $orphanSettingKeys = [
-    'direct_upload_enabled', // Web 直传已移除，逻辑中已无任何读取
+    'direct_upload_enabled',
 ];
 
 $pdoClean = null;
@@ -918,7 +773,6 @@ try {
 }
 
 if ($pdoClean !== null) {
-    // 1) 无引用设置行
     foreach ($orphanSettingKeys as $orphanKey) {
         $found = (int) $pdoClean->query(
             $pdoClean->quote($orphanKey) === '' ? "SELECT COUNT(*) FROM settings WHERE `key`='{$orphanKey}'" : "SELECT COUNT(*) FROM settings WHERE `key`=" . $pdoClean->quote($orphanKey)
@@ -937,12 +791,8 @@ if ($pdoClean !== null) {
     check('数据库遗留清理', false, '无法连接数据库，跳过设置行清理', true);
 }
 
-// —— 2) 无用文件（可安全删除，不碰站点根下的源码目录）——
-// 注意: doctor.php 部署后位于站点根，__DIR__ 即站点根，生成物都在 __DIR__/ 下，
-// 不要再用 ./( ../ ) 越出 open_basedir（宝塔限制 root:/tmp）。用 @ 抑制警告并
-// 以 is_readable 防护（open_basedir 之外或不可读的路径一律不视为可清理）。
+// 不越出 open_basedir；@ 抑制警告 + is_readable 防护不可读路径。
 $junkFiles = [];
-// Windows 重定向残留（已 gitignore，本地会残留）
 if (@is_file(__DIR__ . '/nul') && @is_readable(__DIR__ . '/nul')) {
     $junkFiles[] = __DIR__ . '/nul';
 }
@@ -959,13 +809,12 @@ foreach ($junkFiles as $junk) {
     }
 }
 
-// —— 3) 空运行时目录（仅当确为空的目录，且位于站点根内）——
 $emptyDirs = [];
 foreach (['backups', 'var', 'storage/logs'] as $rel) {
     $dir = __DIR__ . '/' . $rel;
     if (@is_dir($dir)) {
         $entries = @scandir($dir);
-        if (is_array($entries) && count($entries) === 2) { // '.', '..' 空目录
+        if (is_array($entries) && count($entries) === 2) {
             $emptyDirs[] = $dir;
         }
     }
@@ -979,8 +828,6 @@ foreach ($emptyDirs as $dir) {
     }
 }
 
-// --fix 模式：清理后继续打印健康检查总结（清理结果已通过 check() 记入 PASS/FAIL）。
-/* ------------------------------------------------------------------ */
 line();
 line(str_repeat('=', 70));
 line(sprintf('PASS %d   FAIL %d   WARN %d', $pass, $fail, $warn));

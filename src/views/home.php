@@ -1,15 +1,12 @@
 <?php require_once __DIR__ . '/partials/icons.php'; ?>
 <?php require __DIR__ . '/partials/front_header.php'; ?>
 
-    <!-- Hero + main content (a11y: <main>, h1 + sr-only keeps SEO while banner visually carries the title) -->
     <main id="main-content">
     <section class="hero">
         <h1 class="sr-only"><?= h($siteName) ?> - <?= h($siteSlogan) ?></h1>
         <div class="hero-inner">
         <div class="hero-grid">
-            <!-- 左栏：品牌 banner + 文案 + CTA + 统计 -->
             <div class="hero-left">
-                <!--: WebP preferred, PNG fallback, fetchpriority=high, preload above -->
                 <span class="hero-kicker">自托管 · 真随机 · 二次元治愈系</span>
                 <picture class="hero-banner-wrap">
                     <source srcset="/assets/banner.webp" type="image/webp">
@@ -31,11 +28,6 @@
                         <div class="label">分类主题</div>
                     </div>
                     <div class="stat">
-                        <!-- 三个统计数字必须挂同一套类：此前这一项只挂了 num、没有 stat-value，
-                             于是拿不到统一下来的 line-height，行盒比另两项高约 16px，
-                             把它的标签「服务可用性」顶得偏低（2026-09-14 对齐修复）。 -->
-                        <!-- v2.0.0-beta.2: 服务可用性实装 —— 近 7 天 API 请求成功率
-                             （4xx 视为可用、5xx 计失败）；无样本（新装/无流量）显示默认 99.9%。 -->
                         <div class="num stat-value" title="近 7 天 API 请求成功率"><?= $availability === null ? '99.9%' : number_format($availability * 100, 1) . '%' ?></div>
                         <div class="label">服务可用性</div>
                     </div>
@@ -43,9 +35,7 @@
                 <p class="stats-note">实时统计 · 图片与分类随后台更新</p>
             </div>
 
-            <!-- 右栏：抽图舞台（hero-stage 卡片化，设计核心交互） -->
             <div class="hero-stage">
-                <!-- Random image demo: proves the API works right from the hero -->
                 <div class="random-demo reveal" role="region" aria-label="随机图片生成器">
                     <div class="rd-preview">
                         <div class="rd-placeholder" id="rd-placeholder">点「试试手气」，随机取一张看看效果</div>
@@ -64,7 +54,6 @@
                         <button class="btn btn-primary btn-sm" id="rd-run"><?= icon('dice', 16) ?> 试试手气</button>
                         <span class="rd-url" id="rd-url">-</span>
                         <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 16) ?></button>
-                        <!-- v1.2.1 迭代: view-large / download / history for the random demo -->
                         <button type="button" class="btn btn-outline btn-sm hidden" id="rd-zoom" aria-label="查看大图" title="查看大图"><?= icon('eye', 16) ?></button>
                         <button type="button" class="btn btn-outline btn-sm hidden" id="rd-download" aria-label="下载图片" title="下载图片"><?= icon('download', 16) ?></button>
                     </div>
@@ -75,7 +64,6 @@
     </section>
 
     <div class="container">
-        <!-- Features -->
         <section class="feature-grid">
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('dice', 28) ?></div>

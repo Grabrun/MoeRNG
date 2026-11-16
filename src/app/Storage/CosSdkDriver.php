@@ -3,22 +3,6 @@ declare(strict_types=1);
 
 namespace App\Storage;
 
-/**
- * Tencent Cloud COS via the OFFICIAL qcloud/cos-sdk-v5 (vendor/cos-sdk-v5).
- *
- * The built-in COS V5 signing in S3Driver is correct since v1.0.24 (verified
- * byte-for-byte against the server's expected StringToSign), but maintaining a
- * hand-rolled signature is a liability. This driver delegates every COS
- * operation to the official SDK, which is long-term maintained and covers
- * multipart upload, retries, and presigned URLs for us.
- *
- * SDK location: <root>/sdk/cos/  (src/ + vendor/ copied from the official
- * package). It is loaded lazily — only when a COS operation actually runs —
- * so requests that never touch object storage pay no autoload cost.
- *
- * If the SDK is missing (deployment without sdk/cos/), S3Driver silently
- * falls back to the built-in v1.0.24 signing, so a partial deploy still works.
- */
 class CosSdkDriver implements StorageInterface
 {
     private string $accessKey;
@@ -48,11 +32,6 @@ class CosSdkDriver implements StorageInterface
         $this->signedTtl = max(1, $signedTtl);
     }
 
-    /**
-     * Whether the official SDK can be used on this deployment.
-     * Cached per request; requires the copied vendor autoloader AND the PHP
-     * extensions the SDK needs (simplexml / libxml are mandatory at runtime).
-     */
     public static function available(): bool
     {
         static $ok = null;
@@ -72,10 +51,7 @@ class CosSdkDriver implements StorageInterface
             return $this->client;
         }
         require_once dirname(__DIR__, 2) . '/sdk/cos/vendor/autoload.php';
-        // v1.2.1: when the operator has bound a custom source domain (e.g.
-        // img.example.com → moerng-xxx.cos.ap-chengdu.myqcloud.com
-        // in the COS console), pass it as the SDK `domain` so every request
-        // host — including the presigned URL — is that custom domain.
+        // 绑定自定义源站域名后，所有请求（含预签名 URL）都走该域名。
         $config = [
             'region' => $this->region,
             'scheme' => 'https',
@@ -83,9 +59,7 @@ class CosSdkDriver implements StorageInterface
                 'secretId'  => $this->accessKey,
                 'secretKey' => $this->secretKey,
             ],
-            // MR-20: the COS SDK defaults to timeout/connect_timeout = 3600s —
-            // a stalled endpoint would pin a FPM worker for an hour. Override to
-            // 5s connect / 30s request so failures surface fast.
+            // SDK 默认超时 3600s，收紧为 5s 连接 / 30s 请求。
             'timeout'         => 30,
             'connect_timeout' => 5,
         ];
@@ -98,10 +72,7 @@ class CosSdkDriver implements StorageInterface
 
     public function upload(string $localPath, string $remotePath, string $contentType): string
     {
-        // Stream the file body instead of slurping it into memory. Client::upload()
-        // routes small files to putObject and large ones to MultipartUpload
-        // automatically — a plain putObject would cap out at the simple-upload
-        // limit (5 GB per the COS docs), so this also covers big images.
+        // 用 Client::upload() 流式上传，大文件自动走分片。
         $stream = fopen($localPath, 'rb');
         if ($stream === false) {
             throw new \RuntimeException("Cannot open local file for upload: {$localPath}");
@@ -169,7 +140,7 @@ class CosSdkDriver implements StorageInterface
         if ($this->cdnUrl !== '') {
             return rtrim($this->cdnUrl, '/') . '/' . ltrim($remotePath, '/');
         }
-        // COS buckets are private by default — short-lived presigned GET.
+        // bucket 默认私有，返回短时预签名 GET 链接。
         try {
             $signed = $this->client()->getPresignedUrl(
                 'getObject',
@@ -181,9 +152,7 @@ class CosSdkDriver implements StorageInterface
             );
             return (string) $signed;
         } catch (\Throwable $e) {
-            // MR-42: 预签名失败不静默降级裸 URL —— 私有 bucket 的裸 URL 必然 403，
-            // 那等于把「签名失效」变成「给出一个必然失效的链接」，且图片仍显示占位符，
-            // 极难被发现。先探测该裸 URL 是否真的可匿名读：只有公开读 bucket 才降级。
+            // 预签名失败时，只有裸 URL 确认可匿名读才降级，否则抛错。
             $host = $this->sourceDomain !== ''
                 ? $this->sourceDomain
                 : "{$this->bucket}.cos.{$this->region}.myqcloud.com";
@@ -197,15 +166,7 @@ class CosSdkDriver implements StorageInterface
         }
     }
 
-    /**
-     * Real connectivity test used by doctor.php — a live PUT probe.
-     *
-     * NOT doesBucketExist(): bucket-level checks (HeadBucket/ListBucket) need
-     * permissions many image-bucket IAM users lack, so they 403 and report
-     * FAIL even though uploads work fine. An actual upload probe mirrors the
-     * real operation the operator cares about; the probe object is deleted
-     * immediately so nothing is left behind.
-     */
+    // 用真实 PUT 探测：bucket 级检查常因 IAM 权限 403，不能代表上传是否可用。
     public function testConnection(): bool
     {
         $key = 'doctor-probe-' . bin2hex(random_bytes(4)) . '.txt';
@@ -221,11 +182,9 @@ class CosSdkDriver implements StorageInterface
         } catch (\Throwable) {
             $ok = false;
         }
-        // Always clean up the probe object (best effort).
         try {
             $this->client()->deleteObject(['Bucket' => $this->bucket, 'Key' => $key]);
         } catch (\Throwable) {
-            // ignore
         }
         return $ok;
     }

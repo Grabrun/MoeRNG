@@ -14,9 +14,7 @@ class AuthMiddleware
     {
         $userId = Session::get('user_id');
 
-        // v1.2.1 登录增强: remember-me auto-login — if there's no session but a
-        // valid remember cookie exists, restore the session from it. This lets
-        // a checked-in admin return to /admin without re-entering credentials.
+        // 无 session 时用 remember cookie 恢复登录态。
         if (!$userId) {
             $raw = (string) ($_COOKIE['moerng_remember'] ?? '');
             if ($raw !== '') {
@@ -29,13 +27,12 @@ class AuthMiddleware
                         $userId = $user->id;
                     }
                 } catch (\Throwable) {
-                    $userId = null; // ignore — fall through to the redirect below
+                    $userId = null;
                 }
             }
         }
 
         if (!$userId) {
-            // Redirect to login for non-AJAX requests
             if ($request->wantsJson()) {
                 $response = new Response();
                 $response->json(['error' => 'Unauthorized', 'message' => 'Please login first.'], 401);
@@ -46,15 +43,13 @@ class AuthMiddleware
 
         $user = User::find($userId);
         if (!$user || !$user->isActive()) {
-            // Clear only the auth keys (don't nuke the whole session, so a
-            // flash message can still reach the login page), then bounce.
+            // 只清认证键，保留 session，让 flash 消息仍能送达登录页。
             Session::remove('user_id');
             Session::remove('user_role');
             $response = new Response();
             $response->redirect('/admin/login');
         }
 
-        // Store current user in request context
         $request->user = $user;
 
         return $next($request);

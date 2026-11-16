@@ -5,14 +5,7 @@ namespace App\Core;
 
 use App\Models\Setting;
 
-/**
- * Minimal SMTP mailer (v1.1.0-beta.4) — pure PHP, zero dependencies, in line
- * with the project's "no third-party runtime deps" rule.
- *
- * Reads its config from the settings store (mail_* keys). Supports AUTH LOGIN,
- * SSL/TLS/plain, and base64-encoded UTF-8 subject/from-name so Chinese text
- * survives the wire.
- */
+/** 零依赖 SMTP 发信，配置取自 settings 的 mail_* 键。 */
 class Mailer
 {
     public static function enabled(): bool
@@ -20,22 +13,7 @@ class Mailer
         return Setting::get('mail_enabled', '0') === '1';
     }
 
-    /**
-     * v1.3.0-beta.2 安全加固 (CVE-2026-MR-014, CWE-918): mail_host is stored
-     * data — a tampered value could point fsockopen at internal services
-     * (169.254.169.254 metadata, 127.0.0.1 services, RFC1918...). The host is
-     * resolved first and the resulting IP must be public.
-     *
-     * v1.3.0-beta.2 例外（自托管内网 SMTP）：局域网邮件服务器（内网 Postfix、
-     * MailHog 等）是真实用例。在 config/app.php 里显式设置
-     * 'allow_private_smtp' => true 即可放行私网/回环地址——开关放在文件系统
-     * 而非 settings 表，因为威胁是"能改数据库的攻击者"，而改 config 文件需要
-     * 服务器文件权限（即运维本人的权限级别）。云厂商 metadata 地址
-     * (169.254.169.254) 无论开关状态一律拒绝——它不是合法邮件服务器。
-     *
-     * @return string 已通过校验的 IP 字面量（调用方必须连它，而不是原 hostname）
-     * @throws \RuntimeException 主机为空 / 无法解析 / 指向内网或元数据地址
-     */
+    /** 解析主机并校验为公网 IP 防 SSRF（allow_private_smtp 可放行私网，元数据地址始终拒绝）；返回的 IP 必须直接连，勿再用 hostname。 */
     private static function assertSafeHost(string $host): string
     {
         $ip = filter_var($host, FILTER_VALIDATE_IP)
@@ -44,14 +22,13 @@ class Mailer
         if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) {
             throw new \RuntimeException('SMTP 主机无法解析为有效地址');
         }
-        // Metadata endpoint: never a legitimate mail server, always refused.
         if ($ip === '169.254.169.254') {
             throw new \RuntimeException('SMTP 主机不允许指向云元数据地址');
         }
         $private = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
         if ($private === false) {
             if ((bool) Config::get('app.allow_private_smtp', false)) {
-                return $ip; // explicit operator opt-in from config/app.php
+                return $ip;
             }
             throw new \RuntimeException(
                 'SMTP 主机不允许指向内网或保留地址。如确需使用内网邮件服务器，'
@@ -61,9 +38,7 @@ class Mailer
         return $ip;
     }
 
-    /**
-     * Send one HTML email. Returns '' on success, or a human-readable error.
-     */
+    /** 发送一封 HTML 邮件；成功返回 ''，失败返回错误信息。 */
     public static function send(string $to, string $subject, string $html): string
     {
         $host = trim(Setting::get('mail_host', ''));
@@ -82,10 +57,7 @@ class Mailer
         $from = trim(Setting::get('mail_from', $user !== '' ? $user : 'no-reply@localhost'));
         $fromName = trim(Setting::get('mail_from_name', 'MoeRNG'));
 
-        // 连**已验证的 IP**而非 hostname —— 否则是 DNS 重绑定（TOCTOU）：
-        // assertSafeHost 解析并校验的是那一刻的 IP，fsockopen 若按 hostname 再解析
-        // 一次，攻击者控制的域名可以在两次解析之间改指向内网/元数据地址。
-        // EHLO/MAIL FROM 等仍用 $host（见下方协议读写），保证对端看到的 SNI/域名正确。
+        // 连已校验的 IP 而非 hostname：hostname 会再解析一次，攻击者可借 DNS 重绑定（TOCTOU）指向内网。
         $remote = ($enc === 'ssl' ? 'ssl://' : '') . $safeIp;
         $errno = 0;
         $errstr = '';
@@ -152,7 +124,7 @@ class Mailer
         return '';
     }
 
-    /** Send a test email to settings.mail_test_to. Returns [ok, message]. */
+    /** 向 settings.mail_test_to 发测试邮件，返回 [ok, message]。 */
     public static function test(): array
     {
         $to = trim(Setting::get('mail_test_to', ''));

@@ -12,32 +12,13 @@ use App\Core\BackupService;
 use App\Models\Setting;
 use App\Models\AuditLog;
 
-/**
- * System settings board — v1.1.0-beta.4 multi-group rewrite.
- *
- * Five groups (site / security / performance / mail / backup), each with a
- * typed field schema (defaults, validation rules, help text). Saves validate
- * the submitted group, persist only changed values, and append a field-level
- * diff to the audit log. Action endpoints (cache clear / backup / mail test)
- * live alongside the passive settings.
- *
- * Storage configuration deliberately stays on its own board (/admin/storage).
- */
 class SettingController extends Controller
 {
-    /** 审计日志 CSV 导出的行数上限（防止 audit_logs 增长后导出打满内存）。 */
+    /** CSV 导出行数上限，防止百万行导出打满内存。 */
     private const LOG_EXPORT_MAX = 100000;
 
-    /**
-     * Group + field schema. This is the single source of truth for the form
-     * (view), validation (save) and defaults (view + code paths).
-     *
-     * Field types: text | password | textarea | number | email | select | toggle
-     * Rules: required, max, min, numeric, integer, email, url, in:[a,b]
-     */
+    /** 分组与字段 schema：表单、校验、默认值的唯一来源。 */
     public const GROUPS = [
-        // v1.2.1 迭代: 5 groups per settings-optimization doc §4 —
-        // 基础设置 / 安全设置 / 图片与存储 / 系统维护 / 高级设置(不折叠).
         'basic' => [
             'label' => '基础设置',
             'desc' => '站点名称、Logo、备案、版权等基础信息',
@@ -145,9 +126,6 @@ class SettingController extends Controller
         ]);
     }
 
-    /**
-     * POST /admin/settings/save — persist one group (with validation + audit).
-     */
     public function save(Request $request): void
     {
 
@@ -171,22 +149,18 @@ class SettingController extends Controller
             return;
         }
 
-        // Persist + diff for the audit log.
         $old = Setting::allAsKeyValue();
         $diff = [];
         foreach ($fields as $key => $def) {
             $newValue = $data[$key];
             $oldValue = (string) ($old[$key] ?? $def['default'] ?? '');
-            // Password fields: keep the stored value when the input is blank
-            // (the form renders password fields empty for security).
+            // 密码字段留空表示保留原值（表单出于安全不回显）。
             if (($def['type'] ?? '') === 'password' && $newValue === '') {
                 $newValue = $oldValue;
             }
             Setting::set($key, $newValue);
             if ($newValue !== $oldValue) {
-                // v1.3.0-beta.2 安全加固 (CVE-2026-MR-007, CWE-532): passwords and
-                // credential secrets must never land in the audit log in clear
-                // text — log that they changed, not what they changed to.
+                // 密码与凭据不得以明文进审计日志，只记录「发生过变更」。
                 $sensitive = ($def['type'] ?? '') === 'password'
                     || str_ends_with($key, '_password')
                     || str_contains(strtolower($key), 'secret');
@@ -209,13 +183,6 @@ class SettingController extends Controller
         $this->redirect('/admin/settings?tab=' . $group . '#' . $group);
     }
 
-    /**
-     * POST /admin/settings/logo-upload — upload a site logo (AJAX, JSON out).
-     *
-     * Stores the file under public/uploads/logo/ (same publicly-accessible
-     * tree as images) and persists settings.logo_url. Rejects SVG on purpose
-     * (script-injection risk). Replaces the previous uploaded logo file.
-     */
     public function logoUpload(Request $request): void
     {
 
@@ -243,7 +210,6 @@ class SettingController extends Controller
         }
         @chmod($target, 0644);
 
-        // Delete the previous logo when it was an uploaded one (uploads/logo/).
         $old = (string) Setting::get('logo_url', '');
         if (preg_match('#/uploads/logo/([^/]+)$#', $old, $m) && is_file($dir . '/' . $m[1])) {
             @unlink($dir . '/' . $m[1]);
@@ -256,7 +222,6 @@ class SettingController extends Controller
         $this->json(['success' => true, 'message' => 'Logo 上传成功', 'url' => $url]);
     }
 
-    /** Validate an uploaded logo file; returns '' when acceptable. */
     private static function validateLogoUpload(mixed $file): string
     {
         if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
@@ -271,16 +236,12 @@ class SettingController extends Controller
         if ($info === false) {
             return '文件不是有效的图片';
         }
-        // MIME whitelist — SVG is excluded deliberately (XSS / script payloads).
+        // MIME 白名单刻意排除 SVG（可携带脚本）。
         $allowed = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
         if (!in_array($info['mime'] ?? '', $allowed, true)) {
             return '仅支持 PNG / JPG / GIF / WebP 格式（不支持 SVG）';
         }
-        // MR-14: extension whitelist. The saved filename extension is derived
-        // from the client-supplied $_FILES['name']; without this gate a real
-        // PNG payload uploaded as "evil.php" would land as an executable under
-        // public/uploads/logo/. Allow only safe image extensions (the MIME check
-        // above already guarantees the content really is an image).
+        // 扩展名白名单：保存名取自客户端文件名，否则真图片上传成 .php 会被当脚本执行。
         $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
         $allowedExt = ['png', 'jpg', 'jpeg', 'webp', 'ico'];
         if (!in_array($ext, $allowedExt, true)) {
@@ -289,16 +250,12 @@ class SettingController extends Controller
         return '';
     }
 
-    /**
-     * POST /admin/settings/cache-clear — flush output caches.
-     */
     public function cacheClear(Request $request): void
     {
         $cleared = [];
         if (function_exists('opcache_reset')) {
             $cleared[] = 'OPcache' . (opcache_reset() ? '' : '（无活动缓存）');
         }
-        // Rate-limit counters are safe to drop; keep them (they self-expire).
         $files = glob(dirname(__DIR__, 3) . '/var/rate-limit/*.json') ?: [];
         $cleared[] = '限流计数 ' . count($files) . ' 项（如需重置计数）';
         AuditLog::record('cache_clear', ['opcache' => in_array('OPcache', $cleared, true)]);
@@ -306,9 +263,6 @@ class SettingController extends Controller
         $this->redirect('/admin/settings?tab=maintenance#maintenance');
     }
 
-    /**
-     * POST /admin/settings/backup — run a backup now.
-     */
     public function backupNow(Request $request): void
     {
         [$ok, $msg] = BackupService::create();
@@ -317,9 +271,6 @@ class SettingController extends Controller
         $this->redirect('/admin/settings?tab=maintenance#maintenance');
     }
 
-    /**
-     * POST /admin/settings/backup-delete — remove one backup group.
-     */
     public function backupDelete(Request $request): void
     {
         $stamp = (string) $request->input('stamp', '');
@@ -329,9 +280,6 @@ class SettingController extends Controller
         $this->redirect('/admin/settings?tab=maintenance#maintenance');
     }
 
-    /**
-     * POST /admin/settings/test-mail — send a probe email.
-     */
     public function testMail(Request $request): void
     {
         [$ok, $msg] = Mailer::test();
@@ -340,12 +288,8 @@ class SettingController extends Controller
         $this->redirect('/admin/settings?tab=maintenance#maintenance');
     }
 
-    /**
-     * GET /admin/settings/logs — operation audit trail (paginated + search).
-     */
     public function logs(Request $request): void
     {
-        // v1.2.1 迭代: opportunistic audit-log retention cleanup (settings doc).
         try {
             $days = (int) \App\Models\Setting::get('audit_log_retention_days', '90');
             if ($days > 0) {
@@ -354,11 +298,9 @@ class SettingController extends Controller
                     ->execute([$days]);
             }
         } catch (\Throwable) {
-            // best effort — cleanup must never break the page
         }
 
         $page = max(1, (int) $request->input('page', '1'));
-        // v1.2.1 迭代: per-page selector (50/100/200/500) for long audit trails.
         $perPage = in_array((int) $request->input('per_page', '50'), [50, 100, 200, 500], true)
             ? (int) $request->input('per_page', '50') : 50;
         $search = trim((string) $request->input('q', ''));
@@ -394,7 +336,6 @@ class SettingController extends Controller
             $rows = \App\Core\Database::getInstance()->query('SELECT DISTINCT action FROM audit_logs ORDER BY action');
             $actions = $rows->fetchAll(\PDO::FETCH_COLUMN);
         } catch (\Throwable) {
-            // table may not exist yet
         }
 
         $this->render('admin/logs', [
@@ -410,10 +351,6 @@ class SettingController extends Controller
         ]);
     }
 
-    /**
-     * v1.2.1 迭代: export the filtered audit trail as CSV.
-     * GET /admin/settings/logs/export?q=&action=  (admin-only, CSRF not needed for GET).
-     */
     public function logsExport(Request $request): void
     {
         $search = trim((string) $request->input('q', ''));
@@ -433,9 +370,7 @@ class SettingController extends Controller
             $params[] = $action;
         }
         $whereSql = $where !== [] ? 'WHERE ' . implode(' AND ', $where) : '';
-        // 加导出上限：audit_logs 按 audit_log_retention_days（默认 90 天）无限增长，
-        // 无 LIMIT 的全量 fetchAll 在百万行时会把 PHP 内存打满。取最近
-        // self::LOG_EXPORT_MAX 行 —— 导出的是审计日志，最新的最有排查价值。
+        // audit_logs 会无限增长，全量 fetchAll 会打满内存；只导出最近 N 行。
         $stmt = \App\Core\Database::getInstance()->prepare(
             "SELECT * FROM audit_logs {$whereSql} ORDER BY id DESC LIMIT " . self::LOG_EXPORT_MAX
         );
@@ -459,11 +394,7 @@ class SettingController extends Controller
         exit;
     }
 
-    /**
-     * Validate submitted values against the field schema.
-     *
-     * @return array<string,string> field => error message (empty = valid)
-     */
+    /** @return array<string,string> field => 错误信息 */
     public static function validateFields(array $fields, array $input): array
     {
         $errors = [];
@@ -476,11 +407,8 @@ class SettingController extends Controller
                 continue;
             }
             if ($value === '') {
-                continue; // optional & empty → OK
+                continue;
             }
-            // Length bounds apply to string fields only; numeric fields use
-            // the numeric min/max checks below (v1.2.1 fix — retention days
-            // min:7 was wrongly enforced as "at least 7 chars").
             if (empty($rules['numeric'])) {
                 if (isset($rules['max']) && mb_strlen($value) > (int) $rules['max']) {
                     $errors[$key] = $def['label'] . ' 长度不能超过 ' . $rules['max'] . ' 字符';
@@ -513,15 +441,6 @@ class SettingController extends Controller
         return $errors;
     }
 
-    /* ================================================================
-     * v1.3.2 迭代: 系统健康检查（检查 + 修复）—— 统一取代 CLI 迁移/回填工具。
-     * 检查项：
-     *   1) schema completeness —— 覆盖部署应自迁移的全部列/索引（可修复）
-     *   2) 遗留设置行（代码零读取的 key，如已移除的 direct_upload_enabled）—— 可修复
-     *   3) 历史图片哈希回填统计（缺 file_hash / file_sha256）—— 修复走
-     *      /admin/images/backfill-hashes 分批端点（前端循环 + 进度条）
-     * ================================================================ */
-
     /** @return array<string,array{ok:bool,detail:string,fixable:bool,extra:array}> */
     private function runHealthChecks(): array
     {
@@ -532,9 +451,6 @@ class SettingController extends Controller
             return ['database' => ['ok' => false, 'detail' => '数据库连接失败: ' . $e->getMessage(), 'fixable' => false, 'extra' => []]];
         }
 
-        // —— 1) schema completeness ——
-        // 期望清单来自 Application::schemaExpectations()（唯一来源）。此前这里
-        // 手抄了 14 列 + 5 索引，doctor 又抄了一份，两份还抄出了差异。
         $expect = \App\Core\Application::schemaExpectations();
         $missing = [];
         $colsCache = [];
@@ -551,7 +467,7 @@ class SettingController extends Controller
             }
             return $idxCache[$tbl];
         };
-        // 先列后索引：health-fix 按 $missing 的顺序执行 ALTER，索引依赖列已存在。
+        // 先列后索引：索引依赖列已存在。
         foreach ($expect['columns'] as $tbl => $cols) {
             foreach ($cols as $col => $def) {
                 if (!in_array($col, $tableCols($tbl), true)) {
@@ -575,7 +491,6 @@ class SettingController extends Controller
             'extra' => ['missing' => $missing],
         ];
 
-        // —— 2) 遗留设置行 ——
         $orphanKeys = ['direct_upload_enabled'];
         $orphanFound = [];
         try {
@@ -597,7 +512,6 @@ class SettingController extends Controller
             $checks['orphan_settings'] = ['ok' => true, 'detail' => 'settings 表不可探测（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
-        // —— v1.3.2-beta.2: 图片处理队列积压统计 ——
         try {
             $qPending = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE process_status = 'pending'")->fetchColumn();
             $qFailed = (int) $pdo->query(
@@ -615,7 +529,6 @@ class SettingController extends Controller
             $checks['image_queue'] = ['ok' => true, 'detail' => '队列统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
-        // —— v1.3.2-beta.2: 历史缩略图缺失统计（存量图，不影响前台展示）——
         try {
             $noThumb = (int) $pdo->query(
                 "SELECT COUNT(*) FROM `images` WHERE process_status = 'done' AND " . \App\Models\Image::thumbMetaPendingSql()
@@ -632,11 +545,6 @@ class SettingController extends Controller
             $checks['thumb_backfill'] = ['ok' => true, 'detail' => '统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
-        // —— v2.0.0-beta.19: 历史兼容数据残留（只检测，不再运行时兼容）——
-        // 两处不再"猜/回退"的旧数据：
-        //   ① storage_profile_id 为空 → driverForImage() 现在会明确报错（不再按
-        //      storage_provider 猜实例，猜错会把图片指向别人的桶）；
-        //   ② url 列非空 → Image::url() 不再回退该列（新写入一律 ''）。
         try {
             $noProfile = (int) $pdo->query(
                 "SELECT COUNT(*) FROM `images` WHERE `storage_profile_id` IS NULL"
@@ -658,7 +566,6 @@ class SettingController extends Controller
             $checks['legacy_refs'] = ['ok' => true, 'detail' => '检测失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
-        // —— 3) 哈希回填统计 ——
         try {
             $noMd5 = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE file_hash IS NULL OR file_hash=''")->fetchColumn();
             $noSha = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE file_sha256 IS NULL OR file_sha256=''")->fetchColumn();
@@ -674,11 +581,7 @@ class SettingController extends Controller
             $checks['hash_backfill'] = ['ok' => true, 'detail' => '统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
-        // —— 去重判据自检 ——
-        // 拿一行真实存在的哈希回查，验证「按哈希能找到自己」。这是去重能否生效的
-        // 唯一硬指标：查不到自己 = 上传去重必然静默失效（上传照样成功、界面无报错，
-        // 只是每张都被当成新图）。CHAR 右补空格 / 排序规则 NO PAD / sql_mode 的
-        // PAD_CHAR_TO_FULL_LENGTH 任一处不合都会这样，且从代码上完全看不出来。
+        // 回查不到自己说明去重会静默失效（CHAR 尾空格/排序规则所致）。
         try {
             $sample = $pdo->query(
                 "SELECT `id`, `file_hash`, `file_sha256` FROM `images`"
@@ -700,7 +603,6 @@ class SettingController extends Controller
                 }
             }
 
-            // 同一内容的重复记录（按强哈希分组）——有就说明历史上漏判过
             $dupGroups = (int) $pdo->query(
                 "SELECT COUNT(*) FROM ("
                 . "SELECT `file_sha256` FROM `images`"
@@ -730,7 +632,6 @@ class SettingController extends Controller
         return $checks;
     }
 
-    /** GET /admin/settings/health —— 检查结果（JSON）。 */
     public function health(Request $request): void
     {
         $checks = $this->runHealthChecks();
@@ -738,7 +639,6 @@ class SettingController extends Controller
         $this->json(['success' => true, 'all_ok' => $allOk, 'checks' => $checks]);
     }
 
-    /** POST /admin/settings/health-fix —— 执行可修复项（schema + 遗留设置行）。 */
     public function healthFix(Request $request): void
     {
         $checks = $this->runHealthChecks();
@@ -747,7 +647,6 @@ class SettingController extends Controller
         $errors = [];
         $deletedRows = 0;
 
-        // schema 补全（幂等：1060/1061 视为已存在）
         $missing = $checks['schema']['extra']['missing'] ?? [];
         try {
             $pdo = \App\Core\Database::getInstance();
@@ -764,7 +663,6 @@ class SettingController extends Controller
                     }
                 }
             }
-            // 遗留设置行删除
             $orphanFound = $checks['orphan_settings']['extra']['found'] ?? [];
             foreach ($orphanFound as $k => $c) {
                 $deletedRows += $pdo->exec("DELETE FROM `settings` WHERE `key` = " . $pdo->quote($k));
@@ -773,7 +671,6 @@ class SettingController extends Controller
             $errors[] = $e->getMessage();
         }
 
-        // 重新验证 schema（以复验为准）
         $after = $this->runHealthChecks();
         $schemaOkAfter = $after['schema']['ok'] ?? false;
         $orphanOkAfter = $after['orphan_settings']['ok'] ?? true;

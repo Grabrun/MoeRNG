@@ -3,14 +3,7 @@ declare(strict_types=1);
 
 namespace App\Storage;
 
-/**
- * 七牛云 Kodo 官方 SDK 驱动（v1.1.1 迭代，集成第 6 家对象存储）。
- *
- * - sdk/qiniu/ = qiniu/php-sdk 官方源码（src/Qiniu/，自实现 curl，无 Guzzle 依赖）
- *   + 捆绑最小 MyCLabs\Enum\Enum（qiniu 的 composer 依赖，仅用 ::from）。
- * - 凭据模型：access_key + secret_key + bucket + region(z0/z1/z2/z3/as0/na0)。
- * - 下载 URL：CDN 优先；未配置时回退 {bucket}.qiniudns.com（建议配置自定义下载域名）。
- */
+/** 七牛 Kodo：官方 SDK 自带 curl 实现，不依赖 Guzzle。 */
 class QiniuSdkDriver implements StorageInterface
 {
     private string $accessKey;
@@ -51,22 +44,12 @@ class QiniuSdkDriver implements StorageInterface
         return $cfg;
     }
 
-    /**
-     * MR-20: bound curl timeouts for the upload hot path.
-     *
-     * The Qiniu SDK defaults to NO curl timeout (CURLOPT_TIMEOUT unset), so a
-     * stalled endpoint would pin a FPM worker until the OS TCP timeout. We pass
-     * an explicit RequestOptions (5s connect / 30s request) to UploadManager.
-     * NOTE: BucketManager (delete/stat) does not accept a RequestOptions in this
-     * SDK version — those are low-frequency management calls and remain on the SDK
-     * default; the upload path (the DoS amplifier) is covered here.
-     */
+    // SDK 默认不设 curl 超时，上传热路径显式给 5s 连接 / 30s 请求。
     private function reqOpt(): \Qiniu\Http\RequestOptions
     {
         return new \Qiniu\Http\RequestOptions(5, null, 30);
     }
 
-    /** Map short region codes to the SDK Region factories. */
     private function zone(): \Qiniu\Region
     {
         return match ($this->region) {
@@ -115,7 +98,6 @@ class QiniuSdkDriver implements StorageInterface
 
     public function size(string $remotePath): ?int
     {
-        // v1.5.0-beta.2: 存量缩略图的字节数补全用（只读响应头，不下载 body）。
         try {
             return S3Driver::sizeUrl($this->url($remotePath));
         } catch (\Throwable) {
@@ -129,14 +111,9 @@ class QiniuSdkDriver implements StorageInterface
         if ($this->cdnUrl !== '') {
             return $this->cdnUrl . '/' . str_replace('%2F', '/', rawurlencode($key));
         }
-        // v1.2.0 迭代: 七牛私有空间下载签名（?e={expires}&token={ak}:{urlsafe-b64(hmac-sha1)}），
-        // 短时链接，不经服务器代理。
-        // v1.2.1: custom source domain (CNAME bound to the space) replaces
-        // the default {bucket}.qiniudns.com host for the signed URL.
+        // 私有空间短时下载签名：?e=过期&token=ak:urlsafe-b64(hmac-sha1)；自定义源站域名优先。
         $host = $this->sourceDomain !== '' ? $this->sourceDomain : $this->bucket . '.qiniudns.com';
         $base = 'https://' . $host . '/' . str_replace('%2F', '/', rawurlencode($key));
-        // MR-41: window-aligned expiry (same path → identical signed URL within a
-        // 60s window → browser cache hits), matching the local SignedUrl.
         $expires = SignedUrl::alignedExpiry($this->signedTtl);
         $signData = $base . '?e=' . $expires;
         $sign = rtrim(strtr(base64_encode(hash_hmac('sha1', $signData, $this->secretKey, true)), '+/', '-_'), '=');

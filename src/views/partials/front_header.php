@@ -1,9 +1,5 @@
 <?php
-/**
- * Front-site shared header (v1.3.1 迭代: 前台由单页拆分为多页导航).
- * Expects: $siteName, $siteSlogan, $logoUrl, $githubUrl, $activePage
- * Optional: $pageTitle (full <title>), $pageDesc (meta description)
- */
+/** 前台公共头；期望变量：$siteName, $siteSlogan, $logoUrl, $githubUrl, $activePage（可选 $pageTitle/$pageDesc）。 */
 $activePage = $activePage ?? 'home';
 $navItems = [
     'home'    => ['/', '首页'],
@@ -33,7 +29,6 @@ $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。基于 RESTful �
     <meta name="twitter:title" content="<?= h($fullTitle) ?>">
     <meta property="og:image" content="/assets/og-image.png">
     <?php if (($activePage ?? '') === 'home'): ?>
-    <!-- v1.2.1 迭代: JSON-LD structured data (WebApplication) — homepage only -->
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
@@ -47,16 +42,14 @@ $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。基于 RESTful �
         "featureList": ["随机图片获取 API", "多级分类支持", "JSON/Redirect 双模式", "速率限制保护"]
     }
     </script>
-    <!-- preload LCP banner so the hero paints immediately -->
+    <!-- preload LCP banner -->
     <link rel="preload" as="image" href="/assets/banner.webp" fetchpriority="high">
     <?php endif; ?>
     <link rel="preconnect" href="https://miaoda.feishu.cn" crossorigin>
     <link rel="preconnect" href="https://sf3-scmcdn-cn.feishucdn.com" crossorigin>
     <link rel="dns-prefetch" href="https://miaoda.feishu.cn">
     <link rel="dns-prefetch" href="https://sf3-scmcdn-cn.feishucdn.com">
-    <!-- v2.0.0-beta.9: 字体 CSS 异步化 —— media=print 使其不阻塞首屏渲染，
-        紧随其后的 nonce 脚本立即切回 all（CSP script-src 禁 inline onload，此写法合规）。
-        display=swap 保证字体到达前以系统字体渲染，无空白。 -->
+    <!-- 字体 CSS 异步化：media=print 不阻塞首屏，nonce 脚本立即切回 all（CSP 禁 inline onload）。 -->
     <link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" id="font-css" media="print">
     <script<?= \App\Core\CspNonce::attr() ?>>
     try{var l=document.getElementById('font-css');if(l){l.media='all';}}catch(e){}
@@ -66,7 +59,6 @@ $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。基于 RESTful �
 <body>
     <div class="toast-container"></div>
 
-    <!-- fixed top navigation bar -->
     <header class="site-nav">
         <a class="site-nav-brand" href="/" aria-label="返回<?= h($siteName) ?>首页" title="返回首页">
             <?php if (!empty($logoUrl)): ?>
@@ -84,7 +76,6 @@ $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。基于 RESTful �
                 <?php if (!empty($githubUrl)): ?>
                 <a href="<?= h($githubUrl) ?>" target="_blank" rel="noopener nofollow">GitHub</a>
                 <?php endif; ?>
-                <!-- 管理后台是独立工作区，新标签打开，不打断前台浏览位置 -->
                 <a href="/admin" target="_blank" rel="noopener">管理面板</a>
             </nav>
         </details>

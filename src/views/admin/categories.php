@@ -6,7 +6,6 @@
         <p>管理图片分类层级结构</p>
     </div>
     <div class="flex gap-2">
-        <!-- v1.2.1 迭代: expand/collapse all (admin UI audit C1) -->
         <button type="button" class="btn btn-outline btn-sm" id="cat-expand-all">展开全部</button>
         <button type="button" class="btn btn-outline btn-sm" id="cat-collapse-all">折叠全部</button>
         <button class="btn btn-primary btn-sm" data-open-modal="category-modal">新建分类</button>
@@ -19,7 +18,6 @@
     <?php else: ?>
     <?php foreach ($categories as $root): ?>
     <?php
-        // Count total descendants for the root badge.
         $moerng_count = function ($n) use (&$moerng_count) {
             $c = 0;
             foreach ($n['children'] ?? [] as $ch) { $c += 1 + $moerng_count($ch); }
@@ -104,7 +102,6 @@
     <?php endif; ?>
 </div>
 
-<!-- Category Modal -->
 <div class="modal-overlay" id="category-modal">
     <div class="modal">
         <h2 id="category-modal-title">新建分类</h2>

@@ -8,11 +8,9 @@ function admin_header($title, $bodyClass = '') { ?>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= \App\Core\Session::csrfToken() ?>">
     <title><?= h($title) ?> - MoeRNG Admin</title>
-    <!-- v1.2.0 迭代: brand favicon on admin pages too -->
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=<?= ASSET_VER ?>">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=<?= ASSET_VER ?>">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>">
-    
 </head>
 <body<?= $bodyClass !== '' ? ' class="' . h($bodyClass) . '"' : '' ?>>
     <div class="toast-container"></div>
@@ -40,8 +38,7 @@ function admin_header($title, $bodyClass = '') { ?>
             </nav>
             <div class="sidebar-footer">
                 <a href="/" target="_blank"><?= icon('link', 20) ?><span>返回前台</span></a>
-                <!-- v1.3.0-beta.2 (CVE-2026-MR-005): logout is POST + CSRF now —
-                     a GET link would be force-triggerable via <img src>. -->
+                <!-- 退出登录必须 POST + CSRF：GET 链接可被 <img src> 强制触发。 -->
                 <form method="POST" action="/admin/logout" class="logout-form">
                     <input type="hidden" name="_csrf_token" value="<?= \App\Core\Session::csrfToken() ?>">
                     <button type="submit" title="退出登录"><?= icon('logout', 20) ?><span>退出登录</span></button>
@@ -51,14 +48,6 @@ function admin_header($title, $bodyClass = '') { ?>
         <main class="main-content">
 <?php admin_flash(); }
 
-/**
- * Render one-shot flash messages.
- *
- * Every controller writes Session::flash('success'|'error', ...) before
- * redirecting, but this header never printed them, so all admin actions
- * appeared to do nothing. `views/admin/layout.php` had the markup and is dead
- * code — the real pages all go through admin_header().
- */
 function admin_flash() {
     $flashes = [
         'success' => \App\Core\Session::flash('success'),
@@ -69,8 +58,7 @@ function admin_flash() {
 
     foreach ($flashes as $type => $message) {
         if ($message === null || $message === '') continue;
-        // Controllers join upload errors with "<br>", so limited markup is
-        // allowed while everything else stays escaped.
+        // 上传错误用 "<br>" 拼接，故只放行少量标签，其余转义。
         $safe = strip_tags((string) $message, '<br><b><strong>');
         echo '<div class="alert alert-' . $type . '" data-flash="' . $type . '">' . $safe . '</div>';
     }

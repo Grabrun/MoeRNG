@@ -1,6 +1,5 @@
 <?php
 include __DIR__ . '/helpers.php';
-/** @var array $settings @var array $groups @var array $backups */
 $groupNames = array_keys($groups);
 $activeGroup = $_GET['tab'] ?? ($groupNames[0] ?? 'site');
 if (!in_array($activeGroup, array_merge($groupNames, ['health']), true)) $activeGroup = $groupNames[0] ?? 'site';
@@ -13,7 +12,6 @@ function renderField(string $key, array $def, array $settings): void
     $help = $def['help'] ?? '';
     $name = h($key);
     $maxlength = isset($def['maxlength']) ? ' maxlength="' . (int)$def['maxlength'] . '"' : '';
-    // v1.2.1 迭代: wide fields (logo / textarea) span the full row.
     $wide = in_array($type, ['logo', 'textarea'], true) ? ' setting-item-wide' : '';
 
     echo '<div class="form-group setting-item' . $wide . '" data-search="' . h(strtolower($label . ' ' . ($help ?? ''))) . '">';
@@ -27,8 +25,6 @@ function renderField(string $key, array $def, array $settings): void
             . '<span class="toggle-text">' . ($checked ? '已开启' : '已关闭') . '</span>'
             . '</div>';
     } elseif ($type === 'logo') {
-        // v1.2.1 迭代: always preview — fall back to the packaged default logo
-        // when no custom logo has been set (site renders /assets/logo.png).
         $previewSrc = $value !== '' ? $value : '/assets/logo.png';
         $hasLogo = $value !== '';
         echo '<div class="logo-uploader" data-field="' . $name . '">';
@@ -41,13 +37,11 @@ function renderField(string $key, array $def, array $settings): void
         echo '</div>';
         echo '<div class="logo-upload-row flex gap-8 flex-wrap">';
         echo '<input type="file" id="logo-file-' . $name . '" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden">';
-        // v1.2.1 迭代: single "上传" button — pick file then upload in one flow.
         echo '<button type="button" class="btn btn-sm btn-primary" data-logo-upload="' . $name . '">上传</button>';
         if ($hasLogo) {
             echo '<button type="button" class="btn btn-sm" data-logo-remove="' . $name . '">移除 Logo</button>';
         }
-        // v1.2.1 迭代: no manual URL input — value travels as a hidden field so
-        // saving the form never wipes an uploaded/custom logo.
+        // 无手动 URL 输入，值随隐藏域提交，避免保存时清空已上传 Logo。
         echo '<input type="hidden" name="' . $name . '" value="' . h($value) . '">';
         echo '</div>';
         echo '</div>';
@@ -81,9 +75,6 @@ admin_header('系统设置', 'page-settings');
     <p>站点、安全、性能、邮件与备份配置（仅管理员可修改，所有变更记录到操作日志）</p>
 </div>
 
-<!-- v1.3.2 迭代: 系统健康检查（检查 + 修复）—— 统一取代 CLI 迁移/回填工具 -->
-
-
 <div class="settings-toolbar">
     <div class="settings-tabs">
         <?php foreach ($groups as $gid => $gdef): ?>
@@ -107,7 +98,6 @@ admin_header('系统设置', 'page-settings');
         <div class="card mb-3">
             <h3><?= h($gdef['label']) ?></h3>
             <p class="setting-group-desc"><?= h($gdef['desc']) ?></p>
-            <!-- v1.2.1 迭代: settings layout — adaptive columns + full-width wide fields -->
             <div class="settings-group-body">
                 <?php if ($gdef['fields'] === []): ?>
                 <p class="text-secondary text-small py-2">
@@ -124,14 +114,12 @@ admin_header('系统设置', 'page-settings');
         <?php if ($gdef['fields'] !== []): ?>
         <div class="settings-save-bar mb-3">
             <button type="submit" class="btn btn-primary">保存「<?= h($gdef['label']) ?>」</button>
-            <!-- v1.2.1 UI 深度分析 (UI-04): 未保存修改提示 -->
             <span class="save-hint text-small" id="save-hint"></span>
         </div>
         <?php endif; ?>
     </form>
 
     <?php if ($gid === 'media'): ?>
-    <!-- v2.0.0-beta.1: 清理暂存目录残留（干跑优先） -->
     <div class="card mb-3 batch-panel">
         <h3>清理暂存残留</h3>
         <p class="batch-summary">清理 <code>storage/incoming</code> 里不再属于「在办」行的临时文件
@@ -159,7 +147,6 @@ admin_header('系统设置', 'page-settings');
         </div>
     </div>
 
-    <!-- v1.5.0-beta.1: 历史原图批量转 WebP（干跑优先） -->
     <div class="card mb-3 batch-panel">
         <h3>转换历史原图为 WebP</h3>
         <p class="batch-summary">新上传的原图已自动转 WebP（开关见上方「原图转 WebP」）；此前上传的原图仍是原格式，可用本工具批量补齐。<strong>只换扩展名、布局不动</strong>，缩略图无需搬迁。</p>

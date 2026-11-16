@@ -5,23 +5,18 @@ namespace App\Core;
 
 use App\Models\Setting;
 
-/**
- * GD-based login captcha (v1.1.0-beta.4). Gated by settings.login_captcha.
- * The code is stored in the session and consumed on first verify (one-time).
- */
+/** 登录验证码：代码存 session，校验一次即失效。 */
 class Captcha
 {
     private const SESSION_KEY = 'captcha_code';
     private const WIDTH = 126;
     private const HEIGHT = 42;
 
-    /** Whether the captcha feature is enabled (settings.login_captcha). */
     public static function enabled(): bool
     {
         return Setting::get('login_captcha', '0') === '1';
     }
 
-    /** Generate a 5-char code (no confusables: 0/O/1/I/l removed). */
     public static function generate(): string
     {
         $chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -33,7 +28,6 @@ class Captcha
         return $code;
     }
 
-    /** Render the captcha image directly (used by GET /admin/captcha). */
     public static function render(): void
     {
         self::generate();
@@ -45,8 +39,6 @@ class Captcha
         $bg = imagecolorallocate($img, 246, 248, 252);
         imagefill($img, 0, 0, $bg);
 
-        // Noise dots + 3 wavy lines — cheap but enough to defeat bots while
-        // staying readable for humans.
         for ($i = 0; $i < 80; $i++) {
             imagesetpixel(
                 $img,
@@ -84,7 +76,7 @@ class Captcha
         exit;
     }
 
-    /** One-time verify: consumes the stored code regardless of outcome. */
+    /** 一次性校验：无论成败都清除已存代码。 */
     public static function verify(?string $input): bool
     {
         $expected = (string) Session::get(self::SESSION_KEY, '');

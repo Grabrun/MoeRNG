@@ -3,60 +3,38 @@ declare(strict_types=1);
 
 namespace App\Core;
 
-/**
- * File-backed sliding-window rate limiter (v1.1.0-beta.4) —— **登录锁定专用**。
- *
- * Deliberately zero-dependency: writes a tiny JSON counter per bucket under
- * <root>/var/rate-limit/. Good enough for a single-application deploy and far
- * simpler to reason about than Redis when the extension is not guaranteed.
- *
- * ⚠️ 公开 API 限流**不走这里**：那是 RateLimitMiddleware 的 DB 版本（固定窗口 +
- * upsert 原子递增，需要跨进程精确计数）。本类只服务 AuthController 的登录失败
- * 锁定（按 IP 计桶，`login:<ip>`）。此前注释声称"同一套原语同时服务 API"，
- * 与实现不符 —— 两套实现的窗口语义也不同（滑动 vs 固定），改错地方等于没改。
- */
+/** 文件型滑动窗口限流，仅用于登录失败锁定（每 IP 一个 login:<ip> 桶）。 */
 class RateLimiter
 {
     private static function dir(): string
     {
         $dir = dirname(__DIR__, 2) . '/var/rate-limit';
         if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
-            // v1.2.1 security (audit V-02): fail-CLOSED — an unusable limiter
-            // must deny (login lockout stays effective) instead of silently
-            // allowing every request through. Log loudly for ops.
+            // 目录不可用时失败关闭：宁可全部拒绝，也不能让登录锁定静默失效。
             @error_log('[MoeRNG] Rate limiter directory unavailable: ' . $dir);
             return "\x00FAIL";
         }
         return $dir;
     }
 
-    /**
-     * Consume one token in a sliding window.
-     *
-     * @return array{0:bool,1:int,2:int} [allowed, remaining, retryAfterSec]
-     */
+    /** @return array{0:bool,1:int,2:int} [allowed, remaining, retryAfterSec] */
     public static function hit(string $bucket, int $limit, int $windowSeconds): array
     {
         $dir = self::dir();
         if ($dir === "\x00FAIL") {
-            return [false, 0, 0]; // fail-closed (audit V-02)
+            return [false, 0, 0];
         }
         $file = $dir . '/' . md5($bucket) . '.json';
         $now = time();
 
-        // MR-10: the ENTIRE read-modify-write must happen under one exclusive
-        // lock. Previously the file was read unlocked, then only the write used
-        // LOCK_EX — concurrent login attempts each read count=N, +1, and write
-        // back (last-write-wins → lost updates → lockout threshold delayed).
-        // Open c+ (read+write, create-if-missing, no truncate) and hold LOCK_EX
-        // until the new state is fully flushed.
+        // 整个读-改-写必须持有同一把排他锁，否则并发登录会丢失更新、锁定阈值被推迟。
         $fh = @fopen($file, 'c+');
         if ($fh === false) {
-            return [false, 0, 0]; // cannot open/create bucket → fail closed
+            return [false, 0, 0];
         }
         if (!flock($fh, LOCK_EX)) {
             fclose($fh);
-            return [false, 0, 0]; // cannot lock → fail closed
+            return [false, 0, 0];
         }
 
         $data = ['start' => $now, 'count' => 0];
@@ -86,16 +64,12 @@ class RateLimiter
         ];
     }
 
-    /**
-     * Read the current state WITHOUT consuming a token (used by the login
-     * form to render the lockout banner — hitting there would self-lock).
-     * Same return shape as hit().
-     */
+    /** 只读当前状态不消耗 token（渲染锁定横幅用，否则会自我锁定）；返回结构同 hit()。 */
     public static function peek(string $bucket, int $limit, int $windowSeconds): array
     {
         $dir = self::dir();
         if ($dir === "\x00FAIL") {
-            return [false, 0, 0]; // fail-closed (audit V-02)
+            return [false, 0, 0];
         }
         $file = $dir . '/' . md5($bucket) . '.json';
         $now = time();
@@ -118,7 +92,6 @@ class RateLimiter
         ];
     }
 
-    /** Drop a bucket (e.g. reset login attempts after a successful login). */
     public static function reset(string $bucket): void
     {
         $dir = self::dir();

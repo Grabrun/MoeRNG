@@ -11,23 +11,11 @@ use App\Models\Category;
 
 class ApiController extends Controller
 {
-    /**
-     * v1.5.0-beta.2（API 缩略图获取）: `size` 的允许取值 = 缩略图三档 + original。
-     * `original` 是显式表达"我要原图"的写法（redirect 模式的既有语义就是原图）。
-     *
-     * 值本身定义在 Image::SIZE_ORIGINAL —— 解析层（这里）与兜底链
-     * （Image::displayUrlWithSize）必须认同一个字符串，两处各写一个常量就会
-     * 悄悄分叉：解析认 `original`、兜底链不认，请求原图就落到 md 缩略图上。
-     */
+    /** 必须与 Image::displayUrlWithSize 认同同一字符串，否则请求原图会落到 md。 */
     private const SIZE_ORIGINAL = Image::SIZE_ORIGINAL;
 
-    /** /images 的私有短缓存秒数（结果由 page/limit/category/size 决定，非随机）。 */
     private const LIST_CACHE_SECONDS = 30;
 
-    /**
-     * v1.2.1 迭代: dynamic CORS from settings.cors_origins (comma-separated
-     * origin whitelist). Empty = no CORS header (browser default same-origin).
-     */
     protected function json(mixed $data, int $status = 200): never
     {
         try {
@@ -43,22 +31,11 @@ class ApiController extends Controller
                 }
             }
         } catch (\Throwable) {
-            // settings table may be missing during install — ignore
         }
         parent::json($data, $status);
     }
 
-    /**
-     * 解析 `size` 参数（白名单：缩略图三档 + `original`）。
-     *
-     * 非法值**不静默回退**——静默回退会让调用方以为拿到了自己要的尺寸；
-     * 直接 400 并列出合法值，问题在第一次调用就暴露。
-     *
-     * @param string $default 缺省值（random+redirect 用 original 保持既有语义，
-     *                        其余用 Image::THUMB_DEFAULT = md）
-     * @param string|null $error 非法时写入人读原因
-     * @return string|null null = 非法
-     */
+    /** 非法 size 不静默回退，直接 400 并列出合法值。 */
     private function parseSize(Request $request, string $default, ?string &$error): ?string
     {
         $raw = strtolower(trim((string) $request->input('size', '')));
@@ -73,38 +50,11 @@ class ApiController extends Controller
         return null;
     }
 
-    /**
-     * 单张图片的 API 载荷 —— random 与 list **共用同一份**，字段与语义不会漂移。
-     *
-     * v1.5.0-beta.2（口径修正）：**请求什么图就返回什么** —— 响应里只有一个地址
-     * 字段 `url`，它是按 `size` 解析后的那个地址（`size` 缺省即原图）。
-     *
-     * 此前还附带 `thumb` / `thumbs` / `thumb_size`，现已整体移除：
-     *   - 每个预签名 URL 约 450 字节，四个字段 ≈ 1.8 KB —— 对"要一张图"的调用方是纯负担；
-     *   - `size=original` 时 `thumb` 与 `url` 完全重复；
-     *   - 要别的尺寸就改 `size` 再请求一次，比"一次给一串让你自己挑"更直白。
-     *
-     * **`url` 的含义随 `size` 变化**（这正是本方法的设计意图）；不传 `size` 时它是
-     * 原图，因此对既有调用方而言 `url` 字段的含义**没有变**。
-     *
-     * **响应里所有字段都描述 `url` 指向的那一张图**（用户口径）：
-     *
-     *   - `url`  —— 按 `size` 解析后的地址（`size` 缺省即原图）；
-     *   - `size` —— **实际生效**的尺寸（回退过就写回退后的值，回退到原图写 `original`）。
-     *     极短，保留它是因为没有它调用方无法察觉"我要 sm、实际给的是 md"；
-     *   - `width` / `height` —— 该图的宽高。缩略图宽高由 `Image::thumbDimensions()` 推导，
-     *     与生成端**同一份实现**，所以报的就是实际生成的那张图的尺寸；
-     *   - `mime_type` —— 从缩略图键的扩展名推导（`thumbKey()` 统一生成 `.webp`）；
-     *     不写死 `image/webp`，将来换编码格式时这里不会说谎，认不出则报 `null` 而不是猜；
-     *   - `file_size` —— **该图的实测字节数**：原图取记录值，缩略图取生成时实测入库的值
-     *     （`thumb_bytes` 列）。存量行尚未补全字节数时为 `null`（"未知"）——
-     *     既不填原图的值（那是谎报），也不为它多打一次对象存储往返；
-     *     跑一次「补全缩略图」即可补齐。
-     */
+    /** 响应所有字段都描述 url 指向的那张图；size 回报实际生效尺寸。 */
     private function imagePayload(Image $img, string $size): array
     {
         $resolved = $img->displayUrlWithSize($size);
-        // 链走到底回退到原图时 displayUrlWithSize 给 null —— 这里统一成 'original'
+        // displayUrlWithSize 回退到原图时给 null，这里统一成 original。
         $actual = $resolved['size'] ?? self::SIZE_ORIGINAL;
         $isOrig = $actual === self::SIZE_ORIGINAL;
 
@@ -116,10 +66,6 @@ class ApiController extends Controller
 
         $thumbExt = strtolower(pathinfo($img->thumbKeyFor($actual), PATHINFO_EXTENSION));
 
-        // N+1 修复：原先 `$img->category() ? $img->category()->name : null` 对每张图
-        // 调用两次无记忆化的 Image::category()（每次一条
-        // `SELECT * FROM categories WHERE id=?`）。/api/v1/images?limit=100
-        // 因此多出约 200 条冗余查询。提取到局部变量，只查一次。
         $cat = $img->category();
 
         return [
@@ -134,30 +80,12 @@ class ApiController extends Controller
         ];
     }
 
-    /**
-     * GET /api/v1/random
-     * Get a random image
-     *
-     * v1.5.0-beta.2: 新增 `size`（`sm` / `md` / `lg` / `original`）——
-     *   - **请求什么图就返回什么**：`url` 就是按 `size` 解析后的地址；
-     *   - `size` 缺省 = `original`（原图）→ 不传 `size` 时 `url` 仍是原图，
-     *     对既有调用方而言 `url` 字段的含义没有变；
-     *   - redirect 的目标同样由 `size` 决定，缺省仍是原图（既有语义一字不改）；
-     *   - 响应不再附带 `thumb` / `thumbs` / `thumb_size`（见 imagePayload 注释）；
-     *   - 响应带一个极短的 `size` 字段，如实回报**实际生效**尺寸 ——
-     *     没有它，请求 `sm` 而该档未生成时会静默回退到 md/原图，调用方无从察觉；
-     *   - 随机端点带 `Cache-Control: no-store`：URL 固定但语义是"每次换一张"，
-     *     一旦允许缓存，随机性会在缓存期内整体失效（刷新也拿同一张）。
-     */
+    /** GET /api/v1/random：size 缺省为 original，保持既有调用方拿原图。 */
     public function random(Request $request): void
     {
         $category = $request->input('category', '');
         $type = $request->input('type', 'json');
 
-        // Determine return type
-        //
-        // type 走白名单 + 400，与 parseSize 同一原则：非法值不静默回退，
-        // 否则调用方会以为自己拿到了请求的格式。
         if ($type !== '' && !in_array($type, ['json', 'redirect'], true)) {
             $this->json([
                 'success' => false,
@@ -170,19 +98,14 @@ class ApiController extends Controller
             $returnType = 'json';
         }
 
-        // 缺省 = 原图（JSON 与 redirect 一致）—— 这不只是"保守"：
-        // `url` 现在承载"请求的那张图"，缺省若是 md，不传 size 的既有调用方
-        // 会从"拿到原图"变成"拿到缩略图"，那才是真正的破坏性变更。
+        // 缺省原图，避免不传 size 的既有调用方从原图变成缩略图。
         $sizeError = null;
         $size = $this->parseSize($request, self::SIZE_ORIGINAL, $sizeError);
         if ($size === null) {
             $this->json(['success' => false, 'error' => $sizeError], 400);
         }
 
-        // Find category
-        //
-        // slug 查不到时显式 404，不静默放宽成「返回全量」—— 否则 `?category=natrue`
-        //（拼错）会拿到全库随机图且 200 无提示，调用方会以为自己筛到了该分类。
+        // slug 不存在时显式 404，不静默放宽成返回全量。
         $categoryId = null;
         if ($category !== '' && $category !== null) {
             $cat = Category::getBySlug((string) $category);
@@ -200,8 +123,6 @@ class ApiController extends Controller
         $image = Image::random($categoryId);
 
         if (!$image) {
-            // v2.0.0-beta.5: 空库 404 优雅化 —— error 字段保持英文机器码（兼容既有调用方），
-            // message 换为中文引导；category 为用户可控输入，插入 message 前必须 HTML 转义。
             $this->json([
                 'success' => false,
                 'error' => 'No images found',
@@ -212,17 +133,12 @@ class ApiController extends Controller
             ], 404);
         }
 
-        // 随机端点**必须禁止缓存** —— URL 固定、语义却是"每次换一张"，
-        // 一旦被缓存，随机性会在缓存期内整体失效（刷新也拿同一张）。
-        // 放在分支之前：JSON 与 redirect 两条路径都要带，只写一处不会漏。
+        // 随机端点必须禁止缓存，否则缓存期内刷新也拿同一张。
         header('Cache-Control: no-store, max-age=0');
 
         if ($returnType === 'redirect') {
             $resolved = $image->displayUrlWithSize($size);
-            // 边界守卫：Image::url() 在 path 与 url 两列同时为空时返回 ''（非 null），
-            // displayUrlWithSize 会把它包成 ['url' => '', 'size' => null]。直接 302 到
-            // 空 Location 会让调用方拿到无法解析的跳转。数据不一致的行（迁移中断、
-            // 存储配置变更后 path 失效）即可触发，故按 404 处理而非裸跳。
+            // 地址为空时按 404 处理，避免 302 到空 Location。
             if (($resolved['url'] ?? '') === '') {
                 $this->json([
                     'success' => false,
@@ -240,13 +156,6 @@ class ApiController extends Controller
         ]);
     }
 
-    /**
-     * GET /api/v1/images
-     * List images (paginated)
-     *
-     * v1.5.0-beta.2: 与 /random 共用同一套 `size` 语义（列表页是缩略图最大消费者）。
-     * 本端点内容由 page/limit/category/size 决定、**没有随机性**，故允许私有短缓存。
-     */
     public function list(Request $request): void
     {
         $page = max(1, (int) $request->input('page', '1'));
@@ -259,15 +168,10 @@ class ApiController extends Controller
             $this->json(['success' => false, 'error' => $sizeError], 400);
         }
 
-        // MR-13 修复：原先只有 `status = 'active'`，**缺少 `process_status = 'done'`**。
-        // /random 一直带这个过滤（Image::random 的 $where），列表端点却没有 ——
-        // 于是处于 pending/processing/failed 的图片（尚未生成缩略图、可能连原图都
-        // 没落最终存储）会被列进 /api/v1/images，对外暴露未就绪条目：URL 可能为空、
-        // 缩略图 404。与 /random 的可见性契约不一致。
+        // 只暴露已处理完成的图，与 /random 的可见性口径一致。
         $where = "status = 'active' AND process_status = 'done'";
         $params = [];
 
-        // 同 /random：slug 不存在时显式 404，不静默放宽成「返回全量」。
         if ($category !== '' && $category !== null) {
             $cat = Category::getBySlug((string) $category);
             if (!$cat) {
@@ -305,10 +209,6 @@ class ApiController extends Controller
         ]);
     }
 
-    /**
-     * GET /api/v1/categories
-     * List categories
-     */
     public function categories(Request $request): void
     {
         $tree = Category::getTree();
@@ -318,22 +218,12 @@ class ApiController extends Controller
         ]);
     }
 
-    /**
-     * GET /api/v1/stats
-     * Get API statistics
-     */
     public function stats(Request $request): void
     {
-        // 口径必须与 /images、/random 一致：只有 process_status='done' 的行才真的
-        // 可访问（pending/processing 还没落最终存储，failed 永远不会有地址）。
-        // 此前只过滤 status='active'，于是刚上传未处理完的图会被算进总数，
-        // 而列表与随机接口都拿不到它们 —— 调用方看到的总数永远偏大。
+        // total_images 只统计 process_status='done'，与 /images、/random 同口径。
         $totalImages = Image::count("status = 'active' AND process_status = 'done'");
         $totalCategories = Category::count();
 
-        // v1.2.1 security: version / storage_driver removed from the public
-        // surface — exact build & storage-provider details help attackers
-        // target known CVEs. Keep only business counters.
         $this->json([
             'success' => true,
             'data' => [

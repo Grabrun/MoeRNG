@@ -16,35 +16,22 @@ class ImageController extends Controller
 {
     private const PAGE = '/admin/images';
 
-    /**
-     * v1.3.3-beta.1: 重型端点（GD 解码 + 对象存储上传）的内存上限。
-     *
-     * 注意：**不要靠调大这个值来解决大图问题** —— PHP 致命错误（OOM）不可捕获，
-     * 一旦发生整批请求都会死掉。真正的防线是 decodeWouldExceedMemory() 的
-     * 解码前像素预检（超限则跳过缩略图，原图不受影响）。
-     */
+    /** 重型端点内存上限；OOM 不可捕获，真正的防线是 decodeWouldExceedMemory() 的预检。 */
     private const HEAVY_MEMORY_LIMIT = '512M';
 
-    /** GD 解码内存系数：位图为 w×h×4 字节，libwebp/重采样还需额外缓冲。 */
+    /** GD 解码系数：位图为 w×h×4 字节，libwebp/重采样还需额外缓冲。 */
     private const DECODE_MEMORY_FACTOR = 1.25;
 
-    /** 解码额外余量（目标画布 sm/md/lg + 编码缓冲 + 基线开销）。 */
+    /** 解码额外余量（目标画布 + 编码缓冲 + 基线开销）。 */
     private const DECODE_MEMORY_HEADROOM = 33554432; // 32 MiB
 
-    /**
-     * 本请求正在处理的行 id —— jsonFatalGuard 的 shutdown 钩子用它把"因致命错误
-     * 而中断"的行标记为 failed，避免它们留在 processing 被下轮复位后无限重试
-     * （线上曾表现为整个队列永久卡住、进度数字不动）。
-     */
+    /** 本请求处理中的行 id：致命错误时由 shutdown 钩子标记为 failed，否则会永久卡在 processing。 */
     private static array $inflightIds = [];
 
     private array $allowedMimeTypes = [
         'image/jpeg', 'image/png', 'image/gif', 'image/webp',
         'image/bmp',
-        // SVG deliberately excluded (CVE-2026-MR-003): an <img>-served SVG can
-        // carry <script>/<iframe> payloads (stored XSS on the admin grid);
-        // CSP cannot fully neutralize scripts inside document-loaded SVGs.
-        // Logo upload already excludes SVG for the same reason.
+        // 不收 SVG：文档式加载的 SVG 可执行脚本，CSP 拦不住，等于存储型 XSS。
     ];
 
     private array $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
@@ -52,8 +39,6 @@ class ImageController extends Controller
     public function index(Request $request): void
     {
         $page = max(1, (int) $request->input('page', '1'));
-        // v1.2.0 迭代: per-page selector (?per_page=10/20/50/100), falls back
-        // to the global settings value when absent or not in the whitelist.
         $perPage = (int) $request->input('per_page', '0');
         $perPage = in_array($perPage, [10, 20, 50, 100], true)
             ? $perPage
@@ -98,10 +83,6 @@ class ImageController extends Controller
         ]);
     }
 
-    /**
-     * v1.2.0 迭代: all image ids matching the current filters — powers the
-     * cross-page "全选全部" action. Same filter logic as index().
-     */
     public function ids(Request $request): void
     {
         $search = $request->input('search', '');
@@ -123,9 +104,6 @@ class ImageController extends Controller
             }
         }
 
-        // Lightweight: SELECT id only (avoids hydrating full Models — the old
-        // paginate call returned Model objects, so $r['id'] was array-access
-        // on an object -> HTTP 500).
         $sql = 'SELECT id FROM images';
         if ($where !== '1=1') {
             $sql .= " WHERE {$where}";
@@ -136,116 +114,51 @@ class ImageController extends Controller
         $this->json(['ids' => $ids, 'total' => count($ids)]);
     }
 
-    /**
-     * v1.3.2-beta.2: 生成缩略图到系统临时文件（GD；不可用时返回 null 表示降级跳过）。
-     * 供新上传队列 Worker 与「补全历史缩略图」共用。
-     *
-     * @return array{0: ?string, 1: ?string} [临时文件路径, 存储 key]，失败/降级为 [null, null]
-     */
-    /**
-     * v1.3.2-beta.2 迭代: 生成**多尺寸**缩略图到系统临时文件（GD + WebP）。
-     *
-     * 源图只解码一次，按 Image::THUMB_SIZES 逐档缩放：
-     *   - sm 320 / md 640 / lg 1280（最大边）
-     *   - **不放大**：源图最大边小于某档时跳过该档（避免生成比原图还大的"缩略图"）
-     *   - 某档写盘失败只跳过该档，其余档继续（各档独立）
-     *
-     * 供新上传队列 Worker 与「补全历史缩略图」共用（单一实现，无重复 GD 逻辑）。
-     *
-     * @return array{readable: bool, thumbs: array<string, array{tmp: string, key: string}>, reason: string}
-     *   readable=false → 源图无法解码 / 过大（内存预检拒绝）/ GD 不可用，调用方按降级处理；
-     *   reason: ok | too-large | undecodable | gd-unavailable
-     *   readable=true 且 thumbs 为空 → 源图本身小于所有档位（合法空操作）。
-     */
-    // ── v1.4.0-beta.2: 系统设置「图片与存储」分组读取（单一来源）────────────
-    // 设置可能从未保存过（Config 里没有该键）→ 一律带默认值兜底。
-
-    /** 是否生成缩略图（总开关，默认开）。 */
     private static function thumbsEnabled(): bool
     {
         return (string) Config::get('settings.thumbs_enabled', '1') !== '0';
     }
 
-    /** 缩略图 WebP 编码质量（40-100，默认 82）。 */
     private static function thumbQuality(): int
     {
         $q = (int) Config::get('settings.thumb_quality', '82');
         return max(40, min(100, $q > 0 ? $q : 82));
     }
 
-    /** 缩略图像素上限（像素数；0 = 不设上限，仅按可用内存判断）。 */
+    /** 缩略图像素上限；0 = 不设上限，仅按可用内存判断。 */
     private static function thumbMaxPixels(): int
     {
         $wan = (int) Config::get('settings.thumb_max_pixels', '0');   // 单位：万像素
         return $wan > 0 ? $wan * 10000 : 0;
     }
 
-    /** 单图大小上限（字节；0 = 不限制，只受 PHP 配置约束）。 */
+    /** 单图大小上限；0 = 不限制，只受 PHP 配置约束。 */
     private static function uploadMaxBytes(): int
     {
         $mb = (int) Config::get('settings.upload_max_mb', '0');
         return $mb > 0 ? $mb * 1048576 : 0;
     }
 
-    /** v1.5.0-beta.1: 原图是否统一转 WebP（默认开）。 */
     private static function originalWebpEnabled(): bool
     {
         return (string) Config::get('settings.original_webp_enabled', '1') !== '0';
     }
 
-    /**
-     * 编码输出的临时后缀（与目的地同目录 → rename 是原子替换）。
-     *
-     * v1.5.0-beta.2：原图转码改为「先写临时文件、判定值得替换后才 rename 覆盖」，
-     * 源文件在明确成功之前一个字节都不动。
-     */
+    /** 编码临时后缀；同目录 rename 即原子替换，成功前不动源文件。 */
     private const WEBP_TEMP_SUFFIX = '.wip-webp';
 
-    /** 原图转码额外余量（编码器内部缓冲 + 收尾；比缩略图那套宽松，因为原图更大）。 */
     private const CONVERT_MEMORY_HEADROOM = 16777216; // 16 MiB
-    private const MEMORY_BASELINE_HEADROOM = 16777216; // v2.0.0-beta.3: 解码/转码基线余量（原裸数字两处）
+    private const MEMORY_BASELINE_HEADROOM = 16777216;
 
-    /**
-     * 单批处理张数上限 —— **唯一来源**。
-     *
-     * 原先「10」硬编码在 5 处（控制器 2、app.js 1、CLI 2），改一处等于没改。
-     * 现在控制器、视图（layout.php 的 meta 标签）、CLI 都引用这一个常量。
-     *
-     * 取 50 而不是更大的值：单请求有 set_time_limit(120) 硬上限，大图解码
-     * 0.3–1.5 s/张，50 张约 15–75 s，留足余量；100 张容易撞超时，
-     * 而超时会让本批已认领的行全部重来。
-     */
+    /** 单批上限：set_time_limit(120) 下 50 张约 15–75 s，再大容易撞超时，超时则整批重来。 */
     public const QUEUE_BATCH_MAX = 50;
 
-    /** 单批默认张数（前端不传 batch 时用它；比上限低，留出余量给慢速存储）。 */
     public const QUEUE_BATCH_DEFAULT = 20;
 
-    /**
-     * 单个 process-queue 请求的墙钟预算（秒）。
-     *
-     * 必须明显低于网关与 PHP-FPM 的超时（nginx 默认 60s、宝塔
-     * request_terminate_timeout 常见 100s）。超时由 FPM **直接杀掉 worker** 时，
-     * 连 register_shutdown_function 都来不及跑 —— 本批已认领的行会留在
-     * processing，要等 5 分钟复位窗口才重新可用。线上表现就是「点一次只推进一批，
-     * 然后卡片停在『处理中 20』再也不动」。
-     *
-     * 到点后把本批**还没开始处理**的行原样还回 pending，本次请求正常返回，
-     * 前端循环接着发下一轮 —— 总量不变，只是把一次长请求切成了若干次短请求。
-     */
+    /** 单请求墙钟预算，必须明显低于网关/FPM 超时；被 FPM 强杀时 shutdown 钩子来不及跑，本批会卡满 5 分钟复位窗口。 */
     private const QUEUE_TIME_BUDGET = 45;
 
-    /**
-     * 本请求「开始解码之前」的内存水位，惰性快照一次。
-     *
-     * 为什么不能每次现取 memory_get_usage(true)：它统计的是分配器**已向系统
-     * 申请**的内存（real_size），而 PHP 释放内存只还给自己的 free list、不还给
-     * 操作系统，所以该值在一个请求内**单调不减**。批量处理时，同批靠后的图片会
-     * 被前面图片撑起的水位压低可用额度 → 本该放得下的图被判 too-large 而静默
-     * 跳过缩略图，且**换一下处理顺序结果就不同**。
-     *
-     * 快照一次即让批内每张图面对同一份预算（顺序无关）。这在语义上也是对的：
-     * 前一张图释放的 chunk 会被下一张复用，real_size 的抬升并不代表内存不可用。
-     */
+    /** 解码前的水位快照（只取一次）：memory_get_usage(true) 在请求内单调不减，逐图现取会让靠后的图被误判 too-large。 */
     private ?int $memoryBaseline = null;
 
     private function memoryBaseline(): int
@@ -253,17 +166,9 @@ class ImageController extends Controller
         return $this->memoryBaseline ??= memory_get_usage(true);
     }
 
-    /**
-     * 原图转码预算的安全边际：估算值必须 ≤ 可用内存 × 该系数才放行。
-     *
-     * 留 15% 余量是为了吸收估算误差 —— 估算公式里的"编码器同级缓冲"是从一次
-     * 线上 OOM（imagewebp 在 280 MiB 画布上又申请 280 MiB）反推出来的经验值，
-     * 不同 libwebp 版本/编码模式会有出入。宁可多跳过几张并如实报告，
-     * 也不要用一次不可捕获的致命错误把整批请求打断。
-     */
+    /** 估算值须 ≤ 可用内存 × 该系数（吸收编码器同级缓冲的误差）。 */
     private const MEMORY_SAFETY_FACTOR = 0.85;
 
-    /** 原图 WebP 编码质量（40-100，默认 90 —— 原图是质量锚点，故高于缩略图）。 */
     private static function originalWebpQuality(): int
     {
         $q = (int) Config::get('settings.original_webp_quality', '90');
@@ -271,35 +176,9 @@ class ImageController extends Controller
     }
 
     /**
-     * 把本地图片文件转成 WebP，**写入 `$destFile`**（缺省 = 与源同路径 → 原地替换）。
-     *
-     * 上传路径与「转换历史原图」共用这一个实现 —— 规则只有一份，不会两边走偏。
-     *
-     * v1.5.0-beta.2 修复（数据安全）：编码**先落到同目录的临时文件**，只有判定
-     * 「确实更小、值得替换」之后才 `rename` 覆盖目的地。此前是
-     * `file_put_contents($file, $out)` **直接写源文件** —— 只要调用方传进来的是真实
-     * 存储文件（本地驱动就是这种情况），两个场景都会弄坏数据：
-     *   - **干跑**：原图被换成 WebP 字节，而记录不改（path 仍是 .jpg、mime 仍是
-     *     image/jpeg）→ 记录与实际字节不一致；反复干跑还会反复重编码、逐次劣化画质；
-     *   - **中途失败**：回滚只回滚记录，而旧文件已经被覆盖成 WebP 了。
-     * 现在源文件在**明确成功之前一个字节都不动**；批量转换的调用方也一律传私有副本。
-     *
-     * 内存上不再经 `ob_start()` / `ob_get_clean()` 把整幅编码结果抓进 PHP 变量
-     * （原图的编码结果可达数 MiB，且与画布同时在内存）——直接把输出路径交给 imagewebp。
+     * 转 WebP 到 $destFile（缺省原地）：先写同目录临时文件，判定更小才 rename，失败时源文件不动。
      *
      * @return array{ok: bool, note: string, bytes?: int, detail?: string}
-     *         ok=false 时调用方保持原格式不动；`detail` 仅 too-large 附带人读原因。
-     *
-     * 保持原格式的情形（每条都有明确理由，绝不为了"统一"而牺牲正确性）：
-     *   - disabled           开关关闭
-     *   - already-webp       已经是 WebP
-     *   - format-kept        GIF（GD 只取第一帧，转了就**丢动画**）、SVG（矢量图位图化会失真）
-     *   - gd-unavailable     GD 缺 webp 支持
-     *   - too-large          转码峰值超出内存预算，或超过运营设置的像素上限（见下）
-     *   - exif-unavailable   JPEG 且读不到 EXIF：浏览器会按 EXIF 旋转 JPEG，WebP 不会 ——
-     *                        不纠正就会把手机照片转"歪"，所以宁可不转
-     *   - unreadable/decode-failed/encode-failed/write-failed  读取、编解码或落盘失败
-     *   - not-smaller        编码结果**不比原文件小**（小图/已优化图常见）→ 保留原格式
      */
     private function convertOriginalToWebp(string $file, string $mime, ?string $destFile = null): array
     {
@@ -316,16 +195,13 @@ class ImageController extends Controller
             return ['ok' => false, 'note' => 'gd-unavailable'];
         }
 
-        // 必须用**转码专用**预算，不能沿用缩略图那套 decodeWouldExceedMemory：
-        // 后者只估解码（w×h×4×1.25），而 imagewebp 编码期还要再要一块同级画布，
-        // 真实峰值接近它的两倍。按解码量放行会一路走到编码器才 OOM（不可捕获），
-        // 详见 originalConvertBudget 上方记录的那次线上故障。
+        // 转码不能沿用缩略图的解码预算：imagewebp 编码期还要一块同级画布，按解码量估算会一路走到编码器才 OOM。
         $budget = $this->originalConvertBudget($file, $mime, true);
         if ($budget !== null) {
             return ['ok' => false, 'note' => 'too-large', 'detail' => $budget['detail']];
         }
 
-        // 0 = JPEG 读不到 EXIF（宁可不转，见上方说明）；1 = 正常；2~8 = 需纠正
+        // 0 = JPEG 读不到 EXIF（宁可不转）；1 = 正常；2~8 = 需纠正
         $orientation = self::jpegOrientation($file, $mime);
         if ($orientation === 0) {
             return ['ok' => false, 'note' => 'exif-unavailable'];
@@ -346,7 +222,6 @@ class ImageController extends Controller
             $src = $this->applyExifOrientation($src, $orientation);
         }
 
-        // 保留透明通道（PNG/WebP 常见），并统一为真彩色
         if (function_exists('imagepalettetotruecolor')) {
             @imagepalettetotruecolor($src);
         }
@@ -356,7 +231,7 @@ class ImageController extends Controller
         $dest = $destFile ?? $file;
         $tmpOut = $dest . self::WEBP_TEMP_SUFFIX;
 
-        // 直接落盘：不再经 ob_start 把整幅编码结果抓进变量（原图可达数 MiB）
+        // 直接落盘：不把整幅编码结果抓进 PHP 变量（原图可达数 MiB）
         $encoded = @imagewebp($src, $tmpOut, self::originalWebpQuality());
         imagedestroy($src);
 
@@ -369,12 +244,12 @@ class ImageController extends Controller
 
         $before = (int) @filesize($file);
         if ($before > 0 && $outSize >= $before) {
-            // 转完更大 → 保留原格式（"优化"不能反而让站点更慢）；**源文件一个字节都没动**
+            // 转完更大就保留原格式；源文件未动
             @unlink($tmpOut);
             return ['ok' => false, 'note' => 'not-smaller'];
         }
 
-        // 到这一步才允许动目的地（同目录 rename = 原子替换；失败则源文件依旧完好）
+        // 同目录 rename = 原子替换；失败则源文件依旧完好
         if (!@rename($tmpOut, $dest)) {
             @unlink($tmpOut);
             return ['ok' => false, 'note' => 'write-failed'];
@@ -383,13 +258,7 @@ class ImageController extends Controller
         return ['ok' => true, 'note' => 'done', 'bytes' => $outSize];
     }
 
-    /**
-     * 读 JPEG 的 EXIF Orientation（v1.5.0-beta.2：从 convertOriginalToWebp 提取，
-     * 内存预算预检也要用同一份判断 —— 旋转与否直接决定峰值是否翻倍）。
-     *
-     * @return int 0 = JPEG 但 exif 扩展不可用（调用方据此放弃转换）；
-     *             1 = 无需纠正（含非 JPEG）；2~8 = EXIF 方向值。
-     */
+    /** @return int 0 = exif 扩展不可用（放弃转换）；1 = 无需纠正；2~8 = EXIF 方向值。 */
     private static function jpegOrientation(string $file, string $mime): int
     {
         if ($mime !== 'image/jpeg') {
@@ -407,38 +276,10 @@ class ImageController extends Controller
     }
 
     /**
-     * v1.5.0-beta.2: **原图转码专用的内存预算**（不能沿用缩略图那套）。
+     * 原图转码的内存预算：峰值按解码/编码/EXIF 旋转三块画布取最大。
      *
-     * 两次线上故障把口径校准了出来：
-     *   ① 干跑返回**空响应 500** —— 端点没有致命守卫（已修）；
-     *   ② 执行转换时守卫报出关键数据：
-     *      `Allowed memory size of 536870912 bytes exhausted (tried to allocate
-     *       293601280 bytes) @ ImageController.php:297`，
-     *      297 行正是 **imagewebp（编码）**：解码后的画布本身就是 280 MiB
-     *      （w×h×4 ⇒ 约 73 MP），编码器又申请了一块 280 MiB → 两块共 560 MiB
-     *      > 512 MiB 上限 → 必然 OOM。
-     *
-     * **教训：编码器不是"几乎不占内存"。** 缩略图路径能用小系数糊过去，是因为它
-     * 的编码目标是几十像素的小图；原图转码的编码目标与原图同尺寸，libwebp 在
-     * 编码期至少要再一块与画布同级的缓冲（实测恰好 ≈ w×h×4）。上一版预算只留了
-     * 25% 余量（≈73 MiB），于是 73 MP 那张被"放行"到 imagewebp 才炸。
-     *
-     * 背景（线上真实故障）：干跑「转换历史原图为 WebP」返回**空响应 HTTP 500** ——
-     * 那是 PHP 致命错误（不可捕获），因为这个端点既没有致命错误守卫，也没有按原图
-     * 的真实峰值做预算。缩略图路径的预检按 `w×h×4×1.25 + 32MiB` 估算，而原图转码的
-     * 峰值还要多出：
-     *   - `file_get_contents()` 读进来的**整个原始字节**（与画布同时在内存）；
-     *   - **EXIF 旋转时 `imagerotate` 必然新建的第二块画布**（≈ 再 +w×h×4）——
-     *     手机竖拍照片（orientation 6/8）全在此列，于是实际峰值接近预算的 2 倍；
-     *   - 编码结果与 libwebp 内部缓冲。
-     *
-     * 另外这里**刻意不套用 `thumb_max_pixels`**：那是"生成缩略图的成本上限"，
-     * 拿它限制原图会把合法的超大原图误判成"超出设置上限"（原图的正确性上限是内存）。
-     *
-     * @param bool $applyPixelCap 是否同时套用 `thumb_max_pixels` 设置。**只有上传路径传 true**：
-     *        运营填这个值的意思是"超过就别再派生任何东西（仅存原图）"，原图转码同样要解码
-     *        整幅画布，踩过去只会烧内存。批量「转换历史原图」保持 false（见上一段）。
-     * @return array{code: string, detail: string}|null null = 预算内，可以转码。
+     * @param bool $applyPixelCap 只有上传路径传 true，批量转换不套像素上限
+     * @return array{code: string, detail: string}|null null = 预算内
      */
     private function originalConvertBudget(string $file, string $mime, bool $applyPixelCap = false): ?array
     {
@@ -452,7 +293,7 @@ class ImageController extends Controller
             return ['code' => 'dimensions-unavailable', 'detail' => '图像尺寸无效（' . $w . '×' . $h . '）'];
         }
 
-        // 运营侧像素上限（单位万像素，0 = 不限）。只在上传路径生效，见参数说明。
+        // 运营侧像素上限（万像素，0 = 不限），只在上传路径生效
         if ($applyPixelCap) {
             $cap = self::thumbMaxPixels();
             if ($cap > 0 && $w * $h > $cap) {
@@ -470,13 +311,13 @@ class ImageController extends Controller
         }
 
         $canvas = (float) $w * $h * 4;                 // 一块真彩画布（GD 真彩 = 4 B/px）
-        $bytes  = (int) @filesize($file);              // file_get_contents 会把**整个文件**读进内存
+        $bytes  = (int) @filesize($file);              // 整个文件字节同时也在内存里
         $rotate = self::jpegOrientation($file, $mime) >= 2;
 
-        // 按**分阶段的峰值**取最大值（三个阶段不会同时达到峰值）：
-        $decode = $bytes + $canvas;                    // ① 解码：整个文件字节 + 画布
-        $encode = $canvas * 2;                         // ② 编码：画布 + 编码器同级缓冲（实测 ≈ 一块画布）
-        $rot    = $rotate ? $canvas * 2 : 0;           // ③ EXIF 旋转：imagerotate 期间新旧两块画布并存
+        // 三个阶段峰值不同时出现，取最大
+        $decode = $bytes + $canvas;
+        $encode = $canvas * 2;                         // 编码器还要一块与画布同级的缓冲
+        $rot    = $rotate ? $canvas * 2 : 0;           // imagerotate 期间新旧两块画布并存
         $need   = (int) (max($decode, $encode, $rot) + $canvas * 0.25)
                 + self::CONVERT_MEMORY_HEADROOM;
 
@@ -484,7 +325,6 @@ class ImageController extends Controller
         if ($limit === PHP_INT_MAX) {
             return null;   // 无内存限制 → 交给解码器
         }
-        // 用请求级基线快照（而非现取），否则批内靠后的图会被前面撑起的水位压低额度。
         $available = $limit - $this->memoryBaseline() - self::MEMORY_BASELINE_HEADROOM;
         if ($available <= 0 || $need > (int) ($available * self::MEMORY_SAFETY_FACTOR)) {
             return [
@@ -513,12 +353,7 @@ class ImageController extends Controller
         return $dir . '/convert-' . $id . '-' . bin2hex(random_bytes(6));
     }
 
-    /**
-     * 按 EXIF Orientation 纠正方向。
-     *
-     * 浏览器对 JPEG 会应用 EXIF 方向，对 WebP **不会** —— 所以转码前必须自己摆正，
-     * 否则手机竖拍的照片会转 90°。映射遵循 EXIF 规范（2~8，1 为正常）。
-     */
+    /** 浏览器对 JPEG 应用 EXIF 方向、对 WebP 不会 —— 转码前必须自己摆正，否则手机竖拍照片会转 90°。 */
     private function applyExifOrientation(\GdImage $img, int $orientation): \GdImage
     {
         switch ($orientation) {
@@ -549,7 +384,6 @@ class ImageController extends Controller
         return $img;
     }
 
-    /** 解析 memory_limit（含 -1 = 无限制）为字节数。 */
     private static function memoryLimitBytes(): int
     {
         $raw = trim((string) ini_get('memory_limit'));
@@ -567,18 +401,9 @@ class ImageController extends Controller
     }
 
     /**
-     * v1.3.3-beta.1 修复（生产 P0）: 解码前的**像素规模预检**。
+     * 解码前像素预检：GD 展开整幅位图要 w×h×4 字节，放不下就跳过，否则 OOM 不可捕获。
      *
-     * 背景：GD 解码需在内存中展开整幅位图（约 w×h×4 字节，libwebp 还需额外缓冲）。
-     * 一张超大 WebP/JPEG 会直接打爆 memory_limit → PHP 致命错误（**不可捕获**）→
-     * 整批请求死掉、DB 不更新、该行留在 processing 被下轮复位重试 →
-     * 队列永久卡住、进度数字不动（线上现象根因）。
-     *
-     * getimagesize() 只读文件头、成本极低，因此先算清"解码这张图要多少内存"，
-     * 放不下就**跳过缩略图生成**（readable=false 降级）——原图此时已上传入库，
-     * 不受影响，只是该行没有缩略图（会计入 no_thumb 统计并写 error_log）。
-     *
-     * @return ?string null = 可以解码；字符串 = 不能解码的原因
+     * @return ?string null = 可以解码
      */
     private function decodeWouldExceedMemory(string $file): ?string
     {
@@ -592,7 +417,6 @@ class ImageController extends Controller
             return '图像尺寸无效（' . $w . '×' . $h . '）';
         }
 
-        // v1.4.0-beta.2: 系统设置里可显式设一个像素上限（0 = 不设，仅按内存判断）
         $pixels = $w * $h;
         $cap = self::thumbMaxPixels();
         if ($cap > 0 && $pixels > $cap) {
@@ -604,7 +428,6 @@ class ImageController extends Controller
         if ($limit === PHP_INT_MAX) {
             return null;   // 无内存限制 → 交给解码器
         }
-        // 用请求级基线快照（而非现取），否则批内靠后的图会被前面撑起的水位压低额度。
         $available = $limit - $this->memoryBaseline() - self::MEMORY_BASELINE_HEADROOM;
         if ($need > $available) {
             return sprintf(
@@ -618,10 +441,14 @@ class ImageController extends Controller
         return null;
     }
 
+    /**
+     * 多尺寸缩略图（不放大，单档失败不影响其它档）。
+     *
+     * @return array{readable: bool, thumbs: array<string, array{tmp: string, key: string}>, reason: string}
+     */
     private function makeThumbnails(string $srcFile, string $mime, string $path): array
     {
-        // v1.4.0-beta.2: 系统设置「图片与存储」的总开关 —— 关闭时完全不生成缩略图
-        // （只存原图）。调用方据此把 thumbs 留空，重新开启后仍可被「补全缩略图」收录。
+        // 总开关关闭时不生成缩略图，thumbs 留空以便重新开启后仍可被「补全缩略图」收录
         if (!self::thumbsEnabled()) {
             return ['readable' => false, 'thumbs' => [], 'reason' => 'disabled'];
         }
@@ -630,7 +457,6 @@ class ImageController extends Controller
             return ['readable' => false, 'thumbs' => [], 'reason' => 'gd-unavailable'];
         }
 
-        // —— 解码前预检：内存放不下（或超过设置上限）就不解码（避免不可捕获的 OOM）——
         $tooBig = $this->decodeWouldExceedMemory($srcFile);
         if ($tooBig !== null) {
             error_log('[MoeRNG] 跳过缩略图生成：' . $tooBig . ' — 路径 ' . $path . '（原图已入库，仅无缩略图）');
@@ -644,24 +470,21 @@ class ImageController extends Controller
 
         $w = imagesx($src);
         $h = imagesy($src);
-        $quality = self::thumbQuality();   // v1.4.0-beta.2: 来自系统设置（默认 82）
+        $quality = self::thumbQuality();
         $out = [];
-        // 当前档已落盘但**尚未并入 $out** 的临时文件。并入后才算「已交付」，
-        // 在此之前抛异常必须自己删 —— 见下方 catch。
+        // 已落盘但尚未并入 $out 的临时文件：并入前抛异常必须自己删（见 catch）
         $pendingTmp = null;
 
         try {
             foreach (\App\Models\Image::THUMB_SIZES as $size => $target) {
-                // 尺寸推导与读取端（API 要如实回报"返回的那张图"的宽高）**共用同一份实现**，
-                // 所以接口报出来的宽高必然等于实际生成的那张图的宽高，不会两处各算一套。
+                // 与 API 读取端共用同一份尺寸推导，报出的宽高必然等于实际生成的图
                 $dims = \App\Models\Image::thumbDimensions($w, $h, $target);
                 if ($dims === null) {
-                    continue;   // 不放大（原图长边本就不超过该档位）
+                    continue;   // 不放大
                 }
                 [$tw, $th] = $dims;
 
                 $dst = imagecreatetruecolor($tw, $th);
-                // 保留透明通道（PNG/WebP 带 alpha）
                 imagealphablending($dst, false);
                 imagesavealpha($dst, true);
                 $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
@@ -673,26 +496,21 @@ class ImageController extends Controller
                 imagedestroy($dst);
                 if (!$ok) {
                     if ($tmp !== false) @unlink($tmp);
-                    continue; // 该档失败，其余档继续
+                    continue;
                 }
                 $pendingTmp = $tmp;
-                // v1.5.0-beta.2: 字节数**生成时实测**（webp 编码结果取决于质量设置与
-                // libwebp 版本，事后无法推导）→ 随 thumbs 一起入库，供 API 如实回报 file_size。
+                // 字节数生成时实测（取决于质量设置与 libwebp 版本，事后无法推导）
                 $bytes = (int) @filesize($tmp);
-                // thumbKey() 对历史 v1 布局的 path 会抛 RuntimeException。它必须在
-                // 「并入 $out」之前调用，这样抛出时 $pendingTmp 仍被本帧持有、可自清理。
+                // thumbKey() 对历史布局会抛 RuntimeException，故必须在并入 $out 之前调用以便自清理
                 $out[$size] = [
                     'tmp' => $tmp,
                     'key' => \App\Models\Image::thumbKey($size, $path),
-                    'bytes' => $bytes > 0 ? $bytes : null,   // 0 = 未知，绝不谎报
+                    'bytes' => $bytes > 0 ? $bytes : null,   // 0 = 未知
                 ];
-                $pendingTmp = null;   // 已交付给 $out，交由调用方的 discardThumbs 负责
+                $pendingTmp = null;
             }
         } catch (\Throwable $e) {
-            // 自清理：本函数是临时文件的**唯一**产生者，故必须自己兜底。
-            // 调用方此时拿到的是异常而非返回数组，$gen 仍为 null，
-            // discardThumbs(null) 会直接 return —— 不在这里删就是纯泄漏
-            // （v1 布局的每张图漏 1-3 个 webp 到 sys_get_temp_dir()，无人清理）。
+            // 本函数是临时文件的唯一产生者：异常时调用方拿不到返回数组，只能在这里删
             if ($pendingTmp !== null) {
                 @unlink($pendingTmp);
             }
@@ -707,7 +525,6 @@ class ImageController extends Controller
         return ['readable' => true, 'thumbs' => $out, 'reason' => 'ok'];
     }
 
-    /** 解码图片为 GD 资源（mime 优先，失败按 getimagesize 兜底嗅探）。 */
     private function decodeImage(string $file, string $mime)
     {
         $open = function (string $m) use ($file) {
@@ -720,7 +537,6 @@ class ImageController extends Controller
 
         $src = $open($mime);
         if ($src === null || $src === false) {
-            // mime 缺失/不准时按文件头嗅探
             $info = function_exists('getimagesize') ? @getimagesize($file) : false;
             if (is_array($info) && !empty($info['mime'])) {
                 $src = $open((string) $info['mime']);
@@ -729,11 +545,7 @@ class ImageController extends Controller
         return ($src === null || $src === false) ? null : $src;
     }
 
-    /**
-     * 丢弃「已生成但未及上传」的临时缩略图文件（异常路径防泄漏）。
-     * uploadThumbs() 内已用 finally 清理，这里只兜底：任何在其之前抛出的异常
-     * （如原图上传失败、DB 写入失败）都不会留下临时文件。
-     */
+    /** 兜底清理未上传的临时缩略图（uploadThumbs 内部已 finally，这里覆盖其之前抛异常的路径）。 */
     private function discardThumbs(?array $gen): void
     {
         if (!is_array($gen) || empty($gen['thumbs'])) return;
@@ -742,10 +554,6 @@ class ImageController extends Controller
         }
     }
 
-    /**
-     * 把生成的各档缩略图上传到目标存储，返回 尺寸 => key（失败档自动跳过）。
-     * 无论成功与否都会删除临时文件。
-     */
     private function uploadThumbs(\App\Storage\StorageInterface $driver, array $thumbs): array
     {
         $keys = [];
@@ -760,7 +568,7 @@ class ImageController extends Controller
                     $bytes[$size] = $b;
                 }
             } catch (\Throwable) {
-                // 单档上传失败不影响其它档（该档缺失时前端回退到 md/原图）
+                // 单档失败不影响其它档
             } finally {
                 @unlink($t['tmp']);
             }
@@ -768,18 +576,7 @@ class ImageController extends Controller
         return ['keys' => $keys, 'bytes' => $bytes];
     }
 
-    /**
-     * v1.3.3-beta.1: 给重型端点（GD 解码 / 对象存储上传）装上「致命错误也返回 JSON」的保险。
-     *
-     * 背景：PHP 致命错误（内存耗尽 / 执行超时 / 未捕获 Error）会让响应体**为空**，
-     * 前端只能报 "Unexpected end of JSON input"，完全看不到真实原因。
-     *
-     * 同时提升资源上限（见 HEAVY_MEMORY_LIMIT 常量）：单张 4000×6000 的 JPEG 解码
-     * 就需约 96MB（w×h×4 字节），默认 memory_limit=128M 下批量处理必然 OOM。
-     * 但**调大上限不是解法** —— 真正的防线是 decodeWouldExceedMemory() 的预检；
-     * 本保险的作用是：万一仍发生致命错误，①返回可读 JSON，②把中断的行标记为
-     * failed 而不是让队列永久卡住。
-     */
+    /** 致命错误也让端点返回可读 JSON（否则响应体为空，前端只看到 "Unexpected end of JSON input"）。 */
     private function jsonFatalGuard(string $label): void
     {
         @ini_set('memory_limit', self::HEAVY_MEMORY_LIMIT);
@@ -789,15 +586,10 @@ class ImageController extends Controller
             $e = error_get_last();
             $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR];
             if (!$e || !in_array($e['type'], $fatalTypes, true)) {
-                return; // 正常结束（或仅有 warning/notice）→ 不干预
+                return;
             }
             $detail = $e['message'] . ' @ ' . basename((string) $e['file']) . ':' . $e['line'];
 
-            // v1.3.3-beta.1: 把"因致命错误而中断"的行标记为 failed。
-            // 否则它们会留在 processing → 下轮开头被复位为 pending → 再次触发同一个
-            // 致命错误 → **队列永久卡住、进度数字不动**（线上现象）。标记为 failed 后
-            // 队列可继续推进（不再卡死），这些行由操作员在「重新处理失败项」显式重试。
-            // 只更新仍为 processing 的行 —— 已完成的行不受影响。
             $marked = 0;
             if (self::$inflightIds !== []) {
                 try {
@@ -813,7 +605,7 @@ class ImageController extends Controller
                     ));
                     $marked = count($ids);
                 } catch (\Throwable) {
-                    // 数据库不可用等情况：忽略（下次运行开头仍会复位 processing 行）
+                    // 忽略：下次运行开头仍会复位 processing 行
                 }
             }
 
@@ -821,8 +613,6 @@ class ImageController extends Controller
                 http_response_code(500);
                 header('Content-Type: application/json; charset=utf-8');
             }
-            // v1.5.0-beta.2: 把"是哪种致命错误、撞到哪条上限、卡在哪一行"一并报出来。
-            // 只回一句"服务器返回空响应"时，运维既不知道是 OOM 还是超时，也无从下手。
             echo json_encode([
                 'success' => false,
                 'fatal'   => true,
@@ -835,32 +625,19 @@ class ImageController extends Controller
         });
     }
 
-    /** v1.3.2-beta.2: 临时存放目录（站点根 storage/incoming，web 不可达）。 */
+    /** 临时存放目录（storage/incoming，web 不可达）。 */
     public static function incomingDir(): string
     {
         return dirname(__DIR__, 3) . '/storage/incoming';
     }
 
-    /**
-     * v1.3.2-beta.2 迭代: 异步处理队列 Worker（管理员驱动，Web 分批）。
-     *
-     * 每次调用处理一小批 pending 图片：
-     *   1. 从 storage/incoming 取临时原图；
-     *   2. GD 一次解码生成**多尺寸**缩略图（sm 320 / md 640 / lg 1280 最大边，
-     *      webp q82，不放大；无 GD/webp 或源图不可解码时降级为无缩略图，仅搬运原图）；
-     *   3. 原图 + 缩略图上传到该图所属的最终存储实例；
-     *   4. 记录置 done（path/url/thumb_path 落库）；
-     *   5. 删除临时文件（原图与缩略图临时副本）。
-     * 失败置 failed + process_error，临时文件保留供重试（requeueFailed 可把
-     * failed 重置回 pending）。前端循环调用直到 remaining=0。
-     */
+    /** 每次处理一小批 pending：生成缩略图 → 上传 → 置 done；失败置 failed 并留临时文件供重试。 */
     public function processQueue(Request $request): void
     {
-        $this->jsonFatalGuard('process-queue');   // 致命错误 → 合法 JSON（而非空响应）
+        $this->jsonFatalGuard('process-queue');
 
         $batchSize = max(1, min(self::QUEUE_BATCH_MAX, (int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT)));
-        // 墙钟预算从这里开始算（不是从认领之后）—— 复位/探测/取批本身也要时间，
-        // 且它们同样受网关超时约束。见 QUEUE_TIME_BUDGET。
+        // 预算从认领前开始算：复位/探测/取批同样受网关超时约束
         $startedAt = microtime(true);
 
         try {
@@ -870,15 +647,7 @@ class ImageController extends Controller
             return;
         }
 
-        // v1.3.3-beta.1: 先把上次中断（超时/致命错误）遗留的 'processing' 行复位为
-        // pending —— 放在开头，使它们在本轮立即被拾取，而不是白等一轮。
-        // MR-15: 复位加陈旧窗口（updated_at < NOW()-5min）——beta.12 的条件认领
-        // （AND process_status='pending'）只防「重复拾取」，防不住本句把别的 worker
-        // 正在处理的行打回 pending 后被再次认领。认领 UPDATE 会自动刷新 updated_at，
-        // 故窗口外的 processing 行才是「真卡死」（worker 被强杀 / 上次 shutdown 钩子
-        // 写库失败）；单请求硬上限 120s，5 分钟窗口绝不误伤正常处理中的批。
-        // 老库缺 updated_at 时整句抛异常被吞 = 不复位：降级方向是「不误伤并发」，
-        // 卡死残留由人工 requeue，优于误伤在途任务。
+        // 复位上次中断遗留的 processing 行；陈旧窗口避免把其它 worker 在途的行打回 pending
         try {
             $pdo->exec(
                 "UPDATE `images` SET `process_status` = 'pending' "
@@ -886,48 +655,35 @@ class ImageController extends Controller
                 . "AND `updated_at` < (NOW() - INTERVAL 5 MINUTE)"
             );
         } catch (\Throwable) {
-            // 列缺失等异常忽略：健康检查会提示补列
+            // 缺 updated_at 列等异常忽略：宁可残留，不误伤在途任务
         }
 
-        // 只需要「有没有待处理」这一个布尔，故取 1 行即可（LIMIT 1 走索引，不等价于全表计数）。
-        // 其余计数统一挪到本批结束后一次取回（见下方 $stats），避免同一张表重复扫描。
         $hasPending = $pdo->query(
             "SELECT 1 FROM `images` WHERE process_status = 'pending' LIMIT 1"
         )->fetchColumn() !== false;
 
         $done = 0;
         $failed = 0;
-        $skipped = 0;   // v1.3.3-beta.1: 原图过大而跳过缩略图生成的数量（原图仍正常入库）
+        $skipped = 0;   // 原图过大而跳过缩略图的数量（原图仍正常入库）
         $results = [];
 
         if ($hasPending) {
             $rows = $pdo->query(
-                // 只取循环里真正用到的列（原先 SELECT *，批 50 张多搬 20 余列纯浪费）
                 "SELECT `id`, `path`, `storage_profile_id`, `mime_type` FROM `images` "
                 . "WHERE process_status = 'pending' ORDER BY id ASC LIMIT {$batchSize}"
             )->fetchAll(\PDO::FETCH_ASSOC);
 
             $incomingDir = self::incomingDir();
 
-            // v1.3.3-beta.1: 本批先标记为 'processing' —— ①「处理中」计数从此有真实
-            // 含义（此前恒为 0：只有 done/failed 会被写入）；②若本请求中途中断
-            // （超时/致命错误），这些行会在下次运行开头被复位并重试。
-            // 注意：processing 行对前台不可见（前台只出 process_status='done'）。
             if ($rows !== []) {
                 $ids = array_map(static fn($r) => (int) $r['id'], $rows);
-                // v2.0.0-beta.12: 标记改为条件更新（AND process_status='pending'）——
-                // 并发请求（上传完成 + 手动按钮同点）不会重复拾取同一批。
-                // 若本批已被并发方抢先标记（命中行数 < 本批行数），整体放弃本批，
-                // 下次轮询自然拾取剩余（返回 remaining 让前端继续循环）。
+                // 条件更新：并发请求不会重复拾取同一批
                 $marked = $pdo->exec(
                     "UPDATE `images` SET `process_status` = 'processing' "
                     . "WHERE `id` IN (" . implode(',', $ids) . ") AND `process_status` = 'pending'"
                 );
                 if ($marked !== count($ids)) {
-                    // 全部或部分行已被并发方（另一个管理员 / 另一个标签页）抢先认领。
-                    // 返回 contended 让前端退避，而不是立刻重试 —— 否则 done=0、
-                    // failed=0、remaining>0 的组合会让前端的两个 break 条件都不成立，
-                    // 退化成以网络 RTT 为间隔的紧循环，每轮都白跑 8 条 COUNT。
+                    // 已被并发方抢先：返回 contended 让前端退避，否则会退化成以 RTT 为间隔的紧循环
                     $this->json([
                         'success' => true,
                         'contended' => true,
@@ -941,18 +697,13 @@ class ImageController extends Controller
                     ]);
                     return;
                 }
-                // 交给 jsonFatalGuard 的 shutdown 钩子：万一本批中途致命错误，
-                // 它会把这几行标记为 failed（否则队列会永久卡在同一批上）。
                 self::$inflightIds = $ids;
             }
 
             foreach ($rows as $row) {
                 $id = (int) $row['id'];
 
-                // 墙钟预算到点：**至少先做完一张**（否则一张慢图就能让队列原地打转），
-                // 然后把本批还没碰过的行原样还回 pending，本次请求正常返回。
-                // 不还回的话它们会以 processing 身份卡满 5 分钟复位窗口 —— 那正是
-                // 「点一次只推进一批、然后彻底不动」的现场。
+                // 到点先做完当前张，再把没碰过的行还回 pending——否则它们会卡满 5 分钟复位窗口
                 if ($results !== [] && (microtime(true) - $startedAt) >= self::QUEUE_TIME_BUDGET) {
                     $processed = array_map(static fn($r) => (int) $r['id'], $results);
                     $rest = array_values(array_diff($ids, $processed));
@@ -963,7 +714,7 @@ class ImageController extends Controller
                                 . " WHERE `process_status` = 'processing' AND `id` IN (" . implode(',', $rest) . ")"
                             );
                         } catch (\Throwable) {
-                            // 还原失败也不致命：这些行会走 5 分钟复位，队列不会永久停摆。
+                            // 还原失败也不致命：会走 5 分钟复位
                         }
                     }
                     break;
@@ -972,11 +723,8 @@ class ImageController extends Controller
                 $path = (string) $row['path'];
                 $incomingFile = $incomingDir . '/' . ltrim($path, '/');
 
-                // v1.3.2-beta.2: 声明在 try 外 —— catch 里用它清理未上传的临时缩略图
+                // 声明在 try 外：catch 用它们清理临时缩略图、回滚已上传对象（异常可能发生在赋值前）
                 $gen = null;
-                // MR-05: try 外声明 —— catch 分支按此清单回滚已上传到最终存储的对象
-                // （异常可能发生在 makeThumbnails / uploadThumbs 之前，此时二者未定义）。
-                // $storage 同理：异常可能发生在 StorageProfile::resolve() / driver() 之前。
                 $uploadedKeys = [];
                 $storage = null;
 
@@ -985,7 +733,6 @@ class ImageController extends Controller
                         throw new \RuntimeException('临时文件不存在（可能已被清理）');
                     }
 
-                    // —— 该图所属存储实例（find/defaultProfile 自带请求级缓存）——
                     $profile = StorageProfile::resolve(
                         $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
                     );
@@ -994,66 +741,43 @@ class ImageController extends Controller
                     }
                     $storage = \App\Models\StorageProfile::cachedDriver($profile);
 
-                    // v1.3.3-beta.1 修复: mime 在此统一取用 —— 原先它定义在被替换掉的
-                    // 缩略图块里，重排后成为未定义变量（PHP 求值为 null，触发
-                    // S3Driver::upload() 的第 3 参数 TypeError）。
                     $mime = (string) ($row['mime_type'] ?? '');
 
-                    // —— 先上传原图到最终存储（失败即抛，此时尚未生成任何临时文件）——
                     $url = $storage->upload($incomingFile, $path, $mime);
-                    // MR-05: 原图对象已落桶 —— 记入回滚清单，后续步骤失败时回收
                     $uploadedKeys[] = $path;
 
-                    // —— 多尺寸缩略图（一次解码生成 sm/md/lg；GD 不可用或源图
-                    //    不可解码时降级为无缩略图，不阻断原图入库）——
                     $gen = $this->makeThumbnails($incomingFile, $mime, $path);
                     $genReason = (string) ($gen['reason'] ?? '');
                     if ($genReason === 'too-large') {
-                        // v1.3.3-beta.1: 原图过大 → 内存预检拦下，跳过缩略图（原图已入库）。
-                        // 计入 skipped，前端据此提示操作员；该行仍按 done 收尾（thumbs='{"ok":1}'），
-                        // 因此不会反复重试、也不会卡住队列。
+                        // 原图过大已跳过缩略图；仍按 done 收尾，否则会反复重试卡住队列
                         $skipped++;
                     }
 
-                    // —— 逐档上传缩略图（单档失败不影响其它档）——
                     $thumbUp = $this->uploadThumbs($storage, $gen['thumbs']);
                     $thumbKeys = $thumbUp['keys'];
                     $thumbPath = $thumbKeys['md'] ?? null;
-                    // MR-05: 只有 uploadThumbs 返回 keys 里的档是真正落桶成功的，
-                    // 全部并入回滚清单（失败档本就不在其中，无需再筛）。
                     foreach ($thumbKeys as $thumbKey) {
                         if (is_string($thumbKey) && $thumbKey !== '') {
                             $uploadedKeys[] = $thumbKey;
                         }
                     }
 
-                    // —— 记录置 done（thumbs 恒非空 → 回填队列不会重复选中该行）——
-                    // v1.4.0-beta.2: 例外 —— 当「生成缩略图」总开关关闭时**故意留空**，
-                    // 使这些行仍属于"缺少缩略图"集合，重新开启后可用「补全历史缩略图」
-                    // 一键补齐（否则会被 {"ok":1} 标记永久排除在补全之外）。
+                    // 总开关关闭时故意留空，使这些行仍留在「缺少缩略图」集合里供补全工具收走
                     $thumbsValue = $genReason === 'disabled' ? '' : \App\Models\Image::encodeThumbs($thumbKeys);
-                    // v1.5.0-beta.2: 字节数同批入库。总开关关闭时同样留空 ——
-                    // 这些行仍留在「待补全」集合里，重新开启后可被补全工具收走。
                     $thumbBytesValue = $genReason === 'disabled' ? '' : \App\Models\Image::encodeThumbBytes($thumbUp['bytes']);
-                    // v1.5.0-beta.3: 处理状态同批写入。推导口径与补全工具**共用同一个函数**
-                    // （Image::deriveThumbMeta），避免两个入口各判一套、给出互相矛盾的状态。
-                    // 总开关关闭时 thumbs 留空 → 状态为 pending，重新开启后可被补全工具收走。
-                    // MR-15: WHERE 带 processing 守卫 —— 若该行已被并发方夺走
-                    // （shutdown 钩子标 failed / 另一 worker 先一步收尾），rowCount=0，
-                    // 本 worker 的写整体放弃，不覆盖并发方已落定的权威状态。
+                    // 状态推导与补全工具共用 Image::deriveThumbMeta，避免两处口径不一致
+                    // WHERE 带 processing 守卫：行已被并发方写走时 rowCount=0，不覆盖对方状态
                     $this->writeThumbMetaState(
                         $pdo,
                         $id,
-                        null,                                   // 新行，尚无其它处理项
+                        null,
                         \App\Models\Image::deriveThumbMeta($thumbsValue, (string) $thumbPath, $thumbBytesValue),
                         ['`url` = ?', '`thumb_path` = ?', '`thumbs` = ?', '`thumb_bytes` = ?', "`process_status` = 'done'", '`process_error` = NULL'],
                         [$url, $thumbPath, $thumbsValue, $thumbBytesValue],
                         "AND `process_status` = 'processing'"
                     );
 
-                    // —— 成功后删除临时原图 ——
                     @unlink($incomingFile);
-                    // 空的日期目录顺手清理（忽略失败）
                     @rmdir(dirname($incomingFile));
 
                     $done++;
@@ -1063,21 +787,15 @@ class ImageController extends Controller
                     }
                     $results[] = $entry;
                 } catch (\Throwable $e) {
-                    $this->discardThumbs($gen); // 防临时缩略图泄漏
+                    $this->discardThumbs($gen);
                     $failed++;
                     $err = mb_substr($e->getMessage(), 0, 480);
                     try {
-                        // MR-15: 同样带 processing 守卫 —— 行已被并发方先写 done 时
-                        // rowCount=0，放弃把成功的结果改判 failed。
+                        // 同样带 processing 守卫，不把并发方已写好的 done 改判 failed
                         $pdo->prepare("UPDATE `images` SET `process_status` = 'failed', `process_error` = ? WHERE `id` = ? AND `process_status` = 'processing'")
                             ->execute([$err, $id]);
                     } catch (\Throwable) { /* 忽略 */ }
-                    // MR-05: 回滚已落桶的对象（best-effort）。这些对象此刻没有任何 DB
-                    // 记录可指认（url/thumbs 未写入或只写了一半），Image::delete() 主
-                    // 删除链永远不会来收 —— 不在这里删就是云端孤儿。
-                    // 注：清单内的 key 都是刚刚上传成功的对象，delete() 返回 false 即
-                    // 真实失败（不像 queueClear 面对从未上传的 pending 行），故此处
-                    // 不再二次 exists() 探测。
+                    // 回滚已落桶的对象：这些 key 没有任何 DB 记录可指认，不删就是云端孤儿
                     if ($storage !== null && $uploadedKeys !== []) {
                         $leftKeys = [];
                         foreach ($uploadedKeys as $uk) {
@@ -1090,8 +808,7 @@ class ImageController extends Controller
                             }
                         }
                         if ($leftKeys !== []) {
-                            // 残留 key 清单写审计 detail.paths（process_error 只保留原始
-                            // 异常信息，480 字符截断装不下清单）。
+                            // 残留清单写审计 detail.paths（process_error 只有 480 字符，装不下）
                             try {
                                 \App\Models\AuditLog::record('image_rollback_failed', [
                                     'id'    => $id,
@@ -1107,12 +824,10 @@ class ImageController extends Controller
 
         }
 
-        // 本批结束后的统计 —— 与 /queue-stats 共用同一份实现（queueStatsSnapshot），
-        // 避免两处各自演化。语义见该方法的注释。
+        // 统计与 /queue-stats 共用同一份实现
         $stats = $this->queueStatsSnapshot($pdo);
 
-        // remaining 只计 pending —— 它是前端循环的终止条件；failed 需人工
-        // 显式重试（requeueFailed），若并入 remaining 会导致循环永不终止。
+        // remaining 只计 pending：failed 需人工重试，并入会让前端循环永不终止
         $remaining = $stats['pending'];
         $failedLeft = $stats['failed'];
 
@@ -1130,17 +845,7 @@ class ImageController extends Controller
     }
 
     /**
-     * 队列统计快照 —— **唯一来源**（processQueue 回包与 /queue-stats 共用）。
-     *
-     * 两条语句：
-     *   ① `GROUP BY process_status` 一条拿到全部 4 个状态计数与总数；
-     *   ② 两个 JSON 派生计数（no_thumb / meta_retryable）用 `SUM(CASE)` 一次算完。
-     * 原先两处各写 7 条独立 COUNT，每批轮询都把 images 扫 7 遍 —— 其中两条
-     * `done + JSON 谓词` 非 sargable，等于对全部 done 行回表解析 JSON。
-     *
-     * v1.5.0-beta.3: meta_retryable 是「状态为 partial/failed 的行」——
-     * 已离开补全队列但不该被放弃，由「重试元数据补全」定向重跑。
-     *
+     * 队列统计的唯一来源：GROUP BY 状态计数 + SUM(CASE) 派生计数。
      * @return array{pending:int, processing:int, done:int, failed:int, no_thumb:int, meta_retryable:int, total:int}
      */
     private function queueStatsSnapshot(\PDO $pdo): array
@@ -1173,26 +878,15 @@ class ImageController extends Controller
     }
 
     /**
-     * POST /admin/images/backfill-thumbs —— 补全历史图片**多尺寸**缩略图（分批，幂等）。
-     *
-     * 判据：process_status='done' AND Image::thumbMetaPendingSql()（processing_state.thumb_meta 为 pending）
-     * —— 覆盖两类存量行：① 完全无缩略图；② 只有单档 md（本迭代前生成）。
-     *
-     * 关键：**不改变 process_status**。存量图已在线上展示，若置回 pending 会因
-     * 前台过滤条件（process_status='done'）而全部暂时下架 —— 等于自伤事故。
-     * 本流程从「最终存储」取回原图，一次解码生成 sm/md/lg 三档并回填
-     * thumb_path + thumbs，图片始终可见。回填后 thumbs 恒非空，天然幂等。
+     * POST /admin/images/backfill-thumbs —— 补全存量缩略图（分批、幂等）。
+     * 不改 process_status：置回 pending 会让存量图因前台只取 done 而集体下架。
      */
     public function backfillThumbs(Request $request): void
     {
-        $this->jsonFatalGuard('backfill-thumbs');   // 同上（同样做 GD 解码）
+        $this->jsonFatalGuard('backfill-thumbs');
         $batchSize = max(1, min(self::QUEUE_BATCH_MAX, (int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT)));
 
-        // v1.5.0-beta.3: 一个端点、两个范围（按 processing_state 区分「补什么」）：
-        //   scope=pending（默认）—— 处理 thumb_meta 为 pending 的行：生成缩略图 / 补字节数；
-        //   scope=retry          —— 处理 thumb_meta 为 partial/failed 的行：**定向重试**。
-        // 后者存在的意义：状态列让「对象长度读不到」的行离开 pending 队列（不阻塞），
-        // 同时把「已试过但没成功」这件事记下来，于是既不会卡住队列、又不会被永久放弃。
+        // pending = 生成缩略图/补字节数；retry = 定向重试 partial/failed 行
         $scope = (string) $request->input('scope', 'pending');
         if (!in_array($scope, ['pending', 'retry'], true)) {
             $this->json(['success' => false, 'error' => '无效的补全范围'], 400);
@@ -1200,17 +894,14 @@ class ImageController extends Controller
         }
         $isRetry = $scope === 'retry';
 
-        // 环境守卫只约束**生成**路径：retry 仅向存储询问对象长度，不解码、不生成、不改 thumbs，
-        // 因此即便总开关关闭或缺 GD 也应放行 —— 否则「读不到长度」的行将永远无法重试。
+        // retry 只问对象长度，不解码不生成，故不受总开关与 GD 检查约束
         if (!$isRetry) {
-            // 环境守卫：无 GD/webp 时直接返回错误（避免逐张失败与前端空转）
             if (!function_exists('imagecreatetruecolor') || !function_exists('imagewebp')) {
                 $this->json(['success' => false, 'error' => 'PHP GD 或 WebP 支持不可用，无法生成缩略图（请安装/启用 gd 扩展的 webp 支持）'], 500);
                 return;
             }
 
-            // v1.4.0-beta.2: 总开关关闭时拒绝补全 —— 否则会把所有行标记为"已处理"，
-            // 重新开启后需要人工重置才能再补，得不偿失。
+            // 总开关关闭时拒绝补全，否则会把行全标成已处理，重开后还需人工重置
             if (!self::thumbsEnabled()) {
                 $this->json(['success' => false, 'error' => '缩略图生成已在「系统设置 → 图片与存储」中关闭，请先开启后再补全'], 400);
                 return;
@@ -1224,26 +915,16 @@ class ImageController extends Controller
             return;
         }
 
-        // 目标判据来自模型（单一来源）：pending = 状态缺键/为 pending；retry = partial/failed
         $targetCond = $isRetry
             ? \App\Models\Image::thumbMetaRetryableSql()
             : \App\Models\Image::thumbMetaPendingSql();
 
-        // ★ retry 必须用**扫描游标**推进，不能像 pending 那样按判据重选：
-        //   失败行重试后状态仍是 failed（仍在目标集合里），按判据重选会每轮取到同一批，
-        //   前端 `remaining` 永不归零 → 无限循环（每轮还都真的去打对象存储）。
-        //   pending 模式不需要游标 —— 行处理完状态就变了、自然离开集合。
+        // retry 必须用扫描游标：失败行重试后状态仍是 failed，按判据重选会每轮取到同一批，remaining 永不归零
         $fromId  = $isRetry ? max(0, (int) $request->input('from', '0')) : 0;
         $fromSql = $isRetry ? ' AND `id` > ' . (int) $fromId : '';
 
-        // MR-37: 并发认领（文件锁）——管理页按钮与 CLI 子进程 backfill-thumbs-batch.php
-        // 走的是同一个方法入口，此前 SELECT 到处理完之间无任何占位，两边同刻跑会把
-        // 同一批行各生成一遍缩略图、双上传（同 key 覆盖，幂等但双倍 egress）。
-        // 这里用 storage/ 下一把排他锁（flock LOCK_EX|LOCK_NB）：单实例并发下只跑一份，
-        // 拿不到锁的请求立即返回（待补数实时透出，前端循环跟随，持锁方跑完后
-        // remaining 归零自行收敛）。锁句柄随请求结束由 OS 释放，进程崩溃无残留。
-        // 锁文件打不开（storage 目录缺失/不可写）时降级为无锁直跑 —— 与修复前等价，
-        // 不把环境问题放大成功能不可用。
+        // 排他锁避免管理页按钮与 CLI 子进程同时跑同一批（双上传，同 key 覆盖但双倍 egress）
+        // 拿不到锁立即返回；锁文件打不开时降级为无锁直跑，不把环境问题放大成功能不可用
         $backfillLock = @fopen(dirname(__DIR__, 3) . '/storage/backfill-thumbs.lock', 'c');
         if (is_resource($backfillLock) && !flock($backfillLock, LOCK_EX | LOCK_NB)) {
             @fclose($backfillLock);
@@ -1280,8 +961,7 @@ class ImageController extends Controller
 
         if ($remaining > 0) {
             $rows = $pdo->query(
-                // 显式列：done 行的 url(1024)/original_name/file_hash/file_sha256 等全不用，
-                // 而 url 在有 CDN 时可达 KB 级 —— SELECT * 在这条路径上的浪费最实在。
+                // 显式列：done 行的 url 在有 CDN 时可达 KB 级，SELECT * 浪费最实在
                 "SELECT `id`, `path`, `storage_profile_id`, `mime_type`, `thumbs`, `thumb_path`, `thumb_bytes`, `processing_state` "
                 . "FROM `images` WHERE process_status = 'done' AND {$targetCond}{$fromSql} ORDER BY id ASC LIMIT {$batchSize}"
             )->fetchAll(\PDO::FETCH_ASSOC);
@@ -1291,20 +971,12 @@ class ImageController extends Controller
                 $path = (string) $row['path'];
                 $scanned++;
                 $lastId = max($lastId, $id);
-                $gen = null; // v1.3.2-beta.2: catch 里用于清理未及上传的临时缩略图
-                // 从对象存储取回的原图副本 —— 必须在 try 外声明，否则异常展开后
-                // 本帧的引用丢失、catch 无从得知，finally 也就删不掉（见 finally）。
+                $gen = null;
+                // 必须在 try 外声明：异常展开后本帧引用丢失，finally 就删不掉这个副本
                 $localFile = null;
                 $isTemp = false;
                 try {
-                    // ── ① 零网络快速路径（v1.5.0-beta.3）────────────────────────────
-                    // thumbs 与 thumb_bytes 都已完整 ⇒ 状态本就该是 ok，只是**还没被写下来**
-                    // （存量行加列前没有这一列）。这一步不下载、不解码、不请求存储。
-                    //
-                    // 它正是「加列后无需停机回填」成立的原因：存量行第一次被扫到时，
-                    // 只需一次纯 DB 推导就能登记状态，不会白跑一遍网络。
-                    // 顺带还能**自愈**：若某行状态写着 partial 但数据其实已完整（历史不一致），
-                    // 这里会把它纠正回 ok。
+                    // 零网络快速路径：thumbs/thumb_bytes 已完整，只是状态还没写下来（也顺手自愈历史不一致）
                     $derived = \App\Models\Image::deriveThumbMeta(
                         $row['thumbs'] !== null ? (string) $row['thumbs'] : null,
                         (string) $row['thumb_path'],
@@ -1325,10 +997,7 @@ class ImageController extends Controller
                     }
                     $driver = \App\Models\StorageProfile::cachedDriver($profile);
 
-                    // ── ② 已有缩略图、只缺字节数 → **只实测，不重做** ────────────────
-                    // 不重新编码、不覆盖对象（缩略图本身是好的），只问存储要对象长度。
-                    // 字节数无法推导（取决于质量设置与 libwebp 版本），但对象长度可以直接问。
-                    // 重编码是**错的**：它产生的数字未必等于已存对象的大小 → 又成了谎报。
+                    // 只实测对象长度，不重编码：重编码的数字未必等于已存对象大小，又成了谎报
                     $haveThumbs = \App\Models\Image::decodeThumbMap(
                         (string) $row['thumbs'],
                         (string) $row['thumb_path']
@@ -1342,9 +1011,6 @@ class ImageController extends Controller
                             }
                         }
                         $bytesJson = \App\Models\Image::encodeThumbBytes($bytes);
-                        // 状态由数据推导：全测到 → ok；部分 → partial；一个都没测到 → failed。
-                        // partial/failed **照样落状态**（于是离开 pending 队列，不再阻塞后面的行），
-                        // 但保留在 retry 集合里，可被「重试元数据补全」定向重跑。
                         $state = \App\Models\Image::deriveThumbMeta(
                             (string) $row['thumbs'],
                             (string) $row['thumb_path'],
@@ -1369,7 +1035,6 @@ class ImageController extends Controller
                         continue;
                     }
 
-                    // ── ③ 从最终存储取回原图字节 → 生成缩略图 ──────────────────────
                     if ($driver instanceof \App\Storage\LocalDriver) {
                         $localFile = $driver->uploadDir() . '/' . ltrim($path, '/');
                         if (!is_file($localFile) || !is_readable($localFile)) {
@@ -1383,19 +1048,16 @@ class ImageController extends Controller
                         $isTemp = true;
                     }
 
-                    // —— 多尺寸缩略图生成 + 逐档上传 ——
-                    // 下载副本的删除统一交给 finally（原先写在 makeThumbnails 之后，
-                    // 一旦该调用抛异常就永远不执行 → 每次硬失败漏一份完整原图）。
+                    // 副本的删除统一交给 finally，否则生成阶段抛异常就会漏掉一整份原图
                     $gen = $this->makeThumbnails($localFile, (string) $row['mime_type'], $path);
                     $thumbUp = $this->uploadThumbs($driver, $gen['thumbs']);
                     $thumbKeys = $thumbUp['keys'];
 
-                    // —— 仅回填缩略图（thumb_path 与 thumbs），**状态保持 done** ——
-                    // COALESCE 保证未重新生成 md 时不会把已有 thumb_path 抹掉。
+                    // 只回填缩略图，process_status 保持 done
+                    // COALESCE 保证未重新生成 md 时不会抹掉已有 thumb_path
                     $thumbsValue = \App\Models\Image::encodeThumbs($thumbKeys);
                     $bytesValue  = \App\Models\Image::encodeThumbBytes($thumbUp['bytes']);
-                    // 推导时用「更新后」的 thumb_path（新生成的 md 优先，否则沿用旧值）——
-                    // 否则 md 这一档会在推导里被当成"缺档"，状态被误判成 partial。
+                    // 推导必须用更新后的 thumb_path，否则 md 档会被当成缺档、误判 partial
                     $effectiveThumbPath = $thumbKeys['md'] ?? (string) $row['thumb_path'];
                     $state = \App\Models\Image::deriveThumbMeta($thumbsValue, $effectiveThumbPath, $bytesValue);
                     $this->writeThumbMetaState(
@@ -1408,8 +1070,7 @@ class ImageController extends Controller
                     );
 
                     if ($thumbKeys === []) {
-                        // 源图小于所有档位（合法空操作）/ 过大（内存预检）/ 不可解码
-                        // —— 状态推导为 skipped，因此不会再被 pending 选中（幂等）
+                        // 推导为 skipped，因此不会再被 pending 选中（幂等）
                         $note = match ((string) ($gen['reason'] ?? '')) {
                             'too-large'      => '原图过大，已跳过缩略图（原图不受影响）',
                             'undecodable'    => '源图不可解码，已标记跳过',
@@ -1424,17 +1085,12 @@ class ImageController extends Controller
                     $done++;
                     $results[] = ['id' => $id, 'ok' => true];
                 } catch (\Throwable $e) {
-                    $this->discardThumbs($gen); // 防临时缩略图泄漏
+                    $this->discardThumbs($gen);
                     $failed++;
-                    // 硬失败（原图取不到 / 存储不可达 / 无可用实例）**刻意不写状态**：
-                    // 状态保持 pending，于是下次仍会被补全选中（这类失败值得重试）。
-                    // 代价是这类行会一直占批次位置，直到前端 `done===0 && failed>0` 中止 ——
-                    // 既有行为，本次不改动（避免把"重试语义"与"硬失败"混在一起改）。
+                    // 硬失败刻意不写状态：保持 pending 以便下次重试
                     $results[] = ['id' => $id, 'error' => mb_substr($e->getMessage(), 0, 300)];
                 } finally {
-                    // 下载副本只有一个归宿：本行处理结束后删掉，无论成功、失败还是抛异常。
-                    // 放在 finally 而不是各分支里，是因为异常可能来自任何一步
-                    //（取回后解码前、生成中、上传中），逐个分支补删除必然漏。
+                    // 副本只有一个归宿：本行结束就删，无论成功、失败还是抛异常
                     if ($isTemp && $localFile !== null) {
                         @unlink($localFile);
                     }
@@ -1451,7 +1107,6 @@ class ImageController extends Controller
             'scope' => $scope,
             'total' => $total,
             'remaining' => $remaining,
-            // retry 模式靠这两个字段推进（pending 模式忽略即可）
             'scanned' => $scanned,
             'next_from' => $lastId,
             'done' => $done,
@@ -1461,15 +1116,11 @@ class ImageController extends Controller
     }
 
     /**
-     * 写一行 image 的 thumb_meta 状态，可附带其它列 —— 三条成功路径的唯一出口。
+     * 写 thumb_meta 状态（三条成功路径的唯一出口，状态 JSON 拼装必须一致）。
      *
-     * 队列处理（新行）、实测字节数、重新生成缩略图这三条路径写的列各不相同，但
-     * **状态 JSON 的拼装方式必须一致** —— 各自拼一遍迟早走偏（典型症状：某处忘了
-     * 保留 `processing_state` 里的其它处理项，把别人的状态覆盖成 null）。
-     *
-     * @param array<int,string> $setFragments SET 额外片段（可含 `?` 占位符），processing_state 由本方法追加
-     * @param array<int,mixed>  $params       与 $setFragments 中占位符一一对应的参数
-     * @param string            $guard        追加在 WHERE `id` = ? 之后的条件（如 "AND `process_status` = 'processing'"）
+     * @param array<int,string> $setFragments 额外 SET 片段（可含 `?`）
+     * @param array<int,mixed>  $params       与占位符一一对应
+     * @param string            $guard        WHERE `id` = ? 之后的条件
      */
     private function writeThumbMetaState(
         \PDO $pdo,
@@ -1493,24 +1144,17 @@ class ImageController extends Controller
         )->execute($params);
     }
 
-    /**
-     * GET /admin/images/queue —— 图片处理管理页（状态总览 + 开始/重试）。
-     */
+    /** GET /admin/images/queue —— 图片处理管理页（状态总览 + 开始/重试）。 */
     public function queue(Request $request): void
     {
-        // v1.4.0-beta.2 增强: 待处理与失败**合并为单一队列**，支持状态筛选 +
-        // 文件名/ID 搜索 + 分页。此前是两张各限 50 条的固定表，且失败表为了拿
-        // `path` 又逐行查了一次库（50 条 → 50 次查询的 N+1）。
         $status = (string) $request->input('status', 'all');
         if (!in_array($status, ['all', 'pending', 'failed'], true)) {
-            $status = 'all';   // 白名单：非法值回落到"全部"
+            $status = 'all';
         }
         $search  = trim((string) $request->input('q', ''));
         $page    = max(1, (int) $request->input('page', '1'));
         $perPage = 50;
 
-        // 视图变量一次性建好：DB 失败分支只需覆盖 error（此前为失败路径单独维护
-        // 一份 11 行的 $filterVars，再加成功路径又写一遍，两套参数集需同步维护）。
         $viewVars = [
             'error' => '',
             'stats' => ['pending' => 0, 'processing' => 0, 'done' => 0, 'failed' => 0,
@@ -1534,11 +1178,9 @@ class ImageController extends Controller
             return;
         }
 
-        // 与 processQueue / queue-stats 同一份快照实现（唯一来源）——
-        // 页面首次渲染的四个数字必须与后续每 5 秒的轮询口径完全一致。
+        // 与 processQueue / queue-stats 同一份快照，页面数字与轮询口径一致
         $stats = $this->queueStatsSnapshot($pdo);
 
-        // —— 过滤条件：全部走白名单 + 参数绑定（无拼接注入面）——
         $conds  = ["`process_status` IN ('pending','failed')"];
         $params = [];
         if ($status !== 'all') {
@@ -1577,7 +1219,6 @@ class ImageController extends Controller
 
         $incomingDir = self::incomingDir();
         foreach ($rows as &$r) {
-            // path 已在同一查询中取出 —— 无需为每行再查一次库
             $p = (string) ($r['path'] ?? '');
             $r['temp_exists'] = $p !== '' && is_file($incomingDir . '/' . ltrim($p, '/'));
         }
@@ -1604,16 +1245,7 @@ class ImageController extends Controller
         }
     }
 
-    /**
-     * v1.3.3-beta.2 增强: GET /admin/images/queue-stats —— 队列实时统计快照（只读）。
-     *
-     * 供队列页轮询（pending/processing > 0 时每 5 秒刷新一次）更新状态卡片。
-     * 轻量端点：不挑选、不处理任何行，无副作用。
-     *
-     * v1.4.0-beta.2: 不再返回 failed_rows —— 队列已合并为服务端渲染的单一列表
-     * （带筛选/搜索/分页），前端不再消费该字段。它此前每 5 秒都要多跑一次
-     * 20 行的 SELECT 并传输，属纯冗余。
-     */
+    /** GET /admin/images/queue-stats —— 队列统计快照（只读，供队列页轮询）。 */
     public function queueStats(Request $request): void
     {
         try {
@@ -1623,17 +1255,13 @@ class ImageController extends Controller
             return;
         }
 
-        // 与 processQueue 同一个快照实现（唯一来源）—— 这个端点被队列页每 5 秒
-        // 轮询一次，原先 7 条独立 COUNT 会把 images 反复扫 7 遍。
         $this->json(['success' => true, 'stats' => $this->queueStatsSnapshot($pdo)]);
     }
 
     /**
-     * v1.3.3-beta.2 增强: POST /admin/images/requeue-one —— 重试**单张**失败的图片。
+     * POST /admin/images/requeue-one —— 重试单张失败图片。
      *
-     * 与 requeueFailed（全部失败项）互补：失败明细面板里逐张操作。
-     * 安全边界：只允许把 failed 行重置回 pending —— done/processing 行打不回去，
-     * 防误触或恶意把已发布图片打回隐藏态。
+     * 只允许 failed → pending：done/processing 打不回去，避免把已发布图片打回隐藏态。
      */
     public function requeueOne(Request $request): void
     {
@@ -1660,57 +1288,21 @@ class ImageController extends Controller
         $this->json(['success' => true, 'requeued' => 1, 'id' => $id]);
     }
 
-    /* ------------------------------------------------------------------
-     * v1.5.0-beta.1: 历史原图转 WebP（干跑优先）
-     * ------------------------------------------------------------------ */
-
-    /** 每批处理的行数上限（历史原图转换；云端要逐个下载+上传，批量不宜大）。 */
+    /** 每批上限（云端要逐个下载+上传，批量不宜大）。 */
     private const CONVERT_BATCH_MAX = 20;
 
-    /**
-     * 干跑（候选筛查）的每批行数上限。
-     *
-     * v1.5.0-beta.2：干跑改为**零 I/O 的纯筛查**（只判格式与键名，不下载不解码），
-     * 因此批次可以大得多 —— 这样才能在合理轮次内扫完整个表。此前干跑与执行共用
-     * LIMIT 5，且只在"第一批"上做判断，表里前 5 行恰好都是 GIF/SVG 时就会报
-     * "待转 0 张"（与清理残留同源的误报：0 表示"没看"，不是"没有"）。
-     */
+    /** 干跑是零 I/O 的纯筛查，批次可以大得多。 */
     private const CONVERT_SCAN_BATCH_MAX = 500;
 
-    /** 可转 WebP 的源格式（其余一律跳过：GIF 会丢动画、SVG 是矢量）。 */
+    /** 可转 WebP 的源格式（GIF 会丢动画、SVG 是矢量）。 */
     private const CONVERTIBLE_MIMES = ['image/jpeg', 'image/png', 'image/bmp', 'image/avif'];
 
     /**
-     * POST /admin/images/convert-originals —— 把历史原图批量转成 WebP（干跑优先）。
-     *
-     * v1.5.0-beta.1 之前上传的原图保持原格式（当时只有缩略图转 WebP）。本工具按行
-     * 推进、可中断、可续跑（游标 settings.original_convert_cursor，**只在 apply 时
-     * 推进**）：
-     *
-     *   取字节 → 转码（与上传路径同一个 convertOriginalToWebp）→ 上传新键 →
-     *   **校验新对象存在** → 更新记录（path/mime/size/双哈希）→ 删除旧对象
-     *
-     * 键怎么变：**只换扩展名、布局不动** —— `{dir}/original.{ext}` →
-     * `{dir}/original.webp`。缩略图键与原图扩展名无关（同目录固定名
-     * `thumb-{size}.webp`），所以缩略图完全不需要搬迁。
-     *
-     * 安全护栏（任一不满足即回滚该行、保持原样）：
-     *   - 只处理 process_status='done' 且 path 非 .webp 的行；
-     *   - 源格式必须在 CONVERTIBLE_MIMES（GIF/SVG 连字节都不必拉）；
-     *   - 转码不成功/不更小 → 跳过（不换键、不动旧对象）；
-     *   - **新对象上传后先 exists() 校验，再改库** —— 任何时刻记录都指向存在的对象；
-     *   - 改库失败 → 删掉新对象回滚（旧对象与记录原封不动）；
-     *   - 删旧失败只记 orphan 风险（新对象已就位，服务不受影响）。
-     *
-     * 注意：转换会**重算 file_hash/file_sha256**（记录的哈希必须描述实际存储的字节）。
-     * 云端每行都要下载+上传，耗时可观 —— 建议先干跑看数量，再分批执行。
+     * POST /admin/images/convert-originals —— 原图批量转 WebP（干跑优先，按行推进可续跑）。
+     * 新对象先 exists() 校验再改库，改库失败删新对象回滚；哈希描述实际存储字节，故一并重算。
      */
     public function convertOriginals(Request $request): void
     {
-        // v1.5.0-beta.2（线上故障修复）: 致命错误必须变成**可读 JSON**，而不是空响应。
-        // 此前本端点没有守卫（6 个重型端点里只有 processQueue / backfillThumbs 有）→
-        // 大图解码 OOM 或超时时，前端只看到"服务器返回空响应（HTTP 500）"，
-        // 既不知道原因，也不知道卡在哪一行。守卫同时提升内存与时间上限。
         $this->jsonFatalGuard('convert-originals');
 
         $mode = (string) $request->input('mode', 'dry-run');
@@ -1720,8 +1312,7 @@ class ImageController extends Controller
         }
         $apply = $mode === 'apply';
 
-        // 干跑是**零 I/O 的候选筛查**（不下载、不解码、不写任何文件）→ 批次可以大得多；
-        // 执行转换每行都要下载 + 转码 + 上传，保持小批次。
+        // 干跑零 I/O，批次可以大得多；执行每行都要下载+转码+上传，保持小批次
         $batchMax = $apply ? self::CONVERT_BATCH_MAX : self::CONVERT_SCAN_BATCH_MAX;
         $batch = max(1, min($batchMax, (int) $request->input('batch', $apply ? '5' : '200')));
 
@@ -1732,8 +1323,7 @@ class ImageController extends Controller
             return;
         }
 
-        // 起点：干跑由前端显式给 from（**每轮从表头开始**，幂等重扫，避免"游标已越过"漏扫）；
-        // 执行转换沿用持久化游标，可中断、可续跑。
+        // 干跑每轮从表头重扫（幂等，避免游标越过漏扫）；执行沿用持久化游标，可续跑
         $fromRaw = $request->input('from', null);
         $fromId  = ($fromRaw === null || $fromRaw === '') ? null : max(0, (int) $fromRaw);
         $cursor  = $fromId ?? ($apply ? (int) \App\Models\Setting::get('original_convert_cursor', '0') : 0);
@@ -1769,7 +1359,7 @@ class ImageController extends Controller
                 continue;
             }
 
-            // 只换扩展名、布局不动 —— 也正因如此缩略图键不受影响（廉价检查放在重活之前）
+            // 只换扩展名、布局不动 → 缩略图键不受影响
             $newPath = (string) preg_replace('/\.[a-z0-9]+$/i', '.webp', $path);
             if ($newPath === $path || $newPath === '') {
                 $skipped++;
@@ -1778,12 +1368,7 @@ class ImageController extends Controller
             }
 
             if (!$apply) {
-                // 干跑：**零 I/O**。不下载、不解码、不编码、不写任何文件 ——
-                //   ① 干跑绝不能改动文件：此前本地驱动把真实原图传进转码函数，
-                //      而旧实现是"原地覆盖"，于是干跑真的把原图换成 WebP、记录却不改；
-                //   ② 干跑若也下载 + 解码，大图会 OOM，"看下数量"这种轻操作反而致命；
-                //   ③ 所以"是否真的更小"只能在执行时逐张判定 —— 这里的数字是
-                //      **候选数**，面板文案如实这么写，不谎称是精确的待转数。
+                // 干跑零 I/O：不下载不解码（大图会 OOM），是否更小只能在执行时逐张判定 → 这里给的是候选数
                 $planned++;
                 if (count($samples) < 12) {
                     $samples[] = ['id' => $id, 'from' => $path, 'to' => $newPath];
@@ -1806,7 +1391,7 @@ class ImageController extends Controller
                     continue;
                 }
 
-                // —— 取字节到**私有副本**：本地也复制一份，绝不在真实存储文件上转码 ——
+                // 取字节到私有副本：本地也复制一份，绝不在真实存储文件上转码
                 if ($driver instanceof \App\Storage\LocalDriver) {
                     $stored = $driver->uploadDir() . '/' . ltrim($path, '/');
                     if (!is_file($stored) || !is_readable($stored)) {
@@ -1829,8 +1414,7 @@ class ImageController extends Controller
                     }
                 }
 
-                // —— 内存预算（原图专用口径：含 EXIF 旋转的第二块画布与原始字节）——
-                // 超预算就跳过后如实计数，**绝不让它变成不可捕获的 OOM**
+                // 超预算就跳过并如实计数，绝不让它变成不可捕获的 OOM
                 $budget = $this->originalConvertBudget($srcCopy, $mime);
                 if ($budget !== null) {
                     $skipped++;
@@ -1851,7 +1435,7 @@ class ImageController extends Controller
                     continue;
                 }
 
-                // —— 上传新键 → 校验 → 改库 → 删旧（任一步失败即回滚）——
+                // 上传新键 → 校验 → 改库 → 删旧，任一步失败即回滚
                 $driver->upload($destCopy, $newPath, 'image/webp');
                 $uploadedNew = $newPath;
                 if (!$driver->exists($newPath)) {
@@ -1880,7 +1464,7 @@ class ImageController extends Controller
                     throw new \RuntimeException('数据库更新失败');
                 }
 
-                // 旧对象删除失败不影响服务（新对象已就位）—— 如实计入 orphan 风险
+                // 旧对象删失败不影响服务（新对象已就位），计入 orphan 风险
                 if (!$driver->delete($path)) {
                     $orphanRisk++;
                 }
@@ -1899,8 +1483,7 @@ class ImageController extends Controller
                     $samples[] = ['id' => $id, 'note' => '异常：' . $e->getMessage()];
                 }
             } finally {
-                // 两个副本都是我们自己创建的（本地复制的 / 云端下载的），一律清理 ——
-                // 真实存储对象从头到尾没有被当作工作文件使用过。
+                // 两个副本都是自己创建的，一律清理
                 foreach ([$srcCopy, $destCopy] as $tmp) {
                     if (is_string($tmp) && $tmp !== '' && is_file($tmp)) {
                         @unlink($tmp);
@@ -1934,29 +1517,14 @@ class ImageController extends Controller
         ]);
     }
 
-    /* ------------------------------------------------------------------
-     * v2.0.0-beta.1: 暂存目录清理（干跑优先）
-     * ------------------------------------------------------------------ */
-
-    /** 每批处理的条目上限（行 / 文件），防止一次请求做太多删除。 */
     private const CLEANUP_BATCH_MAX = 50;
 
     /**
-     * POST /admin/images/cleanup-storage —— 清理 `storage/incoming` 暂存目录里
-     * 不再属于「在办」行的临时文件（致命错误、清空队列等留下的）。
-     *
-     * v1.5.0-beta.1 的「旧布局对象 / 历史媒体根」两类清理已随「取消兼容与迁移」
-     * 整体移除（旧布局与旧根不再存在）；「记录已删」的孤立对象仍只能到对象存储
-     * 控制台按前缀人工清理（`StorageInterface` 没有 LIST 能力，UI 与文档如实说明）。
-     *
-     * 安全护栏：暂存文件对应的行若处于 pending/processing/failed 则保留
-     * （那个文件可能正被另一个请求使用）。
-     *
-     * `mode=dry-run`（默认）只出清单、**不写任何状态**；`apply` 才真正删除。
+     * POST /admin/images/cleanup-storage —— 清理 storage/incoming 中不再属于在办行的临时文件。
+     * pending/processing/failed 的文件一律保留；孤立对象无法发现（无 LIST 能力），需人工清理。
      */
     public function cleanupStorage(Request $request): void
     {
-        // v2.0.0-beta.1: 重型端点必须把致命错误（OOM / 超时）变成可读 JSON。
         $this->jsonFatalGuard('cleanup-storage');
         $mode = (string) $request->input('mode', 'dry-run');
         if (!in_array($mode, ['dry-run', 'apply'], true)) {
@@ -1988,9 +1556,6 @@ class ImageController extends Controller
         ]);
     }
 
-    /**
-     * ② 暂存目录垃圾：storage/incoming 下不再属于"在办"行的临时文件。
-     */
     private function cleanupStagingFiles(\PDO $pdo, int $batch, bool $apply): array
     {
         $root = self::incomingDir();
@@ -2009,7 +1574,7 @@ class ImageController extends Controller
             $lookup->execute([$rel]);
             $status = $lookup->fetchColumn();
 
-            // 在办的行（含正在处理）一律保留 —— 那个文件可能正被另一个请求使用
+            // 在办的行一律保留 —— 那个文件可能正被另一个请求使用
             if ($status !== false && in_array((string) $status, ['pending', 'processing', 'failed'], true)) {
                 $result['skipped']++;
                 continue;
@@ -2042,11 +1607,7 @@ class ImageController extends Controller
     }
 
     /**
-     * 列出目录下的文件（相对根的绝对路径），按路径排序保证可预期。
-     *
-     * - 只返回常规文件：符号链接与目录都跳过（不跟随链接，避免越界删除）；
-     * - 最多返回 $limit 个（调用方按批处理，避免一次扫描巨量文件）。
-     *
+     * 列出目录下的常规文件（不跟随符号链接，避免越界删除）。
      * @return list<string>
      */
     private function listFilesRecursive(string $dir, int $limit): array
@@ -2104,24 +1665,8 @@ class ImageController extends Controller
     }
 
     /**
-     * v1.4.0-beta.2 增强: POST /admin/images/queue-clear —— 清空处理队列。
-     *
-     * scope：pending（仅待处理，默认）| failed（仅失败项）| all（两者）
-     *
-     * 语义是**删除数据库记录**（不是标记状态）。待处理行的原图只存在于服务器
-     * 临时目录（storage/incoming），删除记录后一并清理。
-     *
-     * MR-05（v2.0.x）：删 DB 前先逐行回收已落桶对象 —— failed 行的原图/缩略图
-     * 可能已上传到最终存储（上传失败只可能发生在缩略图阶段），裸删 DB 会留下无
-     * LIST、无 DB 指认的云端孤儿。现在按行的 thumbs JSON（decodeThumbMap 权威）
-     * 收集原图 + 全档缩略图 key，按行解析存储驱动逐 key 删除（best-effort，失败
-     * 容忍并二次 exists 区分「真删失败」与「本就不存在」），全部删完才 DELETE FROM
-     * images。orphan_risk 随之改为「尽力回收后仍删失败的对象个数」（键名兼容），
-     * 非零即写审计 image_delete_storage_failed，需操作员到存储控制台按 key 人工清。
-     *
-     * 补充（v2.0.0-beta.1）：回收失败残留的孤立对象无法被 cleanupStorage()
-     * 发现（存储接口没有 LIST 能力），只能到对象存储控制台按前缀人工清理；
-     * cleanupStorage() 只负责 storage/incoming 里**可确定性判定**的暂存残留。
+     * POST /admin/images/queue-clear —— 清空队列（pending | failed | all），语义是删除数据库记录。
+     * 删记录前逐行回收已落桶对象，否则成为云端孤儿；回收失败计入 orphan_risk 并写审计。
      */
     public function queueClear(Request $request): void
     {
@@ -2153,15 +1698,7 @@ class ImageController extends Controller
             return;
         }
 
-        // ── 原子认领：防止并发 worker 抢到同一行 ──
-        //
-        // 不认领直接回收+DELETE 的话，与 processQueue 竞争会让正在上传的图片
-        // 被删，而 worker 走成功路径不触发回滚 → 对象存储留下无 DB 指认的孤儿
-        // （StorageInterface 无 LIST 能力，只能人工捞）。
-        //
-        // 用条件 UPDATE 把行从 pending/failed 搬到 processing（worker 认领用的
-        // 同一状态），两者条件互斥，同一行只有一方能拿到；rowCount 为 0 即
-        // worker 已抢先，跳过该行绝不碰它的对象。复用既有 ENUM 值，无需改 schema。
+        // 原子认领：条件 UPDATE 搬到 processing，与 worker 的认领条件互斥；rowCount=0 即已被抢占
         $claimed = [];
         $claimStmt = $pdo->prepare(
             'UPDATE `images` SET `process_status` = \'processing\', `updated_at` = NOW() '
@@ -2175,9 +1712,8 @@ class ImageController extends Controller
                 if ($claimStmt->rowCount() > 0) {
                     $claimed[] = $r;
                 }
-                // rowCount == 0 → 并发 worker 已认领，跳过（不回收、不删除）。
             } catch (\Throwable $e) {
-                // 认领失败（并发/权限）→ 保守跳过该行，绝不在无所有权时删对象。
+                // 认领失败保守跳过，绝不在无所有权时删对象
                 error_log('[MoeRNG] queue-clear 认领失败，跳过 image #' . $rid . ': ' . $e->getMessage());
             }
         }
@@ -2194,14 +1730,11 @@ class ImageController extends Controller
             return;
         }
 
-        // MR-05: 删 DB 前先回收已落桶的对象（best-effort）。此前这里是裸 DELETE ——
-        // failed 行的原图/缩略图可能已在最终存储，DB 一删，这些对象就成了无法被
-        // LIST、也无 DB 记录指认的孤儿。顺序必须是：逐行收集 key → 逐 key delete →
-        // **全部完成后**才执行下面的 DELETE FROM images。
-        $residualKeys = [];   // 尽力回收后仍删不掉的对象 key（= orphan_risk 新语义）
+        // 先回收对象再删记录：DB 一删，这些 key 就再也无人指认
+        $residualKeys = [];   // 尽力回收后仍删不掉的对象 key
         foreach ($rows as $r) {
             $keys = [(string) $r['path']];
-            // thumbs JSON 权威解析（与 Image::delete 主链同一入口）；thumb_path 仅作 md 兜底
+            // thumbs JSON 权威解析；thumb_path 仅作 md 兜底
             foreach (\App\Models\Image::decodeThumbMap(
                 (string) ($r['thumbs'] ?? ''),
                 (string) ($r['thumb_path'] ?? '')
@@ -2212,8 +1745,6 @@ class ImageController extends Controller
             }
             $keys = array_values(array_unique(array_filter($keys, static fn($k) => $k !== '')));
             if ($keys === []) continue;
-            // 按行的存储归属解析驱动（与 Image::driverFor 同一模式：profile_id 优先，
-            // 老行按 storage/storage_provider 兜底）。
             try {
                 $driver = \App\Models\StorageProfile::driverForImage($r);
             } catch (\Throwable) {
@@ -2228,9 +1759,8 @@ class ImageController extends Controller
                     $delOk = false;
                 }
                 if (!$delOk) {
-                    // MR-40 驱动语义不一致：LocalDriver 对「本就不存在」的文件也返回
-                    // false（云端 delete 对缺 key 幂等返回 true）。区分对待：对象确实
-                    // 还在（真删失败）才计入残留；本就不存在的视为早已无对象，不谎报。
+                    // LocalDriver 对「本就不存在」也返回 false（云端幂等返回 true）：
+                    // 只有对象确实还在才算残留，否则会谎报
                     try {
                         $stillThere = $driver->exists($key);
                     } catch (\Throwable) {
@@ -2259,8 +1789,7 @@ class ImageController extends Controller
             return;
         }
 
-        // 清理临时原图（本地 incoming 目录）。失败忽略：文件可能已被前次运行清掉，
-        // 或对象存储场景下本就不存在于本地。
+        // 清理临时原图；失败忽略（可能已被前次运行清掉，或云端场景本就不在本地）
         $incomingDir = self::incomingDir();
         $tempRemoved = 0;
         foreach ($rows as $r) {
@@ -2269,13 +1798,11 @@ class ImageController extends Controller
                 if (@unlink($file)) {
                     $tempRemoved++;
                 }
-                @rmdir(dirname($file));   // 顺手清空的日期目录
+                @rmdir(dirname($file));
             }
         }
 
-        // orphan_risk 新语义（MR-05）：不再按「failed 行数」粗估，而是**尽力回收后
-        // 仍删失败的对象个数**。键名保持兼容（前端 app.js 在读），值语义按此调整 ——
-        // 这些对象确实还留在存储里且 DB 记录已删，需操作员到存储控制台按 key 人工清。
+        // orphan_risk 键名沿用（前端 app.js 在读），语义是「尽力回收后仍删失败的对象数」
         $orphanRisk = count($residualKeys);
         if ($residualKeys !== []) {
             try {
@@ -2287,8 +1814,7 @@ class ImageController extends Controller
             } catch (\Throwable) { /* 审计失败不再抛 */ }
         }
 
-        // MR-38: 清队列操作本身留痕（与上面 image_delete_storage_failed 不重复——
-        // 那条是「回收失败」的异常事件，这条是「谁在何时清了哪个范围」的操作审计）。
+        // 操作审计（上面那条只记回收失败的异常事件）
         \App\Models\AuditLog::record('image_queue_clear', [
             'scope' => $scope,
             'deleted' => $deleted,
@@ -2305,18 +1831,9 @@ class ImageController extends Controller
         ]);
     }
 
-    /**
-     * v1.3.2 迭代: 历史图片哈希回填 —— Web 分批端点（管理员，POST + CSRF）。
-     *
-     * 每次 POST 处理一小批（默认 5 张）缺哈希的图片：定位其存储实例、把字节
-     * 取到服务器（对象存储经签名 URL 拉到临时文件，本地直接读）、对同一份
-     * 字节算 MD5 + SHA-256、只补缺失字段、用完即删临时文件。前端循环调用并
-     * 显示进度条。幂等 —— 已有双哈希的行永远跳过。
-     */
+    /** 历史图片哈希回填（Web 分批）：同一份字节算 MD5 + SHA-256，只补缺失字段，幂等。 */
     public function backfillHashes(Request $request): void
     {
-        // v1.5.0-beta.2: 回填要逐行取对象字节再算哈希（云端每行一次网络往返），
-        // 属于长任务 —— 致命错误同样要变成可读 JSON 而不是空响应。
         $this->jsonFatalGuard('backfill-hashes');
 
         $batchSize = max(1, min(20, (int) $request->input('batch', '5')));
@@ -2340,8 +1857,7 @@ class ImageController extends Controller
 
         if ($remaining > 0) {
             $rows = $pdo->query(
-                // 显式列：只取实际用到的 5 列。file_sha256 必须在这里 ——
-                // 缺了它 $hasSha 恒为 false（判断成了死代码，还会误以为"该列总是空的"）。
+                // file_sha256 必须在查询列里，缺了 $hasSha 恒为 false
                 "SELECT `id`, `path`, `storage_profile_id`, `file_hash`, `file_sha256` FROM `images` "
                 . "WHERE {$missingCond} ORDER BY id ASC LIMIT {$batchSize}"
             )->fetchAll(\PDO::FETCH_ASSOC);
@@ -2353,8 +1869,6 @@ class ImageController extends Controller
                 $hasSha = (string) ($row['file_sha256'] ?? '') !== '';
 
                 try {
-                    // 该图所属存储实例 —— storage_profile_id 精确优先，缺省回退默认实例
-                    // v1.4.0-beta.2 性能: 走请求内缓存（原先每行查一次 → N+1）
                     $profile = StorageProfile::resolve(
                         $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
                     );
@@ -2365,7 +1879,6 @@ class ImageController extends Controller
                     }
                     $driver = \App\Models\StorageProfile::cachedDriver($profile);
 
-                    // —— 取字节到本地（对象存储拉临时文件；本地直读）——
                     $localFile = null;
                     $isTemp = false;
                     if ($driver instanceof \App\Storage\LocalDriver) {
@@ -2389,7 +1902,6 @@ class ImageController extends Controller
                         $isTemp = true;
                     }
 
-                    // —— 同一份字节算双哈希 ——
                     $md5 = @hash_file('md5', $localFile);
                     $sha = @hash_file('sha256', $localFile);
                     if ($isTemp) {
@@ -2438,9 +1950,6 @@ class ImageController extends Controller
 
     public function upload(Request $request): void
     {
-        // v1.5.0-beta.2: 上传路径同样做 GD 解码（原图转码 + 缩略图），必须把致命错误
-        // 变成可读 JSON —— 否则一张大图就能让"上传"变成一个没有内容的 500，
-        // 用户看不出是文件太大、内存不足，还是超时。
         $this->jsonFatalGuard('upload');
 
         $categoryId = $request->input('category_id', '');
@@ -2452,10 +1961,7 @@ class ImageController extends Controller
             $this->redirect('/admin/images');
         }
 
-        // Resolve the storage instance for this upload. The operator can pick
-        // any enabled profile in the upload dialog; otherwise the default
-        // profile is used. v1.0.35: profiles are the single source of truth —
-        // a missing usable profile is a hard error, no settings fallback.
+        // 未指定或未启用时回退默认实例；没有任何可用实例是硬错误，不做设置兜底
         $profileId = (int) $request->input('storage_profile_id', '0');
         $profile = $profileId > 0 ? StorageProfile::find($profileId) : null;
         if ($profile === null || !$profile->isEnabled() || !$profile->isUsable()) {
@@ -2472,23 +1978,15 @@ class ImageController extends Controller
         $profileId = (int) $profile->id;
         $uploaded = 0;
         $errors = [];
-        // 内容级重复检测（批内 + 数据库）：SHA-256 为准，MD5 仅作旧行兜底。
-        // 字节在服务器手上，哈希由服务端计算，天然权威、不可被前端伪造。
-        // 重复图片跳过不存储，汇总提示，不影响其余文件继续上传。
+        // 内容级去重：哈希由服务端算，重复则跳过，不影响其余文件
         $duplicates = [];
         $batchHashes = [];
 
         $fileCount = count($files['tmp_name']);
-        // v2.0.0-beta.3: finfo 每次循环重建是纯浪费 —— 提到循环外创建一次。
         $finfo = finfo_open(FILEINFO_MIME_TYPE);
         for ($i = 0; $i < $fileCount; $i++) {
             $tmpName = $files['tmp_name'][$i];
-            // original_name 列是 VARCHAR(255)（schema.sql）。MySQL 8 默认严格模式
-            // 下超长会直接报错让整次上传失败（部分 Windows 客户端会带上很长的
-            // 路径串），故在此截断到列宽上限。注意与 process_error 的
-            // mb_substr(..., 0, 480) 同类处理；这里按字符截断避免切碎多字节汉字。
-            // 仅用于展示与去重比对，不参与任何路径构造（存储路径由
-            // Image::newAssetPath 生成，与原文件名完全解耦）。
+            // original_name 列是 VARCHAR(255)，严格模式下超长会让整次上传失败；不参与路径构造
             $originalName = mb_substr((string) $files['name'][$i], 0, 255);
             $fileSize = $files['size'][$i];
 
@@ -2497,7 +1995,7 @@ class ImageController extends Controller
                 continue;
             }
 
-            // v1.4.0-beta.2: 系统设置「单图大小上限」应用层校验（0 = 不限制，只受 PHP 约束）
+            // 单图大小上限（0 = 不限制，只受 PHP 约束）
             $maxBytes = self::uploadMaxBytes();
             if ($maxBytes > 0 && (int) $fileSize > $maxBytes) {
                 $errors[] = sprintf(
@@ -2509,7 +2007,6 @@ class ImageController extends Controller
                 continue;
             }
 
-            // Validate MIME（finfo 在循环外打开，见上传循环起点）
             $detectedMime = finfo_file($finfo, $tmpName);
 
             if (!in_array($detectedMime, $this->allowedMimeTypes, true)) {
@@ -2517,26 +2014,18 @@ class ImageController extends Controller
                 continue;
             }
 
-            // Validate extension
             $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
             if (!in_array($ext, $this->allowedExtensions, true)) {
                 $errors[] = "{$originalName}: Invalid file extension (.{$ext})";
                 continue;
             }
 
-            // —— 哈希：源字节（上传原样）与落盘字节（转码后）**各算一套** ——
-            //
-            // 为什么两套都要：原图会被转成 WebP，而两类历史行各自只对得上其中一套 ——
-            //   • 转码功能上线前的行：file_hash/file_sha256 记的是**上传字节**（那时不转码）；
-            //   • 转码上线后的行：记的是**落盘字节**（WebP）。
-            // 只查一套，另一类永远判不出重复 —— 现场表现就是「同一张图，下一批不去重」。
-            // 顺带也免疫「转换策略变化」（开关、质量、内存预算、libwebp 版本）导致的
-            // 哈希漂移：源字节哈希是稳定的，永远对得上。
+            // 源字节与落盘字节各算一套哈希：转码前后的存量行只对得上其中一套，
+            // 只查一套会让去重静默失效（同一张图下一批判不出重复）
             $srcMd5 = @hash_file('md5', $tmpName);
             $srcSha = @hash_file('sha256', $tmpName);
 
-            // v1.5.0-beta.1: 原图统一转 WebP（可在「系统设置 → 图片与存储」关闭）。
-            // 转换失败/不划算时不阻断上传，保持原格式（见 convertOriginalToWebp）。
+            // 原图统一转 WebP；失败/不划算则保持原格式，不阻断上传
             $conv = $this->convertOriginalToWebp($tmpName, $detectedMime);
             if ($conv['ok']) {
                 $ext = 'webp';
@@ -2545,33 +2034,29 @@ class ImageController extends Controller
                 $fileSize = (int) @filesize($tmpName);
             }
 
-            // 落盘哈希：转码后重算；未转码时与源字节相同，直接复用（省一次读盘）。
+            // 未转码时落盘哈希与源字节相同，直接复用省一次读盘
             $dstMd5 = $conv['ok'] ? @hash_file('md5', $tmpName) : $srcMd5;
             $dstSha = $conv['ok'] ? @hash_file('sha256', $tmpName) : $srcSha;
 
-            // 入库用**落盘字节**哈希（与「哈希回填」「转换历史原图」重算的口径一致）。
+            // 入库用落盘字节哈希，与「哈希回填」「转换历史原图」口径一致
             $fileHash = ($dstMd5 !== false && $dstMd5 !== '') ? $dstMd5 : null;
             $fileSha256 = ($dstSha !== false && $dstSha !== '') ? $dstSha : null;
-            // 判重时两套都查（见上方说明）。
             $srcHash = ($srcMd5 !== false && $srcMd5 !== '') ? $srcMd5 : null;
             $srcSha256 = ($srcSha !== false && $srcSha !== '') ? $srcSha : null;
 
             if ($fileSha256 !== null || $srcSha256 !== null) {
-                // 候选集：落盘字节（file_sha256 的口径）+ 源字节（旧行与转码前的口径）
                 $shaCands = array_values(array_unique(array_filter([$fileSha256, $srcSha256])));
                 $md5Cands = array_values(array_unique(array_filter([$fileHash, $srcHash])));
 
-                // ① 批内初筛：用源字节强哈希（同批同文件必然同源字节）。
+                // 批内初筛：同批同文件必然同源字节
                 $batchKey = $srcSha256 ?? $fileSha256;
                 if (isset($batchHashes[$batchKey])) {
                     $duplicates[] = "{$originalName}：与本批次中「{$batchHashes[$batchKey]}」重复，已跳过";
                     continue;
                 }
 
-                // ② 库内查找：先比强哈希（两套候选都试），再退到 MD5 兼容旧行。
-                // 不能只查 file_hash：它是 CHAR(64) 却只存 32 位 MD5，CHAR 右补空格，
-                // 裸比较是否忽略尾空格取决于排序规则与 sql_mode —— 一旦不忽略就
-                // **永远命中不了**，去重静默失效（上传照常成功、没有任何报错）。
+                // file_hash 是 CHAR(64) 却只存 32 位 MD5，尾空格比较受排序规则影响，
+                // 不按模糊匹配就永远命中不了（去重静默失效）
                 $existing = Image::findByContentHash($shaCands, []);
                 $matchedByMd5 = false;
                 if ($existing === null && $md5Cands !== []) {
@@ -2583,8 +2068,7 @@ class ImageController extends Controller
                     $existingSha = trim((string) $existing->file_sha256);
                     if ($matchedByMd5) {
                         if ($existingSha === '') {
-                            // 旧行没有强哈希 —— MD5 命中即视为重复，并把本次算出的
-                            // 强哈希回填，下次就是确定性判定。
+                            // 旧行没有强哈希：MD5 命中即算重复，顺手回填强哈希
                             try {
                                 \App\Core\Database::getInstance()
                                     ->prepare("UPDATE `images` SET `file_sha256` = ? WHERE `id` = ?")
@@ -2593,7 +2077,7 @@ class ImageController extends Controller
                                 // 回填失败不影响判定
                             }
                         } elseif (!in_array($existingSha, $shaCands, true)) {
-                            // MD5 命中但强哈希不等 → 只是碰撞，放行（不误杀）。
+                            // 强哈希不等：只是 MD5 碰撞，放行不误杀
                             $existing = null;
                         }
                     }
@@ -2604,24 +2088,18 @@ class ImageController extends Controller
                     continue;
                 }
 
-                // 记录批内（供后续同批比对）
                 $batchHashes[$batchKey] = $originalName;
             }
 
-            // v1.5.0-beta.1: 新上传走统一布局（方案 A，资产为中心）——
-            //   {yyyy}/{mm}/{uuid}/original.{ext}，缩略图落在同目录 thumb-{size}.webp。
-            // 旧布局对象不受影响（键推导按 path 形态自动选择规则）。
+            // 新布局：{yyyy}/{mm}/{uuid}/original.{ext}，缩略图落同目录 thumb-{size}.webp
             $remotePath = \App\Models\Image::newAssetPath($ext);
 
             try {
-                // Get image dimensions
                 $imgInfo = @getimagesize($tmpName);
                 $width = $imgInfo ? $imgInfo[0] : 0;
                 $height = $imgInfo ? $imgInfo[1] : 0;
 
-                // v1.3.2-beta.2 迭代: 异步处理管线 —— 上传落「临时目录」即为成功。
-                // 记录以 process_status='pending' 入队，由管理页驱动的队列 Worker
-                // 生成缩略图、上传最终存储并把记录置 done；临时文件随后删除。
+                // 上传只落临时目录即算成功，后续由队列 Worker 生成缩略图并上传最终存储
                 $incomingFile = self::incomingDir() . '/' . $remotePath;
                 if (!is_dir(dirname($incomingFile))) {
                     @mkdir(dirname($incomingFile), 0755, true);
@@ -2631,7 +2109,6 @@ class ImageController extends Controller
                 }
 
                 $image = new Image([
-                    // 新布局下存储文件名为 original.{ext}（旧布局曾是 {uuid}.{ext}）
                     'filename' => basename($remotePath),
                     'original_name' => $originalName,
                     'path' => $remotePath,
@@ -2651,10 +2128,7 @@ class ImageController extends Controller
                     'storage_profile_id' => $profileId,
                 ]);
                 if (!$image->save()) {
-                    // insert() can return false on a silent DB error (e.g. a
-                    // missing `storage` column when the migration did not run).
-                    // Surface it instead of leaving the file on disk with no
-                    // database record, which reads as "uploaded but missing".
+                    // insert() 遇静默 DB 错误只返回 false；不抛则文件在盘上却没有记录
                     throw new \RuntimeException('数据库写入失败：图片记录未保存（请检查 images 表是否含 storage / storage_provider 列）');
                 }
                 $uploaded++;
@@ -2664,13 +2138,9 @@ class ImageController extends Controller
             }
         }
 
-        // AJAX uploads (drag-drop with progress bar) get a JSON verdict instead
-        // of the 302+flash dance. A blind XHR follow of a 302 consumes the
-        // flash, so the operator would see nothing; returning JSON lets the
-        // frontend show a toast with the real error (or success).
+        // AJAX 上传必须回 JSON：盲目跟随 302 会消耗掉 flash，前端什么都看不到
         $dupCount = count($duplicates);
         if ($this->isAjax()) {
-            // v1.3.1: 全部为重复也算"有结果"（success=true）——不是服务器错误。
             if ($uploaded > 0 || $dupCount > 0) {
                 $msg = $uploaded > 0 ? "上传成功 {$uploaded} 张（已进入处理队列，稍后自动完成存储与缩略图）" : '所选图片均为重复，未新增';
                 if ($dupCount > 0) {
@@ -2698,11 +2168,7 @@ class ImageController extends Controller
             Session::flash('success', $msg);
         }
         if (!empty($errors)) {
-            // v1.4.0-beta.2 修复（XSS）: flash 在 layout 里是**原样输出 HTML**（为支持
-            // <br>），而错误信息里嵌了原始文件名 → 形如 `<img src=x onerror=…>.png`
-            // 的文件名会被当作 HTML 执行（管理员会话内的注入）。这里在拼装 HTML 时
-            // 逐条转义（implode 的 <br> 在转义之后加入，不受影响）；JSON 路径保持原文
-            //（前端用 textContent 渲染，无需转义）。
+            // flash 在 layout 里原样输出 HTML，而错误信息含原始文件名（可构造 HTML）→ 必须逐条转义
             Session::flash('error', implode('<br>', array_map('h', $errors)));
         }
 
@@ -2738,8 +2204,7 @@ class ImageController extends Controller
             $this->fail('图片删除失败。', 500, self::PAGE);
         }
 
-        // image_delete 审计由 Image::delete()（模型层，字段更全）唯一承担，
-        // 此处不再重复埋点 —— 否则批量删 N 张会产生 N+1 条审计。
+        // image_delete 审计由 Image::delete()（模型层）唯一承担，此处重复埋点会变成 N+1 条
         $this->ok('已删除 1 张图片。', ['deleted' => [$id]], self::PAGE);
     }
 
@@ -2774,7 +2239,6 @@ class ImageController extends Controller
             $this->fail('删除失败，未能移除任何图片。', 500, self::PAGE);
         }
 
-        // MR-38: 批量删除留痕（ids 全量入 detail，事后可追溯「谁删了哪一批」）。
         \App\Models\AuditLog::record('image_batch_delete', [
             'count' => count($deleted),
             'ids' => $deleted,
@@ -2789,11 +2253,7 @@ class ImageController extends Controller
         $this->ok($message, ['deleted' => $deleted, 'failed' => $failed], self::PAGE);
     }
 
-    /**
-     * v1.2.1 迭代: bulk re-categorize selected images (admin UI audit I2).
-     * POST /admin/images/batch-categorize { ids: [], category_id: N|0 }
-     * category_id 0 clears the category.
-     */
+    /** POST /admin/images/batch-categorize —— 批量改分类，category_id 0 表示清空分类。 */
     public function batchCategorize(Request $request): void
     {
         $ids = $request->input('ids', []);
@@ -2818,8 +2278,7 @@ class ImageController extends Controller
             if (!$image) {
                 continue;
             }
-            // 赋值后 save()，不要用 $image->update([...])：Model::update() 是
-            // 无参的 protected 方法，从外部调用会抛 Error。与单张 update() 一致。
+            // 必须赋值后 save()：Model::update() 是无参 protected 方法，外部调用会抛 Error
             $image->category_id = $categoryId === 0 ? null : $categoryId;
             if ($image->save()) {
                 $ok++;

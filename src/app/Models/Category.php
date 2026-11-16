@@ -22,11 +22,7 @@ class Category extends Model
     }
 
     /**
-     * Fetch direct children of a node.
-     *
-     * `categories`.`parent_id` is NULL for top-level rows (the FK uses
-     * ON DELETE SET NULL), so "parent_id = 0" never matched anything. Root is
-     * therefore addressed with $parentId === null / 0 mapped to `IS NULL`.
+     * parent_id 为 NULL 表示顶层（FK 用 ON DELETE SET NULL），故 0 也映射到 IS NULL。
      *
      * @return array<int, array<string, mixed>|self>
      */
@@ -37,9 +33,6 @@ class Category extends Model
             . ($isRoot ? "(`parent_id` IS NULL OR `parent_id` = 0)" : "`parent_id` = ?")
             . " ORDER BY `sort_order` ASC, `id` ASC";
 
-        // PDOStatement::execute() returns bool — it must NOT be chained into
-        // fetchAll(). Doing so raised "Call to a member function fetchAll() on
-        // bool" and was the direct cause of the HTTP 500 on /admin/categories.
         $stmt = Database::getInstance()->prepare($sql);
         $stmt->execute($isRoot ? [] : [$parentId]);
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
@@ -49,7 +42,7 @@ class Category extends Model
 
     public static function getTree(?int $parentId = null, int $depth = 0): array
     {
-        // Hard stop against a self-referencing parent_id cycle in dirty data.
+        // 脏数据里 parent_id 自引用环的硬停。
         if ($depth > 20) return [];
 
         $tree = [];
@@ -85,7 +78,6 @@ class Category extends Model
         return $this->slug;
     }
 
-    /** Hard stop for recursive subtree deletion — mirrors getTree()/getFlatTree(). */
     private const MAX_DELETE_DEPTH = 20;
 
     public function delete(): bool
@@ -94,18 +86,9 @@ class Category extends Model
     }
 
     /**
-     * MR-16: recursive subtree delete with a depth guard and a single transaction.
+     * 子树递归删除，整体包在一个事务里（中途失败回滚，不留半删状态）。
      *
-     * - Depth guard: a self-referencing parent_id cycle in dirty data would
-     *   otherwise recurse forever and blow the PHP stack (getTree()/getFlatTree()
-     *   already bail at 20; the delete path was the one that was missing it).
-     * - Transaction: the child deletes + the images unbind + this row delete run
-     *   atomically, so a mid-way DB failure rolls back instead of leaving a
-     *   half-deleted tree / partially-unbound images.
-     *
-     * @param int  $depth     recursion depth (internal).
-     * @param bool $outermost true only on the top-level call — it owns BEGIN/COMMIT.
-     * @throws \RuntimeException when the depth guard trips (dirty parent_id cycle).
+     * @throws \RuntimeException 深度超限（多为 parent_id 环）。
      */
     private function deleteSubtree(int $depth, bool $outermost): bool
     {
@@ -119,11 +102,9 @@ class Category extends Model
             $db->beginTransaction();
         }
         try {
-            // Delete children first (recursion; inner calls do NOT open a new txn).
             foreach ($this->children() as $child) {
                 $child->deleteSubtree($depth + 1, false);
             }
-            // Update images in this category to uncategorized.
             $stmt = $db->prepare("UPDATE `images` SET `category_id` = NULL WHERE `category_id` = ?");
             $stmt->execute([$this->id]);
             $result = parent::delete();

@@ -27,10 +27,7 @@ class UserController extends Controller
         $username = $request->input('username', '');
         $password = $request->input('password', '');
 
-        // MR-02 纵深防御：role 白名单 + 越权降级。
-        // 1) 仅接受 'admin'/'editor'，非法值回落 'editor'；
-        // 2) 只有当前会话本身是 admin 时才允许建 admin 账号；
-        //    非 admin 会话（正常已被 RequireAdminMiddleware 挡在门外）一律强制 editor。
+        // role 仅接受 admin/editor；非 admin 会话强制降级为 editor，防提权。
         $requestedRole = $request->input('role', 'admin');
         $role = ($requestedRole === 'admin' || $requestedRole === 'editor') ? $requestedRole : 'editor';
         if (Session::get('user_role') !== 'admin' && $role === 'admin') {
@@ -56,7 +53,6 @@ class UserController extends Controller
         $user->setPassword($password);
         $user->save();
 
-        // MR-38: account creation is a sensitive admin action — audit it.
         \App\Models\AuditLog::record('user_create', [
             'id'       => (int) $user->id,
             'username' => (string) $user->username,
@@ -81,8 +77,6 @@ class UserController extends Controller
         $user->email = $request->input('email', $user->email);
         $oldRole = (string) $user->role;
 
-        // MR-02 纵深防御：与 create 相同的 role 白名单 + 非 admin 会话强制 editor，
-        // 防止任何非 admin 上下文把账号提权为 admin。
         $requestedRole = $request->input('role', $user->role);
         $newRole = ($requestedRole === 'admin' || $requestedRole === 'editor') ? $requestedRole : 'editor';
         if (Session::get('user_role') !== 'admin' && $newRole === 'admin') {
@@ -97,8 +91,7 @@ class UserController extends Controller
 
         $user->save();
 
-        // MR-38: account edit (esp. role change) must be audited. Never log the
-        // password; only that one was set.
+        // 审计只记录是否改了密码，不记录密码内容。
         \App\Models\AuditLog::record('user_update', [
             'id'       => (int) $user->id,
             'username' => (string) $user->username,
@@ -122,7 +115,6 @@ class UserController extends Controller
         $user->status = $user->status === 'active' ? 'disabled' : 'active';
         $user->save();
 
-        // MR-38: enable/disable an account is sensitive (locks someone out).
         \App\Models\AuditLog::record('user_status', [
             'id'       => (int) $user->id,
             'username' => (string) $user->username,
@@ -138,12 +130,9 @@ class UserController extends Controller
         $user = User::find($id);
 
         if (!$user) {
-            // v1.2.1 fix: JSON was shown as raw page when posted via plain <form>;
-            // use redirect+flash so it always lands back on /admin/users.
             $this->fail('用户不存在。', 404, '/admin/users');
         }
 
-        // Prevent deleting self
         if ((int) $user->id === (int) Session::get('user_id')) {
             $this->fail('不能删除当前登录的账号。', 400, '/admin/users');
         }

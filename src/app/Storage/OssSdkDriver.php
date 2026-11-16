@@ -3,16 +3,6 @@ declare(strict_types=1);
 
 namespace App\Storage;
 
-/**
- * Alibaba Cloud OSS via the OFFICIAL alibabacloud/oss-v2 SDK (sdk/oss).
- *
- * Mirrors CosSdkDriver: every OSS operation is delegated to the official SDK
- * (v2, 0.4.x) instead of the built-in OSS4-HMAC-SHA256 signing in S3Driver.
- * The SDK's runtime dependencies (Guzzle 7, PSR-7, Promises, psr/http-message)
- * are served by sdk/cos/vendor, so no separate vendor tree is needed.
- *
- * If the SDK is missing, S3Driver falls back to the built-in signing.
- */
 class OssSdkDriver implements StorageInterface
 {
     private string $accessKey;
@@ -42,11 +32,6 @@ class OssSdkDriver implements StorageInterface
         $this->signedTtl = max(1, $signedTtl);
     }
 
-    /**
-     * Whether the OSS SDK can be used. Requires the bundled SDK source AND the
-     * shared runtime dependencies (present when the COS SDK vendor exists) plus
-     * the simplexml extension.
-     */
     public static function available(): bool
     {
         static $ok = null;
@@ -67,23 +52,18 @@ class OssSdkDriver implements StorageInterface
             return $this->client;
         }
         $base = dirname(__DIR__, 2) . '/sdk';
-        require_once $base . '/cos/vendor/autoload.php'; // Guzzle / PSR-7 / Promises
-        require_once $base . '/oss/autoload.php';        // AlibabaCloud\Oss\V2\ -> src/
+        require_once $base . '/cos/vendor/autoload.php';
+        require_once $base . '/oss/autoload.php';
 
         $cfg = \AlibabaCloud\Oss\V2\Config::loadDefault();
         $cfg->setCredentialsProvider(
             new \AlibabaCloud\Oss\V2\Credentials\StaticCredentialsProvider($this->accessKey, $this->secretKey)
         );
         $cfg->setRegion($this->region);
-        // MR-20: bound connect/read timeouts (SDK defaults are 10s/20s; tighten
-        // the connect window and keep a 30s read ceiling so a stalled endpoint
-        // fails fast instead of pinning a FPM worker).
+        // 收紧连接与读写超时，避免端点卡死占住 FPM 进程。
         $cfg->setConnectTimeout(5.0);
         $cfg->setReadWriteTimeout(30.0);
-        // v1.2.1: custom source domain bound to the bucket in the OSS console
-        // (CNAME). The SDK then resolves every request host — presigned URLs
-        // included — against that domain instead of the default
-        // {bucket}.oss-{region}.aliyuncs.com.
+        // 自定义源站域名走 CNAME，SDK 解析请求主机（含预签名）时优先用它。
         if ($this->sourceDomain !== '') {
             $cfg->setEndpoint($this->sourceDomain);
             $cfg->setUseCname(true);
@@ -95,8 +75,6 @@ class OssSdkDriver implements StorageInterface
     public function upload(string $localPath, string $remotePath, string $contentType): string
     {
         try {
-            // putObjectFromFile streams the file (LazyOpenStream) and falls back
-            // to guessing ContentType only when the request doesn't set it.
             $request = new \AlibabaCloud\Oss\V2\Models\PutObjectRequest($this->bucket, ltrim($remotePath, '/'));
             $request->contentType = $contentType;
             $this->client()->putObjectFromFile($request, $localPath);
@@ -143,16 +121,13 @@ class OssSdkDriver implements StorageInterface
             return rtrim($this->cdnUrl, '/') . '/' . ltrim($remotePath, '/');
         }
         try {
-            // OSS buckets are private by default — hand back a 7-day presigned
-            // GET so the image actually loads without exposing the key.
             $result = $this->client()->presign(
                 new \AlibabaCloud\Oss\V2\Models\GetObjectRequest($this->bucket, ltrim($remotePath, '/')),
                 ['expires' => new \DateInterval('PT' . $this->signedTtl . 'S')]
             );
             return (string) ($result->url ?? '');
         } catch (\Throwable $e) {
-            // MR-42: 私有 bucket 的裸 URL 必然 403，直接返回等于给出一个必然失效的
-            // 链接（图片仍显示占位符，极难发现）。只有探测确认可匿名读才降级。
+            // 预签名失败时，只有裸 URL 确认可匿名读才降级，否则抛错。
             $host = $this->sourceDomain !== ''
                 ? $this->sourceDomain
                 : "{$this->bucket}.oss-{$this->region}.aliyuncs.com";
@@ -166,12 +141,7 @@ class OssSdkDriver implements StorageInterface
         }
     }
 
-    /**
-     * Real connectivity test used by doctor.php — a live PUT probe.
-     * NOT ListObjects/HeadBucket: bucket-level permission checks 403 for many
-     * image-bucket users even though uploads work. An actual upload probe
-     * mirrors the real operation; the probe object is deleted immediately.
-     */
+    // 用真实 PUT 探测：bucket 级检查常因权限 403，不能代表上传是否可用。
     public function testConnection(): bool
     {
         $key = 'doctor-probe-' . bin2hex(random_bytes(4)) . '.txt';
@@ -189,7 +159,6 @@ class OssSdkDriver implements StorageInterface
             $del = new \AlibabaCloud\Oss\V2\Models\DeleteObjectRequest($this->bucket, $key);
             $this->client()->deleteObject($del);
         } catch (\Throwable) {
-            // ignore
         }
         return $ok;
     }

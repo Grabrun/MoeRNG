@@ -1,10 +1,6 @@
 <?php
-/**
- * Front-site shared footer (v1.3.1 迭代: 前台多页导航拆分).
- * Expects: $siteName, $copyright, $icpNumber, $footerHtml
- */
+/** 前台公共尾；期望变量：$siteName, $copyright, $icpNumber, $footerHtml。 */
 ?>
-    <!-- Footer -->
     <footer class="footer">
             <p><?= h($siteName) ?> <?= h($copyright) ?></p>
             <p class="mt-1">MoeRNG v<?= APP_VERSION ?> &middot; 开源项目（MIT License）</p>

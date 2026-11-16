@@ -1,7 +1,6 @@
 <?php include __DIR__ . '/helpers.php'; admin_header('用户管理'); ?>
 
 <?php
-// v1.2.1 迭代: render flash messages (ok/fail) so deletes/toggles show feedback.
 $success = \App\Core\Session::flash('success');
 $error   = \App\Core\Session::flash('error');
 if ($success): ?>
@@ -77,7 +76,6 @@ if ($success): ?>
     </div>
 </div>
 
-<!-- User Modal -->
 <div class="modal-overlay" id="user-modal">
     <div class="modal">
         <h2 id="user-modal-title">新建用户</h2>

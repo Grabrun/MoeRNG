@@ -1,46 +1,25 @@
-/**
- * MoeRNG — shared helpers (nonce-safe, loaded before app.js).
- *
- * Extracted from inline <script> blocks in views to satisfy CSP
- * script-src 'self' (no 'unsafe-inline').
- */
+// MoeRNG 共享 helpers：在 app.js 之前加载，所有页面（含登录页）都使用。
 
 (function () {
     'use strict';
 
-    // -- Theme detection (FOUT-guard): apply data-theme before paint --
+    // 首帧前应用主题，避免闪烁
     var t = localStorage.getItem('moerng-theme');
     if (!t) { t = 'dark'; }
     document.documentElement.setAttribute('data-theme', t);
 })();
 
-
-// =====================================================================
-// Safe text rendering (shared by front.js tester + app.js API tester)
-// =====================================================================
-// 必须用 textContent 而非 innerHTML：测试器渲染的是服务端响应原文，其中含
-// category 等数据库字段（分类名写入时只 trim、无字符白名单），拼进 innerHTML
-// 即为存储型 XSS —— /tester 无需登录，是最易触达的入口。
-//
-// 样式走 CSS class 而非内联 style 属性：CSP 为 style-src 'self' 'nonce-...'
-// （无 unsafe-inline），经 innerHTML 解析出的 style 属性节点会被**静默丢弃**
-// （不报错），错误提示因此丢失红色高亮。
+// 必须用 textContent：响应原文含分类名等数据库字段，拼进 innerHTML 即存储型 XSS
+// 样式必须走 class：CSP 无 unsafe-inline，innerHTML 解析出的 style 属性会被静默丢弃
 window.renderSafeText = function (container, text, cssClass) {
     if (!container) { return; }
     var pre = document.createElement('pre');
-    pre.textContent = text == null ? '' : String(text);   // 文本节点，不解析 HTML
+    pre.textContent = text == null ? '' : String(text);
     if (cssClass) { pre.className = cssClass; }
-    // 用 textContent = '' 清空而非 replaceChildren()：后者虽已被现代浏览器广泛
-    // 支持，但 click_matrix_test 的最小 DOM shim 未实现它，且 textContent 写法
-    // 与本函数「只用 textContent、不碰 HTML 解析」的语义更一致。
     container.textContent = '';
     container.appendChild(pre);
 };
 
-
-// 共享的 HTML 转义。原先只有 app.js 的 initApiKeys() 内部有一份局部副本
-// （app.js:764），导致 renderHealth() 这类同文件其它函数拿不到它 —— 顺带也是
-// 「同一份逻辑散落多处」的隐患。提升为全局后，各处统一引用这一份。
 window.escapeHtml = function (str) {
     if (str === null || str === undefined) { return ''; }
     return String(str).replace(/[&<>"']/g, function (c) {
@@ -48,15 +27,7 @@ window.escapeHtml = function (str) {
     });
 };
 
-
-// =====================================================================
-// Theme toggle (dark / light), persisted to localStorage('moerng-theme').
-// Lives in helpers.js (loaded on EVERY page, incl. the standalone login
-// page) so the toggle works wherever a .theme-toggle button exists —
-// previously it only worked on app.js pages, breaking the login screen.
-// =====================================================================
-// This mirrors the definitions that used to live only in app.js; app.js
-// still calls initThemeToggle() on DOM ready, which now finds this copy.
+// 定义在 helpers.js，登录页（无 app.js）也能切换主题
 window.toggleTheme = function () {
     var root = document.documentElement;
     var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
@@ -70,24 +41,16 @@ function initThemeToggle() {
     });
 }
 
-// If the login page (which loads helpers.js but NOT app.js) has a toggle,
-// wire it up immediately — no DOM-ready dependency on app.js.
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initThemeToggle);
 } else {
     initThemeToggle();
 }
 
-
-/**
- * v1.2.1 CSP nonce 修复 (V-02): 统一事件委托层。
- * CSP 移除 'unsafe-inline' 后，inline onclick/onchange 属性全部被浏览器拦截，
- * 所有后台交互（modal 开关/编辑按钮/验证码刷新/自动提交等）迁移到 data-* 委托。
- */
+// CSP 移除 unsafe-inline 后内联 onclick 全部失效，统一改为 data-* 事件委托
 (function () {
     'use strict';
 
-    // openModal/closeModal 全局函数（供部分未迁移点兼容）
     if (!window.openModal) {
         window.openModal = function (id) {
             var el = document.getElementById(id);
@@ -101,7 +64,6 @@ if (document.readyState === 'loading') {
         };
     }
 
-    // 委托：data-open-modal / data-close-modal（modal 开关）
     document.addEventListener('click', function (e) {
         var t = e.target.closest('[data-open-modal]');
         if (t) { openModal(t.getAttribute('data-open-modal')); return; }
@@ -113,7 +75,6 @@ if (document.readyState === 'loading') {
         if (t) { var f = t.closest('form'); if (f) f.submit(); return; }
     });
 
-    // 委托：编辑分类按钮（data-edit-category 携带 JSON）
     document.addEventListener('click', function (e) {
         var t = e.target.closest('[data-edit-category]');
         if (!t) return;
@@ -125,7 +86,6 @@ if (document.readyState === 'loading') {
         }
     });
 
-    // 委托：编辑用户按钮（data-edit-user 携带 JSON）
     document.addEventListener('click', function (e) {
         var t = e.target.closest('[data-edit-user]');
         if (!t) return;
@@ -137,7 +97,6 @@ if (document.readyState === 'loading') {
         }
     });
 
-    // 委托：上传图片按钮 / 预览关闭（data-toggle-class="id" + data-class="active"）
     document.addEventListener('click', function (e) {
         var t = e.target.closest('[data-toggle-class]');
         if (!t) return;
@@ -146,14 +105,12 @@ if (document.readyState === 'loading') {
         el.classList.toggle(t.getAttribute('data-class') || 'active');
     });
 
-    // 委托：storage 驱动切换（data-storage-driver-toggle）
     document.addEventListener('change', function (e) {
         var t = e.target.closest('[data-storage-driver-toggle]');
         if (!t) return;
         if (window.toggleStorageFields) window.toggleStorageFields();
     });
 
-    // 委托：确认对话框 — data-confirm（click 型）/ data-confirm-submit（submit 型）
     document.addEventListener('click', function (e) {
         var t = e.target.closest('[data-confirm]');
         if (!t) return;
@@ -173,14 +130,9 @@ if (document.readyState === 'loading') {
     }, true);
 })();
 
-
-/**
- * Nav: active-anchor highlight + mobile-hamburger sync.
- */
 (function () {
     'use strict';
 
-    // Active anchor: clicking a nav link marks it active, clears others.
     var links = document.querySelectorAll('.site-nav-links a');
     links.forEach(function (a) {
         a.addEventListener('click', function () {
@@ -189,7 +141,7 @@ if (document.readyState === 'loading') {
         });
     });
 
-    // Mobile: collapse the native <details> when viewport is small.
+    // 小屏移除 open 让汉堡可展开；桌面需要 open 才显示链接
     var menu = document.querySelector('.site-nav-menu');
     if (!menu) return;
     var sync = function () { menu.removeAttribute('open'); };
@@ -203,18 +155,8 @@ if (document.readyState === 'loading') {
     });
 })();
 
-
-
-/* ============================================================
-   CSP nonce migration: inline scripts from views (V-02 fix)
-   All view-level <script> blocks removed — nonce no longer needed.
-   ============================================================ */
-
-// === Migrated from src/views\admin\settings.php (CSP nonce migration) ===
 (function () {
-    // Group tabs — classList-driven, single source of truth with the
-    // server-rendered `hidden` class (v1.2.1: was style.display, which
-    // drifted from the CSS class and never updated the active tab state).
+    // 用 classList 与视图渲染的 hidden 类保持同一来源
     var tabs = document.querySelectorAll('.settings-tab');
     var groups = document.querySelectorAll('.settings-group');
     tabs.forEach(function (tab) {
@@ -224,7 +166,6 @@ if (document.readyState === 'loading') {
             tabs.forEach(function (t) { t.classList.toggle('btn-primary', t === tab); });
         });
     });
-    // Live field search (filters within the active group)
     var box = document.getElementById('settings-search');
     if (box) {
         box.addEventListener('input', function () {
@@ -237,7 +178,6 @@ if (document.readyState === 'loading') {
             });
         });
     }
-    // Toggle visual state
     document.querySelectorAll('.toggle input[type=checkbox]').forEach(function (cb) {
         cb.addEventListener('change', function () {
             var text = cb.closest('.toggle-wrap').querySelector('.toggle-text');
@@ -245,8 +185,6 @@ if (document.readyState === 'loading') {
         });
     });
 
-    // v1.2.1 UI 深度分析 (UI-04): 未保存修改提示 — 监听当前分组表单内
-    // input/select/textarea 的修改，标记 dirty 并更新保存按钮旁提示。
     (function () {
         var hint = document.getElementById('save-hint');
         if (!hint) return;
@@ -261,11 +199,9 @@ if (document.readyState === 'loading') {
         };
         form.addEventListener('input', mark);
         form.addEventListener('change', mark);
-        // 保存成功后（页面跳转刷新）dirty 自动重置；表单提交时清掉提示避免误导。
         form.addEventListener('submit', function () {
             dirty = false;
         });
-        // 防离开丢失：仅当有修改且非提交时提示
         window.addEventListener('beforeunload', function (e) {
             if (!dirty) return;
             e.preventDefault();
@@ -273,22 +209,18 @@ if (document.readyState === 'loading') {
         });
     })();
 
-    // Logo uploader (AJAX) — v1.2.1: single "上传" button opens the picker,
-    // selecting a file previews it and uploads immediately.
     var csrfMeta = document.querySelector('meta[name="csrf-token"]');
     var csrf = csrfMeta ? csrfMeta.content : '';
     document.querySelectorAll('[data-logo-upload]').forEach(function (btn) {
         var field = btn.dataset.logoUpload;
         var fileInput = document.getElementById('logo-file-' + field);
         var urlInput = document.querySelector('.logo-uploader[data-field="' + field + '"] input[name="' + field + '"]');
-        // Click 上传 → open the file picker
         btn.addEventListener('click', function () {
             fileInput.click();
         });
         fileInput.addEventListener('change', function () {
             var f = fileInput.files[0];
             if (!f) return;
-            // Preview
             var reader = new FileReader();
             reader.onload = function (e) {
                 var img = document.getElementById('logo-preview-' + field);
@@ -298,7 +230,6 @@ if (document.readyState === 'loading') {
                 if (hint) hint.style.display = 'none';
             };
             reader.readAsDataURL(f);
-            // Upload immediately
             var fd = new FormData();
             fd.append('logo_file', f);
             fd.append('_csrf_token', csrf);
@@ -316,7 +247,6 @@ if (document.readyState === 'loading') {
                         img.style.display = 'block';
                         var hint = document.getElementById('logo-default-hint-' + field);
                         if (hint) hint.style.display = 'none';
-                        // A custom logo is now set — ensure the 移除 Logo button exists.
                         var row = btn.closest('.logo-upload-row');
                         if (row && !row.querySelector('[data-logo-remove]')) {
                             var rm = document.createElement('button');
@@ -358,12 +288,6 @@ if (document.readyState === 'loading') {
     document.querySelectorAll('[data-logo-remove]').forEach(bindLogoRemove);
 })();
 
-
-// === Migrated from src/views/admin/users.php (CSP nonce migration) ===
-// v1.3.2 修复: ①editUser 提升为顶层函数（data-edit-user 委托调用 window.editUser，
-// 原先藏在 if 块内依赖遗留提升语义）②「新建用户」清空表单改绑 data-open-modal
-// 按钮（CSP 迁移后 onclick 属性已不存在，旧选择器永远返回 null → TypeError →
-// helpers.js 顶层中断）③绑定加 null 守卫。
 function editUser(id, username, email, role) {
     document.getElementById('user-modal-title').textContent = '编辑用户';
     document.getElementById('user-id').value = id;
@@ -388,13 +312,8 @@ if (document.getElementById('user-modal')) {
     });
 }
 
-
-// === Migrated from src/views\home.php (CSP nonce migration) ===
 var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentElement.setAttribute('data-theme',t);
 
-
-// === Migrated from src/views\home.php (CSP nonce migration) ===
-// v1.1.0-beta.8: nav active state follows the clicked anchor
     (function () {
         var links = document.querySelectorAll('.site-nav-links a');
         links.forEach(function (a) {
@@ -404,9 +323,6 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
             });
         });
     })();
-    // v1.2.1 迭代: collapse the mobile nav on small viewports (the open
-    // attribute is needed on desktop so the native <details> shows the
-    // links — the JS removes it on mobile so the hamburger toggle works).
     (function () {
         var menu = document.querySelector('.site-nav-menu');
         if (!menu) return;
@@ -417,23 +333,17 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
         });
     })();
 
-
-// === Migrated from src/views\admin\login.php (CSP nonce migration) ===
 var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentElement.setAttribute('data-theme',t);
 
-
-// === Migrated from src/views\admin\storage.php (CSP nonce migration) ===
 (function() {
     const table = document.getElementById('profile-table');
-    if (!table) return;  // not the storage admin page — skip
+    if (!table) return;
     const form = document.getElementById('profile-form');
     const modal = document.getElementById('profile-modal');
     const submitBtn = document.getElementById('profile-submit');
     const title = document.getElementById('profile-modal-title');
 
-    // v1.2.0 迭代: per-provider field defs — the S3 form is a single shared
-    // form; fields, labels, placeholders and required marks adapt to the
-    // selected provider. null = field hidden for that provider.
+    // 各 provider 的字段定义：null = 该 provider 隐藏此字段
     const PV_FIELDS = {
         cos:   { key:{l:'SecretId', p:'AKID 开头', r:true}, secret:{l:'SecretKey', p:'', r:true},
                  region:{l:'Region', p:'ap-guangzhou / ap-shanghai…', r:true},
@@ -465,7 +375,6 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
                  cdn:{l:'CDN 加速域名（可选）', p:'https://cdn.example.com', r:false},
                  source_domain:{l:'自定义源站域名（可选）', p:'又拍云控制台绑定域名后填入', r:false},
                  signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false},
-                 // MR-04: CDN Token 防盗链密钥（官方 _upt 签名）；可空=不签名。
                  token_key:{l:'Token 防盗链密钥（可选）', p:'又拍云控制台「防盗链」密钥；留空=不签名', r:false} },
         qiniu: { key:{l:'Access Key', p:'', r:true}, secret:{l:'Secret Key', p:'', r:true},
                  region:{l:'区域（Region）', p:'z0(华东) / z1(华北) / z2(华南) / z3(华东2) / as0(新加坡) / na0(北美)', r:true},
@@ -474,7 +383,7 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
                  source_domain:{l:'自定义源站域名（可选）', p:'七牛控制台绑定域名后填入', r:false},
                  signed_ttl:{l:'签名链接有效期（秒）', p:'300（5 分钟，对象存储预签名/本地临时链接）', r:false} },
     };
-    // MR-12: 凭据类字段 —— 编辑态留空=保留原值（后端按旧 config 补齐），故 update 不做必填校验。
+    // 凭据字段编辑时留空 = 保留原值
     const SECRET_FIELDS = { key: 1, secret: 1, token_key: 1 };
 
     function applyProvider(pv) {
@@ -516,8 +425,6 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
         try { cfg = row ? JSON.parse(row.dataset.config || '{}') : {}; } catch (e) { cfg = {}; }
         document.getElementById('profile-cfg-path').value = cfg.path || '';
         document.getElementById('profile-cfg-cdn-local').value = cfg.cdn || '';
-        // MR-12: 凭据类字段（key/secret/token_key）绝不回填明文 —— data-config 已不含这些键，
-        // 编辑时留空即表示保持原值（后端 update 按旧 config 补齐）。
         document.getElementById('profile-cfg-key').value = '';
         document.getElementById('profile-cfg-secret').value = '';
         document.getElementById('profile-cfg-token-key').value = '';
@@ -531,7 +438,6 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
         document.getElementById('profile-is-default').checked = row ? row.dataset.default === '1' : false;
 
         toggleFields();
-        // MR-12: 编辑态给凭据框加「留空则保持原值」提示（新建态用 provider 默认占位）。
         if (mode === 'update') {
             document.getElementById('profile-cfg-key').placeholder = '留空则保持原值';
             document.getElementById('profile-cfg-secret').placeholder = '留空则保持原值';
@@ -549,12 +455,10 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
     submitBtn.addEventListener('click', async function() {
         const id = document.getElementById('profile-id').value;
         const mode = id ? 'update' : 'create';
-        // v1.2.0 迭代: local uses its own field id (the s3 one is hidden when
-        // driver=local, so reading it would pick the wrong input).
+        // local 用自己的 ttl / cdn 输入：driver=local 时 s3 那组是隐藏的
         const _ttlEl = document.getElementById('profile-driver').value === 's3'
             ? document.getElementById('profile-cfg-signed-ttl')
             : document.getElementById('profile-cfg-signed-ttl-local');
-        // v1.2.1 迭代: local keeps its own CDN input too (same pattern as ttl).
         const _cdnEl = document.getElementById('profile-driver').value === 's3'
             ? document.getElementById('profile-cfg-cdn')
             : document.getElementById('profile-cfg-cdn-local');
@@ -576,13 +480,10 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
             is_default: document.getElementById('profile-is-default').checked ? '1' : '0'
         };
         if (!payload.name) { showToast('请填写实例名称', 'error'); return; }
-        // v1.2.0 迭代: required fields follow the provider (PV_FIELDS) —
-        // UPYUN has no region, OBS requires endpoint instead of region, etc.
         if (payload.driver === 's3') {
             const def = PV_FIELDS[payload.provider] || PV_FIELDS.cos;
             const miss = [];
             for (const f in def) {
-                // MR-12: update 态凭据留空=保留原值，不纳入必填缺失校验。
                 if (mode === 'update' && SECRET_FIELDS[f]) continue;
                 if (def[f] && def[f].r && !(payload['cfg_' + f] || '').trim()) {
                     miss.push(def[f].l);
@@ -598,7 +499,6 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
             const result = await adminPost('/admin/storage/profiles/' + mode, payload);
             modal.classList.remove('active');
             showToast(result.message, 'success');
-            // Full reload keeps the table + current-effective card in sync.
             setTimeout(() => window.location.reload(), 500);
         } catch (err) {
             showToast(err.message, 'error');
@@ -634,8 +534,6 @@ var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentEle
     });
 })();
 
-
-// === Migrated from src/views\admin\categories.php (CSP nonce migration) ===
 if (document.getElementById('category-modal')) {
 function editCategory(id, name, slug, desc, parentId, sort) {
     document.getElementById('category-modal-title').textContent = '编辑分类';
@@ -649,8 +547,6 @@ function editCategory(id, name, slug, desc, parentId, sort) {
     document.getElementById('category-modal').classList.add('active');
 }
 
-// Reset form for new category
-// v1.3.2 修复: 改绑 data-open-modal（CSP 迁移后 onclick 属性已不存在）+ null 守卫
 var newCatBtn = document.querySelector('[data-open-modal="category-modal"]');
 if (newCatBtn) newCatBtn.addEventListener('click', function() {
     document.getElementById('category-modal-title').textContent = '新建分类';
@@ -664,12 +560,8 @@ if (newCatBtn) newCatBtn.addEventListener('click', function() {
 });
 }
 
-
-// === Migrated from src/views\admin\helpers.php (CSP nonce migration) ===
 var t=localStorage.getItem('moerng-theme');if(!t){t='dark';}document.documentElement.setAttribute('data-theme',t);
 
-
-// === Migrated from src/views\install\step4.php (CSP nonce migration) ===
 function toggleStorageFields() {
         const val = document.getElementById('storage-driver-select').value;
         document.getElementById('local-fields').classList.toggle('hidden', val !== 'local');

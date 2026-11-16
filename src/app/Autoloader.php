@@ -3,31 +3,15 @@ declare(strict_types=1);
 
 namespace App;
 
-/**
- * PSR-4 compliant autoloader.
- *
- * Fix history:
- *  - v1.0.1: register() now maps the root namespace ("App\") to the given base
- *            directory. Previously no prefix was ever registered, so every class
- *            fell through to a broken fallback that produced app/App/Core/Xxx.php
- *            instead of app/Core/Xxx.php, causing "Class not found" fatals.
- */
 final class Autoloader
 {
-    /** @var array<string, list<string>> prefix => list of base directories */
     private static array $prefixes = [];
 
     private static bool $registered = false;
 
-    /** @var list<string> attempted paths, populated only in debug mode */
+    /** 仅调试模式下记录尝试过的路径 */
     private static array $trace = [];
 
-    /**
-     * Register the autoloader and map the root namespace to $appPath.
-     *
-     * @param string $appPath       Absolute path to the directory holding App\ classes
-     * @param string $rootNamespace Root namespace, defaults to "App"
-     */
     public static function register(string $appPath, string $rootNamespace = 'App'): void
     {
         self::addNamespace($rootNamespace, $appPath);
@@ -38,10 +22,6 @@ final class Autoloader
         }
     }
 
-    /**
-     * Map a namespace prefix to a base directory. Multiple directories per
-     * prefix are supported and searched in registration order.
-     */
     public static function addNamespace(string $prefix, string $baseDir, bool $prepend = false): void
     {
         $prefix  = trim($prefix, '\\') . '\\';
@@ -60,16 +40,12 @@ final class Autoloader
         }
     }
 
-    /**
-     * Resolve and load a class. Returns the loaded file path, or false when the
-     * class does not belong to any registered prefix (other autoloaders may handle it).
-     */
     public static function load(string $class): string|false
     {
         $class = ltrim($class, '\\');
         $prefix = $class;
 
-        // Walk the namespace from the most specific prefix down to the root.
+        // 从最具体的前缀向根命名空间逐级回退。
         while (false !== $pos = strrpos($prefix, '\\')) {
             $prefix   = substr($class, 0, $pos + 1);
             $relative = substr($class, $pos + 1);
@@ -98,9 +74,7 @@ final class Autoloader
             }
 
             if (is_file($file)) {
-                // require_once: load() may be invoked more than once for the
-                // same class (e.g. a diagnostic tool probing the autoloader).
-                // A plain require would redeclare the class and fatal.
+                // 同一类可能被重复触发 autoload，普通 require 会重声明类导致致命错误。
                 require_once $file;
                 return $file;
             }
@@ -113,10 +87,7 @@ final class Autoloader
         return false;
     }
 
-    /**
-     * On case-sensitive filesystems (Linux) a wrong-cased directory or filename
-     * silently fails. Surface it explicitly instead of a bare "Class not found".
-     */
+    /** 大小写敏感文件系统上文件名大小写不符会静默失败，这里显式告警。 */
     private static function warnCaseMismatch(string $expected): void
     {
         $dir  = dirname($expected);
@@ -142,7 +113,6 @@ final class Autoloader
         return defined('MOERNG_DEBUG_AUTOLOAD') && constant('MOERNG_DEBUG_AUTOLOAD');
     }
 
-    /** @return array<string, list<string>> */
     public static function registeredPrefixes(): array
     {
         return self::$prefixes;

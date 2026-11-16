@@ -10,12 +10,7 @@ class ApiKey extends Model
 {
     protected static string $table = 'api_keys';
 
-    /**
-     * `permissions` 是预留字段，当前**不参与鉴权** —— ApiKeyAuthMiddleware 只校验
-     * Key 有效且 status='active'。/api/v1/* 现全为只读端点，故暂无实际越权面。
-     * ⚠️ 一旦新增任何写端点，必须同时实现权限校验，否则这个「已配好的权限系统」
-     * 会给人虚假的安全感。后台表单已就此给出提示。
-     */
+    // permissions 是预留字段，当前不参与鉴权；加写端点时必须同步实现权限校验。
     protected static array $fillable = [
         'name', 'key_hash', 'key_prefix', 'permissions', 'rate_limit', 'rate_window', 'status'
     ];
@@ -25,10 +20,7 @@ class ApiKey extends Model
         return 'mr_' . bin2hex(random_bytes(24));
     }
 
-    /**
-     * SHA-256 of a plaintext key — the only form ever stored/looked up.
-     * Same one-way pattern as User::makeRememberToken() (users.remember_token).
-     */
+    /** 只存 SHA-256 哈希，查库也只按哈希查。 */
     public static function hashKey(string $key): string
     {
         return hash('sha256', $key);
@@ -36,7 +28,6 @@ class ApiKey extends Model
 
     public static function findByKey(string $key): ?self
     {
-        // MR-03: never look the plaintext up — the DB only holds its hash.
         return self::firstWhere('key_hash', self::hashKey($key));
     }
 

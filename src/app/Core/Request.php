@@ -13,8 +13,7 @@ class Request
     public readonly array $headers;
     public readonly string $ip;
 
-    /** Authenticated admin user, set by AuthMiddleware (PHP 8.4+ requires
-     *  declared properties — assigning it dynamically is deprecated). */
+    /** 由 AuthMiddleware 注入的当前管理员（PHP 8.4 起必须声明属性，不能动态赋值）。 */
     public $user = null;
 
     public function __construct(
@@ -36,11 +35,7 @@ class Request
 
     private function resolveIp(): string
     {
-        // v1.2.1 security: NEVER trust the client-supplied X-Forwarded-For —
-        // attackers can rotate it to defeat IP-based rate limiting / login
-        // lockout. The real client address is REMOTE_ADDR only (a reverse
-        // proxy layer is responsible for overwriting REMOTE_ADDR with the
-        // true peer when one is deployed).
+        // 不信任客户端 X-Forwarded-For（可伪造绕过限流/锁定）；真实地址只取 REMOTE_ADDR。
         return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     }
 
