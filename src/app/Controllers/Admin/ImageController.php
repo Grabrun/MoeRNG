@@ -2526,7 +2526,7 @@ class ImageController extends Controller
         $profileId = (int) $profile->id;
         $uploaded = 0;
         $errors = [];
-        // v1.3.1 迭代: 内容级重复检测 —— MD5 内容哈希比对（批内 + 数据库）。
+        // 内容级重复检测（批内 + 数据库）：SHA-256 为准，MD5 仅作旧行兜底。
         // 字节在服务器手上，哈希由服务端计算，天然权威、不可被前端伪造。
         // 重复图片跳过不存储，汇总提示，不影响其余文件继续上传。
         $duplicates = [];
@@ -2579,62 +2579,88 @@ class ImageController extends Controller
                 continue;
             }
 
-            // v1.5.0-beta.1: 原图统一转 WebP（可在「系统设置 → 图片与存储」关闭）。
+            // —— 哈希：源字节（上传原样）与落盘字节（转码后）**各算一套** ——
             //
-            // 位置很关键 —— 必须在**计算哈希之前**：记录的 file_hash/file_sha256 要
-            // 描述**实际存进存储的字节**，否则与「哈希回填」重算出来的值不一致，去重
-            // 也会跟着失效。转换失败/不划算时不阻断上传，保持原格式（见 convertOriginalToWebp）。
+            // 为什么两套都要：原图会被转成 WebP，而两类历史行各自只对得上其中一套 ——
+            //   • 转码功能上线前的行：file_hash/file_sha256 记的是**上传字节**（那时不转码）；
+            //   • 转码上线后的行：记的是**落盘字节**（WebP）。
+            // 只查一套，另一类永远判不出重复 —— 现场表现就是「同一张图，下一批不去重」。
+            // 顺带也免疫「转换策略变化」（开关、质量、内存预算、libwebp 版本）导致的
+            // 哈希漂移：源字节哈希是稳定的，永远对得上。
+            $srcMd5 = @hash_file('md5', $tmpName);
+            $srcSha = @hash_file('sha256', $tmpName);
+
+            // v1.5.0-beta.1: 原图统一转 WebP（可在「系统设置 → 图片与存储」关闭）。
+            // 转换失败/不划算时不阻断上传，保持原格式（见 convertOriginalToWebp）。
             $conv = $this->convertOriginalToWebp($tmpName, $detectedMime);
             if ($conv['ok']) {
                 $ext = 'webp';
                 $detectedMime = 'image/webp';
+                clearstatcache(true, $tmpName);
                 $fileSize = (int) @filesize($tmpName);
             }
 
-            // v1.3.2 迭代: 分层校验去重 —— MD5 快速初筛 + SHA-256 二次确认。
-            // MD5 命中疑似重复后再用强哈希确定性判重，消除 MD5 碰撞伪重复。
-            // 字节在服务器手上，哈希全部服务端计算，天然权威、不可被前端伪造。
-            $md5 = @hash_file('md5', $tmpName);
-            $sha256 = @hash_file('sha256', $tmpName);
-            $fileHash = ($md5 !== false && $md5 !== '') ? $md5 : null;
-            $fileSha256 = ($sha256 !== false && $sha256 !== '') ? $sha256 : null;
+            // 落盘哈希：转码后重算；未转码时与源字节相同，直接复用（省一次读盘）。
+            $dstMd5 = $conv['ok'] ? @hash_file('md5', $tmpName) : $srcMd5;
+            $dstSha = $conv['ok'] ? @hash_file('sha256', $tmpName) : $srcSha;
 
-            if ($fileHash !== null && $fileSha256 !== null) {
-                // ① 批内初筛（MD5，快）
-                if (isset($batchHashes[$fileHash])) {
-                    // 批内命中 —— 同批同文件必然同内容，直接判定重复。
-                    // 但为严谨，仍用 SHA-256 复核（两个不同文件同 MD5 的
-                    // 理论场景），确认一致才算重复。
-                    $batch = $batchHashes[$fileHash];
-                    if ($batch['sha256'] === $fileSha256) {
-                        $duplicates[] = "{$originalName}：与本批次中「{$batch['name']}」重复，已跳过";
-                        continue;
-                    }
-                    // 罕见：同 MD5 不同内容（碰撞）—— 不判重，按新图继续。
+            // 入库用**落盘字节**哈希（与「哈希回填」「转换历史原图」重算的口径一致）。
+            $fileHash = ($dstMd5 !== false && $dstMd5 !== '') ? $dstMd5 : null;
+            $fileSha256 = ($dstSha !== false && $dstSha !== '') ? $dstSha : null;
+            // 判重时两套都查（见上方说明）。
+            $srcHash = ($srcMd5 !== false && $srcMd5 !== '') ? $srcMd5 : null;
+            $srcSha256 = ($srcSha !== false && $srcSha !== '') ? $srcSha : null;
+
+            if ($fileSha256 !== null || $srcSha256 !== null) {
+                // 候选集：落盘字节（file_sha256 的口径）+ 源字节（旧行与转码前的口径）
+                $shaCands = array_values(array_unique(array_filter([$fileSha256, $srcSha256])));
+                $md5Cands = array_values(array_unique(array_filter([$fileHash, $srcHash])));
+
+                // ① 批内初筛：用源字节强哈希（同批同文件必然同源字节）。
+                $batchKey = $srcSha256 ?? $fileSha256;
+                if (isset($batchHashes[$batchKey])) {
+                    $duplicates[] = "{$originalName}：与本批次中「{$batchHashes[$batchKey]}」重复，已跳过";
+                    continue;
                 }
 
-                // ② 库内初筛（MD5，走索引）
-                $existing = Image::firstWhere('file_hash', $fileHash);
+                // ② 库内查找：先比强哈希（两套候选都试），再退到 MD5 兼容旧行。
+                // 不能只查 file_hash：它是 CHAR(64) 却只存 32 位 MD5，CHAR 右补空格，
+                // 裸比较是否忽略尾空格取决于排序规则与 sql_mode —— 一旦不忽略就
+                // **永远命中不了**，去重静默失效（上传照常成功、没有任何报错）。
+                $existing = Image::findByContentHash($shaCands, []);
+                $matchedByMd5 = false;
+                if ($existing === null && $md5Cands !== []) {
+                    $existing = Image::findByContentHash([], $md5Cands);
+                    $matchedByMd5 = $existing !== null;
+                }
+
                 if ($existing !== null) {
-                    // ③ 二次确认（SHA-256）：库内已有强哈希则直接比，零流量。
-                    if ($existing->file_sha256 !== null && $existing->file_sha256 !== '') {
-                        if ($existing->file_sha256 === $fileSha256) {
-                            $duplicates[] = "{$originalName}：与已有图片「{$existing->original_name}」重复，已跳过";
-                            continue;
-                        }
-                        // MD5 命中但 SHA-256 不符 → 互不重复，放行（防碰撞误杀）。
-                    } else {
-                        // 库内旧记录无强哈希 —— 从存储补算（仅疑似、存量少，低频）。
-                        $archivedSha = $storage->hashFile($existing->path);
-                        if ($archivedSha !== null && $archivedSha === $fileSha256) {
-                            $duplicates[] = "{$originalName}：与已有图片「{$existing->original_name}」重复，已跳过";
-                            continue;
+                    $existingSha = trim((string) $existing->file_sha256);
+                    if ($matchedByMd5) {
+                        if ($existingSha === '') {
+                            // 旧行没有强哈希 —— MD5 命中即视为重复，并把本次算出的
+                            // 强哈希回填，下次就是确定性判定。
+                            try {
+                                \App\Core\Database::getInstance()
+                                    ->prepare("UPDATE `images` SET `file_sha256` = ? WHERE `id` = ?")
+                                    ->execute([$fileSha256 ?? $srcSha256, (int) $existing->id]);
+                            } catch (\Throwable) {
+                                // 回填失败不影响判定
+                            }
+                        } elseif (!in_array($existingSha, $shaCands, true)) {
+                            // MD5 命中但强哈希不等 → 只是碰撞，放行（不误杀）。
+                            $existing = null;
                         }
                     }
                 }
 
-                // 记录批内（存 MD5 + SHA-256 供后续同批比对）
-                $batchHashes[$fileHash] = ['name' => $originalName, 'sha256' => $fileSha256];
+                if ($existing !== null) {
+                    $duplicates[] = "{$originalName}：与已有图片「{$existing->original_name}」重复，已跳过";
+                    continue;
+                }
+
+                // 记录批内（供后续同批比对）
+                $batchHashes[$batchKey] = $originalName;
             }
 
             // v1.5.0-beta.1: 新上传走统一布局（方案 A，资产为中心）——

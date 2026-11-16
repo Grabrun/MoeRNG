@@ -113,6 +113,61 @@ class Image extends Model
         return null;
     }
 
+    /**
+     * 按内容哈希找已存在的记录 —— **上传去重的唯一入口**。
+     *
+     * 参数可以给多组候选值，命中任意一个即算重复。上传路径会同时传「上传字节」
+     * 与「落盘字节」两套哈希，原因见 ImageController::upload 的注释：
+     * 原图会被转成 WebP，两类历史行各自只对得上其中一套。
+     *
+     * 顺序：先比 `file_sha256`（64 位定长），再比 `file_hash`（32 位 MD5，兼容还没
+     * 回填强哈希的旧行）。
+     *
+     * 为什么需要 TRIM 兜底：`file_hash` 是 CHAR(64) 却只存 32 位 MD5。CHAR 会右补
+     * 空格，而"比较时是否忽略尾空格"取决于列的排序规则（PAD SPACE / NO PAD）与
+     * sql_mode 的 PAD_CHAR_TO_FULL_LENGTH —— 任一处对不上，`file_hash = ?` 就
+     * **永远命中不了**：上传照常成功、界面上也没有任何异常，只是每次都被当成新图
+     * （去重静默失效）。SHA-256 是定长 64，两边都对齐，所以拿它当主判据。
+     *
+     * 快路径走裸比较（能吃到索引）；只有 MD5 这一步未命中时才退到 TRIM（全表扫，
+     * 但表通常只有千级行，且只发生在"疑似新图"时）。
+     *
+     * @param string[] $sha256Candidates 强哈希候选（去空）
+     * @param string[] $md5Candidates    MD5 候选（去空）
+     */
+    public static function findByContentHash(array $sha256Candidates, array $md5Candidates): ?static
+    {
+        $db = Database::getInstance();
+        $probe = static function (string $col, string $val, bool $allowTrim) use ($db): ?array {
+            $stmt = $db->prepare("SELECT * FROM `images` WHERE `{$col}` = ? LIMIT 1");
+            $stmt->execute([$val]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if ($row === false && $allowTrim) {
+                $stmt = $db->prepare("SELECT * FROM `images` WHERE TRIM(`{$col}`) = ? LIMIT 1");
+                $stmt->execute([$val]);
+                $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            }
+            return $row === false ? null : $row;
+        };
+
+        // file_sha256 定长 64，无需 TRIM（真要补空格也是补满 64，比较仍成立）。
+        foreach ($sha256Candidates as $sha) {
+            if ($sha === '') continue;
+            $row = $probe('file_sha256', $sha, false);
+            if ($row !== null) {
+                return static::hydrate($row);
+            }
+        }
+        foreach ($md5Candidates as $md5) {
+            if ($md5 === '') continue;
+            $row = $probe('file_hash', $md5, true);
+            if ($row !== null) {
+                return static::hydrate($row);
+            }
+        }
+        return null;
+    }
+
     /** 新布局下的原图相对路径（上传时调用；目录名用随机串，扩展名保留）。 */
     public static function newAssetPath(string $ext): string
     {

@@ -1872,7 +1872,7 @@ function renderHealth(checks) {
     const badge = function(ok) { return '<span class="' + (ok ? 'health-ok' : 'health-bad') + '">' + (ok ? '[ OK ]' : '[待修复]') + '</span>'; };
     healthResults.innerHTML = Object.keys(checks).map(function(k) {
         const c = checks[k];
-        const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', image_queue: '图片处理队列', thumb_backfill: '历史缩略图', hash_backfill: '历史图片哈希' };
+        const labels = { schema: '数据库结构完整性', orphan_settings: '遗留设置行', image_queue: '图片处理队列', thumb_backfill: '历史缩略图', hash_backfill: '历史图片哈希', dedupe_key: '上传去重判据' };
         // 修复：c.detail 服务端拼接了 $e->getMessage()（PDO 异常文本，含库/表/字段名），
         // 原样拼进 innerHTML 未转义。这里补 escapeHtml —— 与同文件其它 innerHTML 用法
         // （item.name / item.status 均走 escapeHtml）保持一致。

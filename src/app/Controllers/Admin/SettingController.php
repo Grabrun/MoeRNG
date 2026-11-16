@@ -678,6 +678,59 @@ class SettingController extends Controller
             $checks['hash_backfill'] = ['ok' => true, 'detail' => '统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
+        // —— 去重判据自检 ——
+        // 拿一行真实存在的哈希回查，验证「按哈希能找到自己」。这是去重能否生效的
+        // 唯一硬指标：查不到自己 = 上传去重必然静默失效（上传照样成功、界面无报错，
+        // 只是每张都被当成新图）。CHAR 右补空格 / 排序规则 NO PAD / sql_mode 的
+        // PAD_CHAR_TO_FULL_LENGTH 任一处不合都会这样，且从代码上完全看不出来。
+        try {
+            $sample = $pdo->query(
+                "SELECT `id`, `file_hash`, `file_sha256` FROM `images`"
+                . " WHERE TRIM(COALESCE(`file_sha256`, '')) <> '' ORDER BY `id` DESC LIMIT 1"
+            )->fetch(\PDO::FETCH_ASSOC) ?: null;
+
+            $probe = static function (\PDO $pdo, string $col, string $val): bool {
+                $st = $pdo->prepare("SELECT `id` FROM `images` WHERE `{$col}` = ? LIMIT 1");
+                $st->execute([$val]);
+                return $st->fetchColumn() !== false;
+            };
+
+            $shaHit = $md5Hit = null;
+            if ($sample !== null) {
+                $shaHit = $probe($pdo, 'file_sha256', trim((string) $sample['file_sha256']));
+                $md5v = trim((string) $sample['file_hash']);
+                if ($md5v !== '') {
+                    $md5Hit = $probe($pdo, 'file_hash', $md5v);
+                }
+            }
+
+            // 同一内容的重复记录（按强哈希分组）——有就说明历史上漏判过
+            $dupGroups = (int) $pdo->query(
+                "SELECT COUNT(*) FROM ("
+                . "SELECT `file_sha256` FROM `images`"
+                . " WHERE TRIM(COALESCE(`file_sha256`, '')) <> ''"
+                . " GROUP BY `file_sha256` HAVING COUNT(*) > 1"
+                . ") t"
+            )->fetchColumn();
+
+            $bad = [];
+            if ($shaHit === false) $bad[] = 'file_sha256 回查不到自己';
+            if ($md5Hit === false) $bad[] = 'file_hash 回查不到自己（CHAR 尾空格问题）';
+
+            $checks['dedupe_key'] = [
+                'ok' => $bad === [] && $dupGroups === 0,
+                'detail' => $bad !== []
+                    ? '去重判据失效: ' . implode('；', $bad) . ' —— 上传的重复图片不会被拦截'
+                    : ($dupGroups > 0
+                        ? "去重判据正常，但库内已有 {$dupGroups} 组内容完全相同的记录（历史漏判，需自行清理）"
+                        : '去重判据正常，库内无重复内容' . ($shaHit === null ? '（暂无可校验样本）' : '')),
+                'fixable' => false,
+                'extra' => ['sha_hit' => $shaHit, 'md5_hit' => $md5Hit, 'dup_groups' => $dupGroups],
+            ];
+        } catch (\Throwable $e) {
+            $checks['dedupe_key'] = ['ok' => true, 'detail' => '去重自检失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
+        }
+
         return $checks;
     }
 
