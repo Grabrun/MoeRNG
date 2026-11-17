@@ -25,34 +25,6 @@ try {
     exit(1);
 }
 
-$default = StorageProfile::defaultProfile();
-$all     = StorageProfile::all('sort_order ASC, id ASC');
-
-$localProfiles = [];
-$byProvider    = [];
-foreach ($all as $p) {
-    if (!$p->isEnabled()) {
-        continue;
-    }
-    if ($p->isS3()) {
-        $byProvider[(string) $p->provider][] = $p;
-    } else {
-        $localProfiles[] = $p;
-    }
-}
-
-$pick = static function (array $cands) use ($default): ?StorageProfile {
-    if ($cands === []) {
-        return null;
-    }
-    foreach ($cands as $c) {
-        if ($default !== null && (int) $c->id === (int) $default->id) {
-            return $c;
-        }
-    }
-    return $cands[0];
-};
-
 $rows = $pdo->query(
     "SELECT `id`, `path`, `storage`, `storage_provider` FROM `images` "
     . "WHERE `storage_profile_id` IS NULL ORDER BY `id` ASC"
@@ -63,10 +35,10 @@ $unmatched = [];
 
 foreach ($rows as $r) {
     $id     = (int) $r['id'];
-    $isS3   = (string) ($r['storage'] ?? 'local') === 's3';
-    $target = $isS3
-        ? $pick($byProvider[(string) ($r['storage_provider'] ?? '')] ?? [])
-        : $pick($localProfiles);
+    $target = StorageProfile::resolveLegacy(
+        (string) ($r['storage'] ?? 'local'),
+        (string) ($r['storage_provider'] ?? '')
+    );
 
     if ($target === null) {
         $unmatched[] = $r;

@@ -96,61 +96,12 @@ class RateLimitMiddleware
         if (self::$rateLimitTableReady) {
             return;
         }
-        $pdo = Database::getInstance();
         try {
-            $pdo->query('SELECT 1 FROM rate_limits LIMIT 1');
-            // 存量表可能只有普通索引，缺唯一键会让 upsert 退化为纯 INSERT（限流失效、表膨胀）。
-            $this->ensureUniqueCounterIndex($pdo);
-            self::$rateLimitTableReady = true;
-            return;
+            $pdo = Database::getInstance();
+            $err = \App\Core\Application::ensureRateLimitTable($pdo);
+            // 唯一键补齐失败时不重复尝试（每请求做一次去重 DELETE 比退化更糟）；表本身在就继续。
+            self::$rateLimitTableReady = $err === '' || $pdo->query('SELECT 1 FROM rate_limits LIMIT 1') !== false;
         } catch (\Throwable) {
-        }
-        try {
-            $pdo->exec("
-                CREATE TABLE IF NOT EXISTS rate_limits (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    identifier VARCHAR(64) NOT NULL,
-                    window_key VARCHAR(64) NOT NULL,
-                    request_count INT NOT NULL DEFAULT 0,
-                    expires_at INT NOT NULL,
-                    created_at INT NOT NULL,
-                    updated_at INT NOT NULL,
-                    UNIQUE KEY uq_ident_window (identifier, window_key),
-                    INDEX idx_expires (expires_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ");
-            self::$rateLimitTableReady = true;
-        } catch (\Throwable) {
-        }
-    }
-
-    /** 为存量表补 UNIQUE 键：先去重再加键，否则 ADD UNIQUE 必然失败。 */
-    private function ensureUniqueCounterIndex(\PDO $pdo): void
-    {
-        try {
-            $rows = $pdo->query('SHOW INDEX FROM `rate_limits`')->fetchAll(\PDO::FETCH_ASSOC);
-            foreach ($rows as $row) {
-                if (($row['Key_name'] ?? '') === 'uq_ident_window'
-                    && (int) ($row['Non_unique'] ?? 1) === 0) {
-                    return;
-                }
-            }
-
-            $pdo->exec(
-                'DELETE t1 FROM `rate_limits` t1 '
-                . 'INNER JOIN `rate_limits` t2 '
-                . 'ON t1.`identifier` = t2.`identifier` '
-                . 'AND t1.`window_key` = t2.`window_key` '
-                . 'AND t1.`expires_at` < t2.`expires_at`'
-            );
-
-            $pdo->exec('ALTER TABLE `rate_limits` ADD UNIQUE KEY `uq_ident_window` (`identifier`, `window_key`)');
-        } catch (\Throwable $e) {
-            // 1061 = 键已存在（幂等）；其它失败仅记录，不中断请求。
-            $code = (int) ($e->errorInfo[1] ?? 0);
-            if ($code !== 1061) {
-                error_log('[MoeRNG] rate_limits 唯一键补齐失败（限流可能退化为弱语义）: ' . $e->getMessage());
-            }
         }
     }
 }

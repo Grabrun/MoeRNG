@@ -33,8 +33,42 @@ NO PAD 下裸比较永不命中。
   表缺失可一键重建；`doctor.php` 增加该表的存在性检查。
 - 新增 `php src/cli/backfill-content-hashes.php [--apply] [--limit=N]`（默认干跑）。
 
-**兼容**：MD5 降级为「尚未回填索引的老数据」兜底，命中即补写索引；`images.file_hash` 暂时继续写入，
-等本期回填覆盖全库后再删列（二期）。
+**兼容**：索引未覆盖的历史行按 `file_sha256` 列兜底一次（只比 SHA-256，不碰 MD5），命中即补写索引。
+
+### MD5 退役与一次性迁移脚本
+
+**为什么不只是删一处判重**：MD5 曾同时出现在写入、判重兜底、哈希回填、健康检查、`schema.sql`、
+`schemaExpectations()` 六处，任何一处漏改都会让「判重看起来正常但静默失效」。
+
+**运行时彻底不再出现 MD5**：
+
+- `images.file_hash` 从 `$fillable`、`schema.sql`、`schemaExpectations()` 中移除；
+- `Image::findByContentHash()`（含 `TRIM()` 尾空格兜底）删除，替换为只按强哈希查的 `findBySha256()`；
+- 上传、历史原图转码、哈希回填都不再计算或写入 MD5；
+- 限流键、又拍云签名里的 `md5()` 与图片内容无关，保持不变。
+
+**`php src/cli/migrate-to-latest.php`：一次性迁移到当前架构**（默认干跑，`--apply` 才写）：
+
+| 阶段 | 做什么 |
+|---|---|
+| 1 | 表 / 列 / 索引 / `status` 死值收敛 —— 直接调 `Application::migrateSchema()`，与运行时同一处实现 |
+| 2 | `storage_profile_id` 按旧 `storage`/`storage_provider` 推断回填、清空历史 `url` |
+| 3 | 补 `file_sha256` 并写入 `content_hashes`（列内已有则跳过回源） |
+| 4 | 清理悬空索引与超时占位 |
+| 5 | 门禁：仍有图片读不到字节时拒绝删列（`--force` 才越过） |
+| 6 | 导出 MD5 映射到 `storage/backups/images-md5-<ts>.jsonl` |
+| 7 | `DROP INDEX idx_file_hash` → `DROP COLUMN file_hash`（限 `lock_wait_timeout=10`） |
+| 8 | 写 `settings.schema_version`，运行时启动不再重跑迁移 |
+| 9 | 终态校验：表 / 列 / 索引 / 归属 / url / status / 索引覆盖率逐项核对 |
+
+- 幂等：每个阶段都可重复执行；列已删时只报告不重复 `ALTER`。
+- 分批：`--limit=N` 限制本次回源张数；`--skip-remote` 不下载云端对象。
+- 不再各自一套：限流表建表逻辑收敛到 `Application::ensureRateLimitTable()`，
+  存储归属推断收敛到 `StorageProfile::resolveLegacy()`，`migrate-legacy-refs.php` 同步改为调用它。
+- API Key 明文迁移仍由 `migrate-apikey-hash.php` 单独执行（需要分发新 Key，不适合与通用迁移混跑），
+  通用脚本只在终态校验里提示。
+
+**升级顺序（重要）**：先覆盖部署新代码，再跑迁移 —— 旧代码带 `WHERE file_hash = ?`，删列后会报错。
 
 ## [2.0.0-beta.19] - 2026-11-17
 

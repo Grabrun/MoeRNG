@@ -447,24 +447,23 @@ class ImageController extends Controller
      *
      * @return array{sha256:?string, md5:?string}
      */
-    private function hashFileBoth(string $file): array
+    private function sha256File(string $file): ?string
     {
-        $sha = hash_init('sha256');
-        $md5 = hash_init('md5');
+        $hash = hash_init('sha256');
         $fh = @fopen($file, 'rb');
         if ($fh === false) {
-            return ['sha256' => null, 'md5' => null];
+            return null;
         }
         while (!feof($fh)) {
             $chunk = fread($fh, 1048576);
             if ($chunk === false) {
                 break;
             }
-            hash_update($sha, $chunk);
-            hash_update($md5, $chunk);
+            hash_update($hash, $chunk);
         }
         fclose($fh);
-        return ['sha256' => hash_final($sha), 'md5' => hash_final($md5)];
+        $digest = hash_final($hash);
+        return $digest === '' ? null : $digest;
     }
 
     /**
@@ -535,27 +534,24 @@ class ImageController extends Controller
     }
 
     /**
-     * 老数据兜底：索引尚未回填时用 MD5 匹配，命中即把哈希补写进索引。
-     *
-     * @param string[] $md5Candidates
+     * 索引未覆盖的历史行兜底：按 file_sha256 列再查一次，命中即把哈希补写进索引。
+     * 只比 SHA-256 —— MD5 已从数据模型退役，无法也不该与强哈希混比。
      */
-    private function legacyDuplicate(array $md5Candidates, string $srcSha256, string $dstSha256): ?Image
+    private function legacyDuplicateBySha(string $srcSha256, string $dstSha256): ?Image
     {
-        if ($md5Candidates === []) {
-            return null;
-        }
-        $hit = Image::findByContentHash([], $md5Candidates);
+        $hit = Image::findBySha256(array_values(array_unique(array_filter([$srcSha256, $dstSha256]))));
         if ($hit === null) {
             return null;
         }
-        try {
-            $known = trim((string) $hit->file_sha256);
-            if ($known !== '') {
-                ContentHash::record((int) $hit->id, [$known === $dstSha256 ? ContentHash::KIND_STORED : ContentHash::KIND_SOURCE => $known]);
-            } else {
-                ContentHash::record((int) $hit->id, [ContentHash::KIND_SOURCE => $srcSha256]);
+        $known = trim((string) $hit->file_sha256);
+        if ($known !== '') {
+            try {
+                $kind = ($known === $dstSha256 && $dstSha256 !== $srcSha256)
+                    ? ContentHash::KIND_STORED
+                    : ContentHash::KIND_SOURCE;
+                ContentHash::record((int) $hit->id, [$kind => $known]);
+            } catch (\Throwable) {
             }
-        } catch (\Throwable) {
         }
         return $hit;
     }
@@ -1598,18 +1594,16 @@ class ImageController extends Controller
                 if ($bytes <= 0) {
                     $bytes = (int) @filesize($destCopy);
                 }
-                $md5 = @hash_file('md5', $destCopy);
                 $sha = @hash_file('sha256', $destCopy);
 
                 $upd = $pdo->prepare(
                     "UPDATE `images` SET `path` = ?, `filename` = ?, `mime_type` = 'image/webp',"
-                    . " `file_size` = ?, `file_hash` = ?, `file_sha256` = ?, `url` = '' WHERE `id` = ?"
+                    . " `file_size` = ?, `file_sha256` = ?, `url` = '' WHERE `id` = ?"
                 );
                 if (!$upd->execute([
                     $newPath,
                     basename($newPath),
                     $bytes,
-                    ($md5 === false || $md5 === '') ? null : $md5,
                     ($sha === false || $sha === '') ? null : $sha,
                     $id,
                 ])) {
@@ -2000,7 +1994,7 @@ class ImageController extends Controller
         ]);
     }
 
-    /** 历史图片哈希回填（Web 分批）：同一份字节算 MD5 + SHA-256，只补缺失字段，幂等。 */
+    /** 历史图片哈希回填（Web 分批）：只算 SHA-256，并同步写进 content_hashes 索引。 */
     public function backfillHashes(Request $request): void
     {
         $this->jsonFatalGuard('backfill-hashes');
@@ -2014,11 +2008,12 @@ class ImageController extends Controller
             return;
         }
 
-        $missingCond = "(file_sha256 IS NULL OR file_sha256='' OR file_hash IS NULL OR file_hash='')";
+        // 「列里没哈希」与「有哈希但没进索引」都要补 —— 后者不算缺失，但同样判不出重复
+        $missingCond = "(i.`file_sha256` IS NULL OR i.`file_sha256` = '' OR ch.`sha256` IS NULL)";
+        $fromSql = " FROM `images` i LEFT JOIN `content_hashes` ch"
+            . " ON ch.`sha256` = i.`file_sha256` AND ch.`image_id` = i.`id`";
         $total = (int) $pdo->query("SELECT COUNT(*) FROM `images`")->fetchColumn();
-        $remaining = (int) $pdo->query(
-            "SELECT COUNT(*) FROM `images` WHERE {$missingCond}"
-        )->fetchColumn();
+        $remaining = (int) $pdo->query("SELECT COUNT(*)" . $fromSql . " WHERE {$missingCond}")->fetchColumn();
 
         $updated = 0;
         $failed = 0;
@@ -2026,72 +2021,40 @@ class ImageController extends Controller
 
         if ($remaining > 0) {
             $rows = $pdo->query(
-                // file_sha256 必须在查询列里，缺了 $hasSha 恒为 false
-                "SELECT `id`, `path`, `storage_profile_id`, `file_hash`, `file_sha256` FROM `images` "
-                . "WHERE {$missingCond} ORDER BY id ASC LIMIT {$batchSize}"
+                "SELECT i.`id`, i.`path`, i.`storage_profile_id`, i.`file_sha256`" . $fromSql
+                . " WHERE {$missingCond} ORDER BY i.`id` ASC LIMIT {$batchSize}"
             )->fetchAll(\PDO::FETCH_ASSOC);
 
             foreach ($rows as $row) {
                 $id = (int) $row['id'];
-                $path = (string) $row['path'];
-                $hasMd5 = (string) ($row['file_hash'] ?? '') !== '';
-                $hasSha = (string) ($row['file_sha256'] ?? '') !== '';
+                $knownSha = trim((string) ($row['file_sha256'] ?? ''));
+
+                // 列里已有强哈希：不必回源，直接建索引
+                if ($knownSha !== '') {
+                    try {
+                        ContentHash::record($id, [ContentHash::KIND_STORED => $knownSha]);
+                        $updated++;
+                        $results[] = ['id' => $id, 'ok' => true];
+                    } catch (\Throwable $e) {
+                        $failed++;
+                        $results[] = ['id' => $id, 'error' => $e->getMessage()];
+                    }
+                    continue;
+                }
 
                 try {
-                    $profile = StorageProfile::resolve(
-                        $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
-                    );
-                    if ($profile === null) {
+                    $res = ContentHash::sha256ForImageRow($row);
+                    if (!$res['ok']) {
                         $failed++;
-                        $results[] = ['id' => $id, 'error' => '无可用存储实例'];
+                        $results[] = ['id' => $id, 'error' => (string) ($res['error'] ?? '哈希计算失败')];
                         continue;
                     }
-                    $driver = \App\Models\StorageProfile::cachedDriver($profile);
-
-                    $localFile = null;
-                    $isTemp = false;
-                    if ($driver instanceof \App\Storage\LocalDriver) {
-                        $localFile = $driver->uploadDir() . '/' . ltrim($path, '/');
-                        if (!is_file($localFile) || !is_readable($localFile)) {
-                            $failed++;
-                            $results[] = ['id' => $id, 'error' => '本地文件不可读'];
-                            continue;
-                        }
-                    } else {
-                        try {
-                            $localFile = \App\Storage\S3Driver::downloadUrl($driver->url($path));
-                        } catch (\Throwable $e) {
-                            $localFile = null;
-                        }
-                        if ($localFile === null) {
-                            $failed++;
-                            $results[] = ['id' => $id, 'error' => '对象拉取失败'];
-                            continue;
-                        }
-                        $isTemp = true;
-                    }
-
-                    $md5 = @hash_file('md5', $localFile);
-                    $sha = @hash_file('sha256', $localFile);
-                    if ($isTemp) {
-                        @unlink($localFile);
-                    }
-                    if ($md5 === false || $sha === false || $md5 === '' || $sha === '') {
-                        $failed++;
-                        $results[] = ['id' => $id, 'error' => '哈希计算失败'];
-                        continue;
-                    }
+                    $sha = (string) $res['sha'];
 
                     $image = new Image($row);
-                    if (!$hasMd5) {
-                        $image->file_hash = $md5;
-                    }
-                    if (!$hasSha) {
-                        $image->file_sha256 = $sha;
-                    }
+                    $image->file_sha256 = $sha;
                     if ($image->save()) {
                         $updated++;
-                        // 回填的哈希同步进索引，之后判重不再依赖 MD5 兜底
                         try {
                             ContentHash::record($id, [ContentHash::KIND_STORED => $sha]);
                         } catch (\Throwable) {
@@ -2107,9 +2070,7 @@ class ImageController extends Controller
                 }
             }
 
-            $remaining = (int) $pdo->query(
-                "SELECT COUNT(*) FROM `images` WHERE {$missingCond}"
-            )->fetchColumn();
+            $remaining = (int) $pdo->query("SELECT COUNT(*)" . $fromSql . " WHERE {$missingCond}")->fetchColumn();
         }
 
         $this->json([
@@ -2208,8 +2169,7 @@ class ImageController extends Controller
             }
 
             // 源字节哈希：判重的唯一依据。落盘哈希会随转码参数变化，不能当键。
-            $srcHashers = $this->hashFileBoth($tmpName);
-            $srcSha256 = $srcHashers['sha256'];
+            $srcSha256 = $this->sha256File($tmpName);
             if ($srcSha256 === null) {
                 $errors[] = "{$originalName}: 无法读取文件内容（哈希计算失败）";
                 continue;
@@ -2236,10 +2196,7 @@ class ImageController extends Controller
                 $fileSize = (int) @filesize($tmpName);
             }
 
-            $dstHashers = $conv['ok'] ? $this->hashFileBoth($tmpName) : $srcHashers;
-            $dstSha256 = $dstHashers['sha256'] ?? $srcSha256;
-            $fileHash = $dstHashers['md5'];
-            $fileSha256 = $dstSha256;
+            $dstSha256 = $conv['ok'] ? ($this->sha256File($tmpName) ?? $srcSha256) : $srcSha256;
 
             // 产出哈希只认「老行只存了落盘字节」与「用户把本站产出的 WebP/缩略图又传回来」
             // 这两种情况；同一张原创图是否重复，由上面的源哈希决定。
@@ -2252,12 +2209,8 @@ class ImageController extends Controller
                 }
             }
 
-            // 老数据尚未回填索引：MD5 兜底一次，命中即补写索引，此后走快路径。
-            $legacy = $this->legacyDuplicate(
-                array_values(array_unique(array_filter([$srcHashers['md5'], $dstHashers['md5']]))),
-                $srcSha256,
-                $dstSha256
-            );
+            // 索引尚未覆盖的历史行：按 file_sha256 列兜底一次，命中即补写索引，此后走快路径。
+            $legacy = $this->legacyDuplicateBySha($srcSha256, $dstSha256);
             if ($legacy !== null) {
                 ContentHash::release($srcSha256, $dstSha256 !== $srcSha256 ? $dstSha256 : '');
                 $duplicates[] = "{$originalName}：与已有图片「{$legacy->original_name}」重复，已跳过";
@@ -2288,8 +2241,7 @@ class ImageController extends Controller
                     'url' => '',
                     'mime_type' => $detectedMime,
                     'file_size' => $fileSize,
-                    'file_hash' => $fileHash,
-                    'file_sha256' => $fileSha256,
+                    'file_sha256' => $dstSha256,
                     'width' => $width,
                     'height' => $height,
                     'category_id' => $categoryId,

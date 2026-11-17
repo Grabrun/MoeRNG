@@ -143,8 +143,7 @@ class Application
                     'storage_provider'   => "VARCHAR(16) NOT NULL DEFAULT '' AFTER `storage`",
                     // 签名 INT（非 UNSIGNED）：须与 storage_profiles.id 一致，否则将来加 FK 报 errno 1215。
                     'storage_profile_id' => "INT NULL AFTER `storage_provider`",
-                    'file_hash'          => "CHAR(64) NULL DEFAULT NULL AFTER `file_size`",
-                    'file_sha256'        => "CHAR(64) NULL DEFAULT NULL AFTER `file_hash`",
+                    'file_sha256'        => "CHAR(64) NULL DEFAULT NULL AFTER `file_size`",
                     'process_status'     => "ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'done' AFTER `status`",
                     'thumb_path'         => "VARCHAR(512) NULL DEFAULT NULL AFTER `process_status`",
                     'process_error'      => "VARCHAR(500) NULL DEFAULT NULL AFTER `thumb_path`",
@@ -163,7 +162,6 @@ class Application
             ],
             'indexes' => [
                 'images' => [
-                    'idx_file_hash'         => "ADD INDEX `idx_file_hash` (`file_hash`)",
                     'idx_file_sha256'       => "ADD INDEX `idx_file_sha256` (`file_sha256`)",
                     'idx_storage_profile'   => "ADD INDEX `idx_storage_profile` (`storage_profile_id`)",
                     'idx_process_status'    => "ADD INDEX `idx_process_status` (`process_status`)",
@@ -179,22 +177,9 @@ class Application
     {
         $migrationError = '';
         try {
-            $db = \App\Core\Database::getInstance();
-            $migrationError = $this->ensureImageColumns($db);
-            $this->ensureStorageProfileTable($db);
-            $this->ensureAuditLogTable($db);
-            $this->ensureContentHashTable($db);
-            $this->ensureStatsTables($db);
-            $exp = self::schemaExpectations();
-            $userErr = $this->ensureColumns($db, 'users', $exp['columns']['users']);
-            if ($userErr !== '') {
-                $migrationError .= ($migrationError !== '' ? ' | ' : '') . $userErr;
-            }
-            $migrationError .= $this->pruneDeadStatusValues($db);
+            $migrationError = self::migrateSchema(\App\Core\Database::getInstance());
         } catch (\Throwable $e) {
-            $migrationError = $migrationError !== ''
-                ? $migrationError . ' | ' . $e->getMessage()
-                : $e->getMessage();
+            $migrationError = $e->getMessage();
         }
 
         try {
@@ -211,7 +196,46 @@ class Application
         }
     }
 
-    private function ensureImageColumns(\PDO $db): string
+    /** 当前架构版本戳（CLI 迁移脚本写入 settings 时用同一份值）。 */
+    public static function schemaVersion(): string
+    {
+        return self::SCHEMA_VERSION;
+    }
+
+    /**
+     * 补齐当前架构所需的全部表 / 列 / 索引，并收敛历史脏值；返回空串表示全部成功。
+     * 运行时迁移与 CLI 迁移脚本共用这一处 —— 将来新增迁移只需改这里，脚本自动覆盖。
+     */
+    public static function migrateSchema(\PDO $db): string
+    {
+        $errors = [];
+        $step = static function (callable $fn) use (&$errors): void {
+            try {
+                $result = $fn();
+                if (is_string($result) && $result !== '') {
+                    $errors[] = $result;
+                }
+            } catch (\Throwable $e) {
+                $errors[] = $e->getMessage();
+            }
+        };
+
+        // 显式 use ($db)：静态闭包不绑定 $this，读代码的人也不必猜捕获规则
+        $step(static function () use ($db) { return self::ensureImageColumns($db); });
+        $step(static function () use ($db) { return self::ensureStorageProfileTable($db); });
+        $step(static function () use ($db) { return self::ensureAuditLogTable($db); });
+        $step(static function () use ($db) { return self::ensureContentHashTable($db); });
+        $step(static function () use ($db) { return self::ensureStatsTables($db); });
+        $step(static function () use ($db) { return self::ensureRateLimitTable($db); });
+        $step(static function () use ($db) {
+            return self::ensureColumns($db, 'users', self::schemaExpectations()['columns']['users']);
+        });
+        $step(static function () use ($db) { return self::pruneDeadStatusValues($db); });
+
+        return implode(' | ', $errors);
+    }
+
+    private static function ensureImageColumns(\PDO $db): string
     {
         // 上传暂存目录：web 不可达，另加 .htaccess 拒绝直链。
         $incoming = dirname(__DIR__, 2) . '/storage/incoming';
@@ -227,7 +251,7 @@ class Application
 
         $added = 0;
         foreach ($expect['columns']['images'] as $col => $def) {
-            if ($this->columnExists($db, 'images', $col)) {
+            if (self::columnExists($db, 'images', $col)) {
                 continue;
             }
             try {
@@ -302,11 +326,11 @@ class Application
     }
 
     /** @param array<string,string> $columns 列名 => 列定义（不含 ADD COLUMN 前缀）。 */
-    private function ensureColumns(\PDO $db, string $table, array $columns): string
+    private static function ensureColumns(\PDO $db, string $table, array $columns): string
     {
         $errors = [];
         foreach ($columns as $col => $def) {
-            if ($this->columnExists($db, $table, $col)) {
+            if (self::columnExists($db, $table, $col)) {
                 continue;
             }
             try {
@@ -323,7 +347,7 @@ class Application
     }
 
     /** 收敛 images.status 的死 ENUM 值：'hidden' / 'deleted' → 只留 'active'。 */
-    private function pruneDeadStatusValues(\PDO $db): string
+    private static function pruneDeadStatusValues(\PDO $db): string
     {
         try {
             $col = $db->query("SHOW COLUMNS FROM `images` LIKE 'status'")->fetch(\PDO::FETCH_ASSOC);
@@ -349,7 +373,7 @@ class Application
         }
     }
 
-    private function columnExists(\PDO $db, string $table, string $col): bool
+    private static function columnExists(\PDO $db, string $table, string $col): bool
     {
         try {
             $stmt = $db->query("SHOW COLUMNS FROM `{$table}` LIKE " . $db->quote($col));
@@ -359,7 +383,7 @@ class Application
         }
     }
 
-    private function ensureStorageProfileTable(\PDO $db): void
+    private static function ensureStorageProfileTable(\PDO $db): void
     {
         $sql = "CREATE TABLE IF NOT EXISTS `storage_profiles` (
             `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -379,7 +403,7 @@ class Application
         $db->exec($sql);
     }
 
-    private function ensureAuditLogTable(\PDO $db): void
+    private static function ensureAuditLogTable(\PDO $db): void
     {
         $sql = "CREATE TABLE IF NOT EXISTS `audit_logs` (
             `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -395,12 +419,12 @@ class Application
         $db->exec($sql);
     }
 
-    private function ensureContentHashTable(\PDO $db): void
+    private static function ensureContentHashTable(\PDO $db): void
     {
         \App\Models\ContentHash::ensureTable($db);
     }
 
-    private function ensureStatsTables(\PDO $db): void
+    private static function ensureStatsTables(\PDO $db): void
     {
         $sql = "CREATE TABLE IF NOT EXISTS `api_stats` (
             `day` DATE PRIMARY KEY,
@@ -423,6 +447,51 @@ class Application
             `count` INT UNSIGNED NOT NULL DEFAULT 0
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         $db->exec($sql);
+    }
+
+    /** 限流计数表与唯一键：中间件懒建与 CLI 迁移共用，避免两处 DDL 漂移。 */
+    public static function ensureRateLimitTable(\PDO $db): string
+    {
+        try {
+            $db->query('SELECT 1 FROM `rate_limits` LIMIT 1');
+        } catch (\Throwable) {
+            $db->exec("
+                CREATE TABLE IF NOT EXISTS `rate_limits` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `identifier` VARCHAR(64) NOT NULL,
+                    `window_key` VARCHAR(64) NOT NULL,
+                    `request_count` INT NOT NULL DEFAULT 0,
+                    `expires_at` INT NOT NULL,
+                    `created_at` INT NOT NULL,
+                    `updated_at` INT NOT NULL,
+                    UNIQUE KEY `uq_ident_window` (`identifier`, `window_key`),
+                    INDEX `idx_expires` (`expires_at`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        }
+
+        // 存量表可能只有普通索引：缺唯一键会让 upsert 退化为纯 INSERT（限流失效 + 表膨胀）。
+        try {
+            foreach ($db->query('SHOW INDEX FROM `rate_limits`')->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+                if (($row['Key_name'] ?? '') === 'uq_ident_window' && (int) ($row['Non_unique'] ?? 1) === 0) {
+                    return '';
+                }
+            }
+            // 先按 (identifier, window_key) 去重再加键，否则 ADD UNIQUE 必然因重复值失败。
+            $db->exec(
+                'DELETE t1 FROM `rate_limits` t1 INNER JOIN `rate_limits` t2'
+                . ' ON t1.`identifier` = t2.`identifier` AND t1.`window_key` = t2.`window_key`'
+                . ' AND t1.`expires_at` < t2.`expires_at`'
+            );
+            $db->exec('ALTER TABLE `rate_limits` ADD UNIQUE KEY `uq_ident_window` (`identifier`, `window_key`)');
+            return '';
+        } catch (\Throwable $e) {
+            // 1061 = 键已存在（并发下的幂等结果）
+            if ((int) ($e->errorInfo[1] ?? 0) === 1061) {
+                return '';
+            }
+            return 'rate_limits 唯一键补齐失败（限流可能退化为弱语义）: ' . $e->getMessage();
+        }
     }
 
     public function router(): Router

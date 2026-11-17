@@ -147,8 +147,7 @@ final class ContentHash
         )->execute($params);
     }
 
-    /** 回收请求中途死亡留下的空占位（image_id 仍为 NULL）。 */
-    public static function sweepStale(int $minutes = 10): int
+    /** 回收请求中途死亡留下的空占位（image_id 仍为 NULL）。 */    public static function sweepStale(int $minutes = 10): int
     {
         $minutes = max(1, min(1440, $minutes));
         $st = Database::getInstance()->prepare(
@@ -157,6 +156,59 @@ final class ContentHash
         );
         $st->execute([$minutes]);
         return $st->rowCount();
+    }
+
+    /**
+     * 读出图片当前字节并算 SHA-256（Local 直读；远端下载到临时文件后立即删除）。
+     * 存量回填的单一来源：Web 分批回填与两个 CLI 都走这里，避免三份取数逻辑各自漂移。
+     *
+     * @param array{path?:string, storage_profile_id?:mixed} $row
+     * @return array{ok:bool, sha?:string, error?:string}
+     */
+    public static function sha256ForImageRow(array $row, bool $allowRemote = true): array
+    {
+        $path = (string) ($row['path'] ?? '');
+        if ($path === '') {
+            return ['ok' => false, 'error' => '缺少 path'];
+        }
+
+        try {
+            $rawPid = $row['storage_profile_id'] ?? null;
+            $profile = StorageProfile::resolve(($rawPid === null || $rawPid === '') ? null : (int) $rawPid);
+            if ($profile === null) {
+                return ['ok' => false, 'error' => '无可用存储实例'];
+            }
+            $driver = StorageProfile::cachedDriver($profile);
+
+            if ($driver instanceof \App\Storage\LocalDriver) {
+                $local = $driver->uploadDir() . '/' . ltrim($path, '/');
+                if (!is_file($local) || !is_readable($local)) {
+                    return ['ok' => false, 'error' => '本地文件不可读'];
+                }
+                $sha = @hash_file('sha256', $local);
+                return is_string($sha) && $sha !== ''
+                    ? ['ok' => true, 'sha' => $sha]
+                    : ['ok' => false, 'error' => '哈希计算失败'];
+            }
+
+            if (!$allowRemote) {
+                return ['ok' => false, 'error' => '已跳过远端回源'];
+            }
+            $tmp = \App\Storage\S3Driver::downloadUrl($driver->url($path));
+            if ($tmp === null) {
+                return ['ok' => false, 'error' => '对象拉取失败'];
+            }
+            try {
+                $sha = @hash_file('sha256', $tmp);
+            } finally {
+                @unlink($tmp);
+            }
+            return is_string($sha) && $sha !== ''
+                ? ['ok' => true, 'sha' => $sha]
+                : ['ok' => false, 'error' => '哈希计算失败'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
     }
 
     /** @return list<array{sha256:string, kind:string}> */

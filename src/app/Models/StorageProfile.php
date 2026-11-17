@@ -201,6 +201,41 @@ class StorageProfile extends Model
         return $driver;
     }
 
+    /**
+     * 按迁移前的 storage / storage_provider 列推断实例归属。
+     * 老数据没有 storage_profile_id，只能按驱动类型 + provider 归类；同类多实例时优先默认实例。
+     */
+    public static function resolveLegacy(string $storage, string $provider): ?self
+    {
+        $wantS3 = strtolower($storage) === 's3';
+        $pool = [];
+        foreach (self::all('sort_order ASC, id ASC') as $candidate) {
+            if (!$candidate->isEnabled()) {
+                continue;
+            }
+            if ($wantS3) {
+                if (!$candidate->isS3() || (string) $candidate->provider !== $provider) {
+                    continue;
+                }
+            } elseif ($candidate->isS3()) {
+                continue;
+            }
+            $pool[] = $candidate;
+        }
+        if ($pool === []) {
+            return null;
+        }
+        $default = self::defaultProfile();
+        if ($default !== null) {
+            foreach ($pool as $candidate) {
+                if ((int) $candidate->id === (int) $default->id) {
+                    return $candidate;
+                }
+            }
+        }
+        return $pool[0];
+    }
+
     public static function defaultProfile(): ?self
     {
         if (self::$defaultResolved) {

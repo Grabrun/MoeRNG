@@ -13,7 +13,7 @@ class Image extends Model
         'filename', 'original_name', 'path', 'url', 'mime_type',
         'file_size', 'width', 'height', 'category_id', 'sort_order', 'status',
         'storage', 'storage_provider', 'storage_profile_id',
-        'file_hash', 'file_sha256',
+        'file_sha256',
         'process_status', 'thumb_path', 'process_error', 'thumbs',
         // 这两列必须留在 $fillable：hydrate 按 $fillable 过滤，漏写会被静默丢弃。
         'thumb_bytes',
@@ -56,40 +56,23 @@ class Image extends Model
     }
 
     /**
-     * 上传去重的唯一入口。
+     * 按 SHA-256 查图：仅用于 content_hashes 索引尚未覆盖到历史行时的列兜底。
+     * 去重的正路是 ContentHash::find()，这里只在索引缺失时被调用一次并顺手补写索引。
      *
-     * file_hash 是 CHAR(64) 却只存 32 位 MD5，尾空格是否参与比较取决于排序规则与
-     * sql_mode，直接 = 可能永远不命中（去重静默失效），故 MD5 兜底要 TRIM。
-     *
-     * @param string[] $sha256Candidates 强哈希候选（去空）
-     * @param string[] $md5Candidates    MD5 候选（去空）
+     * @param string[] $candidates
      */
-    public static function findByContentHash(array $sha256Candidates, array $md5Candidates): ?static
+    public static function findBySha256(array $candidates): ?static
     {
         $db = Database::getInstance();
-        $probe = static function (string $col, string $val, bool $allowTrim) use ($db): ?array {
-            $stmt = $db->prepare("SELECT * FROM `images` WHERE `{$col}` = ? LIMIT 1");
-            $stmt->execute([$val]);
+        $stmt = $db->prepare('SELECT * FROM `images` WHERE `file_sha256` = ? LIMIT 1');
+        foreach ($candidates as $sha) {
+            if (!is_string($sha) || $sha === '') {
+                continue;
+            }
+            // 定长 64 hex，不存在 CHAR 尾空格问题，无需 TRIM 变体
+            $stmt->execute([$sha]);
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-            if ($row === false && $allowTrim) {
-                $stmt = $db->prepare("SELECT * FROM `images` WHERE TRIM(`{$col}`) = ? LIMIT 1");
-                $stmt->execute([$val]);
-                $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-            }
-            return $row === false ? null : $row;
-        };
-
-        foreach ($sha256Candidates as $sha) {
-            if ($sha === '') continue;
-            $row = $probe('file_sha256', $sha, false);
-            if ($row !== null) {
-                return static::hydrate($row);
-            }
-        }
-        foreach ($md5Candidates as $md5) {
-            if ($md5 === '') continue;
-            $row = $probe('file_hash', $md5, true);
-            if ($row !== null) {
+            if ($row !== false) {
                 return static::hydrate($row);
             }
         }

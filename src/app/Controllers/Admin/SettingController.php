@@ -567,15 +567,14 @@ class SettingController extends Controller
         }
 
         try {
-            $noMd5 = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE file_hash IS NULL OR file_hash=''")->fetchColumn();
             $noSha = (int) $pdo->query("SELECT COUNT(*) FROM `images` WHERE file_sha256 IS NULL OR file_sha256=''")->fetchColumn();
             $checks['hash_backfill'] = [
-                'ok' => $noMd5 === 0 && $noSha === 0,
-                'detail' => $noMd5 === 0 && $noSha === 0
-                    ? '所有图片均携带 MD5 + SHA-256'
-                    : "{$noMd5} 张缺 file_hash, {$noSha} 张缺 file_sha256",
+                'ok' => $noSha === 0,
+                'detail' => $noSha === 0
+                    ? '所有图片均携带 SHA-256'
+                    : "{$noSha} 张缺 file_sha256（判重对这些图无效，需回源补算）",
                 'fixable' => true,
-                'extra' => ['missing_md5' => $noMd5, 'missing_sha' => $noSha],
+                'extra' => ['missing_sha' => $noSha],
             ];
         } catch (\Throwable $e) {
             $checks['hash_backfill'] = ['ok' => true, 'detail' => '统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
@@ -586,7 +585,7 @@ class SettingController extends Controller
             if (!\App\Models\ContentHash::tableExists()) {
                 $checks['dedupe_key'] = [
                     'ok' => false,
-                    'detail' => 'content_hashes 索引表不存在 —— 去重退化为 MD5 兜底，点「执行修复」重建',
+                    'detail' => 'content_hashes 索引表不存在 —— 新上传将完全不做判重，点「执行修复」重建',
                     'fixable' => true,
                     'extra' => ['missing_table' => true],
                 ];

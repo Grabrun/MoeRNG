@@ -3,12 +3,11 @@ declare(strict_types=1);
 
 /**
  * 为存量图片补建内容哈希索引（content_hashes），补完后判重不再依赖 MD5 兜底。
- * 用法: php src/cli/backfill-content-hashes.php [--apply] [--limit=N]；默认干跑，幂等
+ * 用法: php src/cli/backfill-content-hashes.php [--apply] [--limit=N] [--skip-remote]；默认干跑，幂等
  */
 
 use App\Core\Database;
 use App\Models\ContentHash;
-use App\Models\StorageProfile;
 
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);
@@ -17,6 +16,7 @@ if (PHP_SAPI !== 'cli') {
 
 $argvRest = array_slice($argv, 1);
 $apply = in_array('--apply', $argvRest, true);
+$skipRemote = in_array('--skip-remote', $argvRest, true);
 $limit = 0;
 foreach ($argvRest as $arg) {
     if (str_starts_with($arg, '--limit=')) {
@@ -70,50 +70,13 @@ $readOk = 0;
 $readFailed = 0;
 $computed = [];
 foreach ($needRead as $row) {
-    $id = (int) $row['id'];
-    $path = (string) $row['path'];
-    $localFile = null;
-    $isTemp = false;
-    try {
-        $profile = StorageProfile::resolve(
-            $row['storage_profile_id'] !== null ? (int) $row['storage_profile_id'] : null
-        );
-        if ($profile === null) {
-            $readFailed++;
-            continue;
-        }
-        $driver = StorageProfile::cachedDriver($profile);
-        if ($driver instanceof \App\Storage\LocalDriver) {
-            $candidate = $driver->uploadDir() . '/' . ltrim($path, '/');
-            if (!is_file($candidate) || !is_readable($candidate)) {
-                $readFailed++;
-                continue;
-            }
-            $localFile = $candidate;
-        } else {
-            $localFile = \App\Storage\S3Driver::downloadUrl($driver->url($path));
-            $isTemp = $localFile !== null;
-            if ($localFile === null) {
-                $readFailed++;
-                continue;
-            }
-        }
-        $sha = @hash_file('sha256', $localFile);
-        if ($isTemp) {
-            @unlink($localFile);
-        }
-        if (!is_string($sha) || $sha === '') {
-            $readFailed++;
-            continue;
-        }
-        $readOk++;
-        $computed[$id] = $sha;
-    } catch (\Throwable) {
-        if ($isTemp && is_string($localFile)) {
-            @unlink($localFile);
-        }
+    $res = ContentHash::sha256ForImageRow($row, !$skipRemote);
+    if (!$res['ok']) {
         $readFailed++;
+        continue;
     }
+    $readOk++;
+    $computed[(int) $row['id']] = (string) $res['sha'];
 }
 
 $total = count($plan) + count($computed);

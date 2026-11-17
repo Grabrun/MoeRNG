@@ -391,14 +391,20 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             if ($schemaMissing === []) {
                 check('Schema migration completeness', true, 'all columns + indexes expected by the app are present');
                 try {
-                    $noMd5 = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE file_hash IS NULL OR file_hash=''")->fetchColumn();
                     $noSha = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE file_sha256 IS NULL OR file_sha256=''")->fetchColumn();
-                    if ($noMd5 > 0 || $noSha > 0) {
+                    if ($noSha > 0) {
                         check('Image hash backfill', false,
-                            "{$noMd5} 张缺 file_hash, {$noSha} 张缺 file_sha256 — 请到后台「系统设置 → 健康检查」执行哈希回填");
+                            "{$noSha} 张缺 file_sha256 — 请运行 php src/cli/backfill-content-hashes.php --apply");
                     } else {
-                        check('Image hash backfill', true, 'all images carry both MD5 + SHA-256');
+                        check('Image hash backfill', true, 'all images carry SHA-256');
                     }
+                    $md5Gone = (int) $pdo->query(
+                        "SELECT COUNT(*) FROM information_schema.COLUMNS"
+                        . " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'images' AND COLUMN_NAME = 'file_hash'"
+                    )->fetchColumn() === 0;
+                    check('MD5 column retired', $md5Gone,
+                        $md5Gone ? 'images.file_hash has been dropped' : 'images.file_hash still present — run php src/cli/migrate-to-latest.php --apply',
+                        true);
                 } catch (Throwable $e) {
                     check('Image hash backfill', true, '统计失败（忽略）: ' . $e->getMessage(), true);
                 }
