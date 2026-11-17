@@ -8,10 +8,10 @@ src/var/                        # rate-limit counters
 backups/                        # backup archives
 src/debug_session.php           # server-diagnostics tool (dev only)
 
-# 鈹€鈹€ Third-party SDKs (shipped inside release ZIPs, not the repo) 鈹€鈹€鈹€鈹€鈹€鈹€
-# Object-storage SDKs are bundled at release time via tools/_package.py;
-# committing 67MB of vendor code bloats the repo for no reason.
-src/sdk/
+# ── Third-party SDKs (committed; trimmed to what the app loads) ──
+# cheap enough that "clone and run" beats "clone and hunt for SDKs".
+# Was excluded when SDKs were estimated at 67MB. After trimming they are 12MB —
+# src/sdk/ is committed (12MB, 1276 files): a fresh clone can build and run.
 
 # 鈹€鈹€ Build artifacts / packaging 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 releases/
