@@ -1541,22 +1541,50 @@ async function runOriginalConversion(mode, setUI) {
 
     return { done, skipped, failed, orphan, scanned, notes, samples, firstError, rounds };
 }
+// 批量工具共用的进度条（原先两处各写一份，内容逐字相同）
+function batchProgressUI(prefix) {
+    const box = document.getElementById(prefix + '-progress');
+    const fill = document.getElementById(prefix + '-fill');
+    const text = document.getElementById(prefix + '-text');
+    const detail = document.getElementById(prefix + '-detail');
+    return function (pct, t, d) {
+        if (box) box.classList.remove('hidden');
+        if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
+        if (text && t) text.textContent = t;
+        if (detail && d !== undefined) detail.textContent = d;
+    };
+}
+
+// 破坏性动作的二次确认：首次点击只换文案，6 秒内再点才真正执行
+function withDoubleConfirm(btn, armedText, run) {
+    if (!btn) return;
+    const label = btn.textContent;
+    let armed = false, timer = null;
+    btn.addEventListener('click', function () {
+        if (!armed) {
+            armed = true;
+            btn.textContent = armedText;
+            timer = setTimeout(function () { armed = false; btn.textContent = label; }, 6000);
+            return;
+        }
+        clearTimeout(timer);
+        armed = false;
+        btn.textContent = label;
+        btn.disabled = true;
+        Promise.resolve().then(run).catch(function (e) {
+            // 各 run 内部已 toast；这里只兜住异常，避免按钮永久卡在禁用态
+            console.error(e);
+        }).finally(function () { btn.disabled = false; });
+    });
+}
+
 function initOriginalConversion() {
     const checkBtn = document.getElementById('convert-check');
     const runBtn = document.getElementById('convert-run');
     if (!checkBtn && !runBtn) return;
 
     const statEl = document.getElementById('convert-stat');
-    const box = document.getElementById('convert-progress');
-    const fill = document.getElementById('convert-fill');
-    const text = document.getElementById('convert-text');
-    const detail = document.getElementById('convert-detail');
-    const setUI = function (pct, t, d) {
-        if (box) box.classList.remove('hidden');
-        if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
-        if (text && t) text.textContent = t;
-        if (detail && d !== undefined) detail.textContent = d;
-    };
+    const setUI = batchProgressUI('convert');
 
     function describe(res) {
         const parts = [];
@@ -1589,23 +1617,11 @@ function initOriginalConversion() {
         }
     });
 
-    const label = runBtn ? runBtn.textContent : '';
-    let armed = false, timer = null;
-    runBtn?.addEventListener('click', async function () {
-        if (!armed) {
-            armed = true;
-            runBtn.textContent = '再次点击确认开始转换';
-            timer = setTimeout(function () { armed = false; runBtn.textContent = label; }, 6000);
-            return;
-        }
-        clearTimeout(timer);
-        armed = false;
-        runBtn.textContent = label;
-        runBtn.disabled = true;
+    withDoubleConfirm(runBtn, '再次点击确认开始转换', async function () {
         try {
             const res = await runOriginalConversion('apply', setUI);
             statEl.textContent = '已转换 ' + res.done + ' 张（跳过 ' + res.skipped + '，失败 ' + res.failed + '）'
-                + (res.orphan ? '，另有 ' + res.orphan + ' 个旧对象未删成功（已成孤立对象，可稍后用「清理暂存残留」处理）' : '')
+                + (res.orphan ? '，另有 ' + res.orphan + ' 个旧对象未删成功（已成孤立对象，可稍后在「媒体维护」清理）' : '')
                 + (res.firstError ? '。' + res.firstError : '。');
             setUI(1, '转换完成', '已转换 ' + res.done + ' 张');
             showToast('转换完成：' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''),
@@ -1614,8 +1630,6 @@ function initOriginalConversion() {
         } catch (e) {
             statEl.textContent = '转换失败：' + e.message;
             showToast('转换失败: ' + e.message, 'error', 9000);
-        } finally {
-            runBtn.disabled = false;
         }
     });
 }
@@ -1626,16 +1640,7 @@ function initStorageCleanup() {
     if (!checkBtn && !runBtn) return;
 
     const statEl = document.getElementById('cleanup-stat');
-    const box = document.getElementById('cleanup-progress');
-    const fill = document.getElementById('cleanup-fill');
-    const text = document.getElementById('cleanup-text');
-    const detail = document.getElementById('cleanup-detail');
-    const setUI = function (pct, t, d) {
-        if (box) box.classList.remove('hidden');
-        if (fill) fill.style.width = Math.min(100, Math.round(pct * 100)) + '%';
-        if (text && t) text.textContent = t;
-        if (detail && d !== undefined) detail.textContent = d;
-    };
+    const setUI = batchProgressUI('cleanup');
 
     function describe(found) {
         const parts = [];
@@ -1666,19 +1671,7 @@ function initStorageCleanup() {
         }
     });
 
-    const label = runBtn ? runBtn.textContent : '';
-    let armed = false, timer = null;
-    runBtn?.addEventListener('click', async function () {
-        if (!armed) {
-            armed = true;
-            runBtn.textContent = '再次点击确认执行清理';
-            timer = setTimeout(function () { armed = false; runBtn.textContent = label; }, 6000);
-            return;
-        }
-        clearTimeout(timer);
-        armed = false;
-        runBtn.textContent = label;
-        runBtn.disabled = true;
+    withDoubleConfirm(runBtn, '再次点击确认执行清理', async function () {
         try {
             const res = await runStorageCleanup('apply', setUI);
             statEl.textContent = '已删除 ' + res.done + ' 项（失败 ' + res.failed + '，跳过 ' + res.skipped
@@ -1690,8 +1683,6 @@ function initStorageCleanup() {
         } catch (e) {
             statEl.textContent = '清理失败：' + e.message;
             showToast('清理失败: ' + e.message, 'error', 9000);
-        } finally {
-            runBtn.disabled = false;
         }
     });
 }

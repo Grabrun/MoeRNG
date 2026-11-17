@@ -1448,6 +1448,20 @@ body.modal-open { overflow: hidden; }
 .batch-help p { margin: 8px 0 0; color: var(--text-secondary); line-height: 1.75; }
 .batch-help code { font-size: 0.95em; }
 
+/* 维护页的折叠工具组：低频操作默认收起，展开后沿用 batch-panel 的排版 */
+.maint-fold > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center;
+    gap: 10px; flex-wrap: wrap;
+}
+.maint-fold > summary::-webkit-details-marker { display: none; }
+.maint-fold > summary::before {
+    content: '▸'; color: var(--text-secondary); transition: transform var(--transition);
+}
+.maint-fold[open] > summary::before { transform: rotate(90deg); }
+.maint-fold-title { font-size: 1.02rem; font-weight: 600; }
+.maint-body { margin-top: 16px; }
+.maint-item + .maint-item { border-top: 1px solid var(--border); padding-top: 16px; }
+
 @media (min-width: 900px) {
     .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

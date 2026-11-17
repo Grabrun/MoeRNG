@@ -119,71 +119,6 @@ admin_header('系统设置', 'page-settings');
         <?php endif; ?>
     </form>
 
-    <?php if ($gid === 'media'): ?>
-    <div class="card mb-3 batch-panel">
-        <h3>清理暂存残留</h3>
-        <p class="batch-summary">清理 <code>storage/incoming</code> 里不再属于「在办」行的临时文件
-        （致命错误、清空队列等留下的）。默认<strong>干跑</strong>只出清单。</p>
-        <details class="batch-help">
-            <summary>能力边界与「待清理 0 项」的含义</summary>
-            <p>
-                [注意] 记录已被删除的孤立对象（例如用过「清空队列」的那些）<strong>无法</strong>被本工具发现 ——
-                存储接口没有列举能力，需到对象存储控制台按前缀人工清理。
-            </p>
-            <p>
-                「待清理 0 项」是真的看过了（扫描数如实报告），而不是没看；仍处于
-                pending/processing/failed 的行对应的暂存文件会保留（可能正在处理）。
-            </p>
-        </details>
-        <p class="batch-stat" id="cleanup-stat">点击「干跑检查」查看待清理清单。</p>
-        <div class="batch-actions">
-            <button type="button" class="btn btn-outline btn-sm" id="cleanup-check">干跑检查</button>
-            <button type="button" class="btn btn-danger btn-sm" id="cleanup-run">执行清理</button>
-        </div>
-        <div id="cleanup-progress" class="hidden">
-            <div class="health-progress-text" id="cleanup-text">准备检查…</div>
-            <div class="health-progress-track"><div id="cleanup-fill" class="health-progress-fill"></div></div>
-            <div class="health-progress-detail" id="cleanup-detail"></div>
-        </div>
-    </div>
-
-    <div class="card mb-3 batch-panel">
-        <h3>转换历史原图为 WebP</h3>
-        <p class="batch-summary">新上传的原图已自动转 WebP（开关见上方「原图转 WebP」）；此前上传的原图仍是原格式，可用本工具批量补齐。<strong>只换扩展名、布局不动</strong>，缩略图无需搬迁。</p>
-        <details class="batch-help">
-            <summary>转换流程、跳过的情况，以及干跑到底查了什么</summary>
-            <p>
-                流程为「取字节 → 转码 → 上传新键 → <strong>校验新对象存在</strong> → 更新记录 → 删除旧对象」，
-                任一步失败都会回滚该行，图片始终可访问。转码在**私有副本**上进行，源文件在明确成功之前
-                不会被改写。
-            </p>
-            <p>
-                <strong>干跑是「零 I/O 的候选筛查」</strong>：它只判「格式可转 + 键名可改写」，
-                <strong>不下载、不解码、不写任何文件</strong>，因此能扫完整个表（数字是<strong>候选数</strong>）。
-                「转完是否真的更小」只能在执行时逐张判定 —— 不划算的行会保留原图并计入「跳过」，
-                所以执行后的「已转」可能少于候选数。
-            </p>
-            <p>
-                以下情况会跳过并如实计数：GIF（转码会丢动画）、SVG（矢量）、JPEG 读不到 EXIF 方向
-                （转了会变歪）、转码后体积未变小、源对象不可读、<strong>超出内存预算</strong>
-                （大图的<strong>解码与编码各要一块整幅画布</strong>，超限会打爆 memory_limit ——
-                宁可跳过并报告，也不会让整批请求致命失败）。
-                <strong>对象存储在云端时每行都要下载 + 上传，耗时较长</strong>，建议先干跑看数量再分批执行。
-            </p>
-        </details>
-        <p class="batch-stat" id="convert-stat">点击「干跑检查」扫描全表，查看可转候选数量。</p>
-        <div class="batch-actions">
-            <button type="button" class="btn btn-outline btn-sm" id="convert-check">干跑检查</button>
-            <button type="button" class="btn btn-primary btn-sm" id="convert-run">开始转换</button>
-        </div>
-        <div id="convert-progress" class="hidden">
-            <div class="health-progress-text" id="convert-text">准备检查…</div>
-            <div class="health-progress-track"><div id="convert-fill" class="health-progress-fill"></div></div>
-            <div class="health-progress-detail" id="convert-detail"></div>
-        </div>
-    </div>
-    <?php endif; ?>
-
     <?php if ($gid === 'maintenance'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">缓存清理</h3>
@@ -193,9 +128,7 @@ admin_header('系统设置', 'page-settings');
             <button type="submit" class="btn btn-warning" data-confirm="确认清理缓存？">立即清理缓存</button>
         </form>
     </div>
-    <?php endif; ?>
 
-    <?php if ($gid === 'maintenance'): ?>
     <div class="card mb-3">
         <h3 class="mb-2">测试邮件</h3>
         <p class="batch-summary">使用上方 SMTP 参数向「测试收件邮箱」发送一封测试邮件，验证配置是否正确。</p>
@@ -242,6 +175,62 @@ admin_header('系统设置', 'page-settings');
         <?php else: ?>
         <p class="batch-stat">暂无备份。点击「立即备份」生成第一份。</p>
         <?php endif; ?>
+    </div>
+
+    <div class="card mb-3">
+        <details class="maint-fold">
+            <summary>
+                <span class="maint-fold-title">媒体维护</span>
+                <span class="batch-stat">暂存残留 · 历史原图转 WebP</span>
+            </summary>
+            <div class="batch-panel maint-body">
+                <div class="maint-item">
+                    <h3>清理暂存残留</h3>
+                    <p class="batch-summary">扫描 <code>storage/incoming</code>，删除已无对应记录（在办行以外）的临时文件。干跑只列清单。</p>
+                    <details class="batch-help">
+                        <summary>能力边界</summary>
+                        <p>记录已被删除的孤立对象<strong>无法</strong>被本工具发现 —— 存储接口没有列举能力，需到对象存储控制台按前缀清理。
+                        pending / processing / failed 行对应的文件会保留（可能正在被其它请求使用）。
+                        「待清理 0 项」是真的看过：扫描数如实报告，不是没看。</p>
+                    </details>
+                    <p class="batch-stat" id="cleanup-stat">尚未检查。</p>
+                    <div class="batch-actions">
+                        <button type="button" class="btn btn-outline btn-sm" id="cleanup-check">干跑检查</button>
+                        <button type="button" class="btn btn-danger btn-sm" id="cleanup-run" disabled
+                                title="只删本地暂存目录里已无记录的文件；云端孤立对象没有列举能力，需到控制台按前缀清理">执行清理</button>
+                    </div>
+                    <div id="cleanup-progress" class="hidden">
+                        <div class="health-progress-text" id="cleanup-text">准备检查…</div>
+                        <div class="health-progress-track"><div id="cleanup-fill" class="health-progress-fill"></div></div>
+                        <div class="health-progress-detail" id="cleanup-detail"></div>
+                    </div>
+                </div>
+
+                <div class="maint-item">
+                    <h3>转换历史原图为 WebP</h3>
+                    <p class="batch-summary">新上传的原图已自动转 WebP；此前上传的仍是原格式，用这里批量补齐。<strong>只换扩展名、布局不动</strong>，缩略图无需搬迁。</p>
+                    <details class="batch-help">
+                        <summary>干跑查什么、哪些会跳过</summary>
+                        <p>干跑是<strong>零 I/O 的候选筛查</strong>（<strong>不下载、不解码、不写任何文件</strong>），只判「格式可转 + 键名可改写」。
+                        所以数字是候选数 —— <strong>候选 ≠ 必然更小</strong>，只能在执行时逐张判定，不划算的保留原图并计入跳过。</p>
+                        <p>执行时在<strong>私有副本</strong>上转码，校验新对象存在后才改记录，旧对象最后删；任一步失败逐行回滚，图片始终可访问。
+                        GIF / SVG / 读不到 EXIF 方向 / <strong>超出内存预算</strong>（解码与编码各占一块整幅画布，会打爆 memory_limit）的行会跳过并计数。
+                        云端对象每行都要下载再上传，建议先干跑看数量再分批执行。</p>
+                    </details>
+                    <p class="batch-stat" id="convert-stat">尚未检查。</p>
+                    <div class="batch-actions">
+                        <button type="button" class="btn btn-outline btn-sm" id="convert-check">干跑检查</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="convert-run" disabled
+                                title="GIF / SVG / 读不到 EXIF 方向 / 转完不更小的会跳过；云端对象每张都要下载再上传，建议先干跑看数量">开始转换</button>
+                    </div>
+                    <div id="convert-progress" class="hidden">
+                        <div class="health-progress-text" id="convert-text">准备检查…</div>
+                        <div class="health-progress-track"><div id="convert-fill" class="health-progress-fill"></div></div>
+                        <div class="health-progress-detail" id="convert-detail"></div>
+                    </div>
+                </div>
+            </div>
+        </details>
     </div>
     <?php endif; ?>
 </section>

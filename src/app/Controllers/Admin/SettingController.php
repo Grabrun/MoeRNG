@@ -70,7 +70,7 @@ class SettingController extends Controller
                         . '缩略图本来就是 WebP。以下情形保持原格式：GIF（转码会丢动画）、SVG（矢量）、'
                         . 'JPEG 读不到 EXIF 方向（转完会变歪）、编码结果不比原文件小、'
                         . '或转码峰值超出可用内存（超大图，含上面的像素上限）。'
-                        . '已有原图可用下方「转换历史原图」批量处理',
+                        . '已有原图可在「维护 · 媒体维护」批量转换',
                 ],
                 'original_webp_quality' => [
                     'type' => 'number', 'label' => '原图 WebP 质量', 'default' => '90', 'rules' => ['numeric' => true, 'min' => 40, 'max' => 100],
