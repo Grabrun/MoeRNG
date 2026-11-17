@@ -114,7 +114,6 @@ admin_header('系统设置', 'page-settings');
         <?php if ($gdef['fields'] !== []): ?>
         <div class="settings-save-bar mb-3">
             <button type="submit" class="btn btn-primary">保存「<?= h($gdef['label']) ?>」</button>
-            <span class="save-hint text-small" id="save-hint"></span>
         </div>
         <?php endif; ?>
     </form>

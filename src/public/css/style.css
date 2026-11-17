@@ -129,28 +129,32 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 }
 
 .settings-group-body { padding-top: 2px; }
+/* 保存条只留住浮动的按钮，不拉通栏空盒；悬在内容上时空缺处不拦截点击 */
 .settings-save-bar {
-    margin-top: 8px;
-    padding: 14px 0;
-    border-top: 1px solid var(--border);
+    position: sticky;
+    bottom: 18px;
+    z-index: 30;
     display: flex;
     justify-content: flex-end;
-    align-items: center;
-    gap: 12px;
+    margin-top: 10px;
+    pointer-events: none;
 }
-@media (min-width: 769px) {
-    .settings-save-bar {
-        position: sticky;
-        bottom: 0;
-        z-index: 30;
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-bottom: 0;
-        border-radius: var(--radius) var(--radius) 0 0;
-        padding: 14px 20px;
-        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.14);
-    }
-    [data-theme="light"] .settings-save-bar { box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.06); }
+.settings-save-bar .btn {
+    pointer-events: auto;
+    padding: 12px 26px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28),
+                0 0 0 1px color-mix(in srgb, var(--border) 75%, transparent);
+}
+.settings-save-bar .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34),
+                0 0 0 1px color-mix(in srgb, var(--border) 75%, transparent);
+}
+[data-theme="light"] .settings-save-bar .btn {
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14), 0 0 0 1px var(--border);
+}
+[data-theme="light"] .settings-save-bar .btn:hover {
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--border);
 }
 
 .page-settings .main-content {
@@ -772,7 +776,8 @@ pre code { background: none; color: var(--text); padding: 0; }
         background: rgba(0,0,0,0.5);
     }
     .sidebar-overlay.active { display: block; }
-    .main-content { padding-top: 64px; }
+    /* 抽屉式侧栏：主内容不再留 240px 让位；顶部 64px 避开固定的菜单按钮 */
+    .main-content { margin-left: 0; padding: 20px 16px; padding-top: 64px; }
 }
 
 .empty-state {
@@ -997,46 +1002,14 @@ body.modal-open { overflow: hidden; }
         .sidebar-footer .logout-form { display: contents; }
         .sidebar-footer .logout-form button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; background: none; border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 0.9rem; font-family: inherit; cursor: pointer; text-align: left; transition: all var(--transition); }
         .sidebar-footer .logout-form button:hover { background: var(--bg-input); color: var(--text); }
-        .main-content { margin-left: 240px; flex: 1; padding: 32px; min-width: 0; }
+        /* 让位宽度只在桌面成立：写在 min-width 里，移动端那条 margin-left:0 才不会被后面的规则覆盖 */
+        .main-content { flex: 1; padding: 32px; min-width: 0; }
+        @media (min-width: 769px) { .main-content { margin-left: 240px; } }
         .page-header { margin-bottom: 32px; }
         .page-header h1 { font-size: 1.5rem; }
         .page-header p { color: var(--text-secondary); font-size: 0.9rem; }
         #batch-bar { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg-card); border: 1px solid var(--primary); border-radius: var(--radius); padding: 12px 24px; display: flex; align-items: center; gap: 16px; z-index: 500; box-shadow: var(--shadow); }
-        @media (max-width: 768px) {
-            .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
-            .main-content { margin-left: 0; padding: 20px 16px; }
-        }
 
-.admin-layout { display: flex; min-height: 100vh; }
-        .sidebar {
-            width: 240px; background: var(--bg-card); border-right: 1px solid var(--border);
-            padding: 24px 16px; position: fixed; top: 0; left: 0; bottom: 0;
-            overflow-y: auto; z-index: 100;
-        }
-        .sidebar-brand {
-            font-size: 1.3rem; font-weight: 700; color: var(--primary);
-            margin-bottom: 32px; display: block; text-decoration: none;
-            padding: 0 12px;
-        }
-        .sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
-        .sidebar-nav a {
-            display: flex; align-items: center; gap: 12px;
-            padding: 10px 12px; border-radius: var(--radius-sm);
-            color: var(--text-secondary); text-decoration: none;
-            font-size: 0.9rem; transition: all var(--transition);
-        }
-        .sidebar-nav a:hover, .sidebar-nav a.active { background: var(--bg-input); color: var(--text); }
-        .sidebar-nav a.active { color: var(--primary); }
-        .main-content { margin-left: 240px; flex: 1; padding: 32px; min-width: 0; }
-        .page-header { margin-bottom: 32px; }
-        .page-header h1 { font-size: 1.5rem; }
-        .page-header p { color: var(--text-secondary); font-size: 0.9rem; }
-
-        @media (max-width: 768px) {
-            .sidebar { width: 100%; position: relative; height: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 16px; }
-            .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
-            .main-content { margin-left: 0; padding: 20px 16px; }
-        }
 
 .install-container { max-width: 640px; margin: 40px auto; padding: 0 24px; } .install-header { text-align: center; margin-bottom: 40px; } .install-header h1 { color: var(--primary); font-size: 2.2rem; }
 
@@ -1412,7 +1385,6 @@ body.modal-open { overflow: hidden; }
 .settings-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
 .setting-label { display: block; }
 .setting-help { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 0.8rem; }
-.save-hint { color: var(--text-secondary); font-size: 0.85rem; }
 
 .rd-image-preview { display: block; width: 100%; }
 .count {
@@ -1511,7 +1483,6 @@ body.modal-open { overflow: hidden; }
 .setting-item{padding:10px 12px;border-radius:var(--radius-sm)}.setting-item:hover{background:var(--bg-card-hover)}.setting-label{font-weight:600}
 .batch-panel h3{display:flex;align-items:center;gap:8px}.batch-panel h3::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--primary)}
 #health-results{display:flex;flex-direction:column;gap:6px}#health-results .health-ok,#health-results .health-bad{display:inline-block;padding:2px 10px;border-radius:var(--radius-pill);font-size:.78rem;font-weight:700}#health-results .health-ok{background:color-mix(in srgb,var(--success) 14%,transparent);color:var(--success)}#health-results .health-bad{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
-.save-hint{color:var(--warning);font-weight:600}
 
 .hero-kicker{display:inline-flex;align-items:center;gap:8px;font-size:.82rem;font-weight:500;color:var(--accent);background:var(--accent-light);padding:6px 14px;border-radius:var(--radius-pill);margin-bottom:16px}
 .hero-banner-wrap{border-radius:var(--radius-lg);overflow:hidden}
