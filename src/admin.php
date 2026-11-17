@@ -32,6 +32,7 @@ $router->group('/admin', function ($router) {
     $router->get('/images', [$images, 'index']);
     $router->get('/images/ids', [$images, 'ids']);
     $router->post('/images/upload', [$images, 'upload']);
+    $router->post('/images/precheck', [$images, 'precheck']);
     $router->post('/images/backfill-hashes', [$images, 'backfillHashes']);
     $router->post('/images/backfill-thumbs', [$images, 'backfillThumbs']);
     $router->get('/images/queue', [$images, 'queue']);

@@ -581,48 +581,69 @@ class SettingController extends Controller
             $checks['hash_backfill'] = ['ok' => true, 'detail' => '统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
         }
 
-        // 回查不到自己说明去重会静默失效（CHAR 尾空格/排序规则所致）。
+        // 判据自检：索引表在不在、能不能回查到自己、库里有没有内容相同的记录。
         try {
-            $sample = $pdo->query(
-                "SELECT `id`, `file_hash`, `file_sha256` FROM `images`"
-                . " WHERE TRIM(COALESCE(`file_sha256`, '')) <> '' ORDER BY `id` DESC LIMIT 1"
-            )->fetch(\PDO::FETCH_ASSOC) ?: null;
-
-            // 自检必须走运行时同一条判据：findByContentHash() 对 CHAR(64) 的 MD5 带 TRIM 兜底，
-            // 这里若另写一条不带兜底的 SQL，NO PAD 排序规则下会误报「回查不到自己」。
-            $shaHit = $md5Hit = null;
-            if ($sample !== null) {
-                $shaVal = trim((string) $sample['file_sha256']);
-                if ($shaVal !== '') {
-                    $shaHit = \App\Models\Image::findByContentHash([$shaVal], []) !== null;
-                }
-                $md5Val = trim((string) $sample['file_hash']);
-                if ($md5Val !== '') {
-                    $md5Hit = \App\Models\Image::findByContentHash([], [$md5Val]) !== null;
-                }
+            if (!\App\Models\ContentHash::tableExists()) {
+                $checks['dedupe_key'] = [
+                    'ok' => false,
+                    'detail' => 'content_hashes 索引表不存在 —— 去重退化为 MD5 兜底，点「执行修复」重建',
+                    'fixable' => true,
+                    'extra' => ['missing_table' => true],
+                ];
+                return $checks;
             }
 
+            $indexed = (int) $pdo->query(
+                'SELECT COUNT(*) FROM `content_hashes` WHERE `image_id` IS NOT NULL'
+            )->fetchColumn();
+            $stale = (int) $pdo->query(
+                'SELECT COUNT(*) FROM `content_hashes` WHERE `image_id` IS NULL'
+                . ' AND `created_at` < (NOW() - INTERVAL 10 MINUTE)'
+            )->fetchColumn();
+            $sample = $pdo->query(
+                'SELECT `sha256` FROM `content_hashes` WHERE `image_id` IS NOT NULL'
+                . ' ORDER BY `created_at` DESC LIMIT 1'
+            )->fetchColumn();
+            // 自检必须走运行时同一条判据（ContentHash::find），不另写 SQL，避免再次漂移
+            $selfHit = $sample === false ? null : \App\Models\ContentHash::find((string) $sample) !== null;
+            $images = (int) $pdo->query('SELECT COUNT(*) FROM `images`')->fetchColumn();
             $dupGroups = (int) $pdo->query(
-                "SELECT COUNT(*) FROM ("
-                . "SELECT `file_sha256` FROM `images`"
+                "SELECT COUNT(*) FROM (SELECT `file_sha256` FROM `images`"
                 . " WHERE TRIM(COALESCE(`file_sha256`, '')) <> ''"
-                . " GROUP BY `file_sha256` HAVING COUNT(*) > 1"
-                . ") t"
+                . " GROUP BY `file_sha256` HAVING COUNT(*) > 1) t"
             )->fetchColumn();
 
             $bad = [];
-            if ($shaHit === false) $bad[] = 'file_sha256 回查不到自己';
-            if ($md5Hit === false) $bad[] = 'file_hash 回查不到自己';
+            if ($selfHit === false) {
+                $bad[] = '索引回查不到自己';
+            }
+
+            if ($bad !== []) {
+                $detail = '去重判据失效: ' . implode('；', $bad) . ' —— 上传的重复图片不会被拦截';
+            } else {
+                $detail = "去重判据正常：已索引 {$indexed} 条内容（库内 {$images} 张图）";
+                if ($dupGroups > 0) {
+                    $detail .= "；库内已有 {$dupGroups} 组内容完全相同的记录（历史漏判，需自行清理）";
+                }
+                if ($indexed < $images) {
+                    $detail .= '；' . ($images - $indexed) . ' 张图尚未进索引（历史行，可跑 backfill-content-hashes 补齐）';
+                }
+                if ($stale > 0) {
+                    $detail .= "；{$stale} 个超时占位待回收（队列每轮自动清理）";
+                }
+            }
 
             $checks['dedupe_key'] = [
-                'ok' => $bad === [] && $dupGroups === 0,
-                'detail' => $bad !== []
-                    ? '去重判据失效: ' . implode('；', $bad) . ' —— 上传的重复图片不会被拦截'
-                    : ($dupGroups > 0
-                        ? "去重判据正常，但库内已有 {$dupGroups} 组内容完全相同的记录（历史漏判，需自行清理）"
-                        : '去重判据正常，库内无重复内容' . ($shaHit === null ? '（暂无可校验样本）' : '')),
+                'ok' => $bad === [],
+                'detail' => $detail,
                 'fixable' => false,
-                'extra' => ['sha_hit' => $shaHit, 'md5_hit' => $md5Hit, 'dup_groups' => $dupGroups],
+                'extra' => [
+                    'indexed'  => $indexed,
+                    'images'   => $images,
+                    'stale'    => $stale,
+                    'self_hit' => $selfHit,
+                    'dup_groups' => $dupGroups,
+                ],
             ];
         } catch (\Throwable $e) {
             $checks['dedupe_key'] = ['ok' => true, 'detail' => '去重自检失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];
@@ -665,6 +686,10 @@ class SettingController extends Controller
             $orphanFound = $checks['orphan_settings']['extra']['found'] ?? [];
             foreach ($orphanFound as $k => $c) {
                 $deletedRows += $pdo->exec("DELETE FROM `settings` WHERE `key` = " . $pdo->quote($k));
+            }
+            if (($checks['dedupe_key']['extra']['missing_table'] ?? false) === true) {
+                \App\Models\ContentHash::ensureTable($pdo);
+                $applied++;
             }
         } catch (\Throwable $e) {
             $errors[] = $e->getMessage();

@@ -803,6 +803,57 @@ function initCategoryActions() {
     });
 }
 
+// 上传前预检：本地算 SHA-256 → 一次请求问服务器哪些已存在。
+// 只省流量与时间；服务端仍会在写入时原子判重，所以任何失败都直接退化为照常上传。
+const PRECHECK_MAX_FILES = 40;
+const PRECHECK_MAX_BYTES = 256 * 1024 * 1024;
+
+function shouldPrecheck(batches) {
+    if (!(window.crypto && crypto.subtle && typeof crypto.subtle.digest === 'function')) return false;
+    let n = 0, bytes = 0;
+    for (const b of batches) for (const f of b) { n++; bytes += f.size; }
+    return n > 0 && n <= PRECHECK_MAX_FILES && bytes <= PRECHECK_MAX_BYTES;
+}
+
+async function dropKnownContent(batches) {
+    const hashes = [];
+    for (const batch of batches) {
+        for (const f of batch) {
+            try {
+                const buf = await f.arrayBuffer();
+                const digest = await crypto.subtle.digest('SHA-256', buf);
+                f._sha256 = Array.from(new Uint8Array(digest))
+                    .map(b => b.toString(16).padStart(2, '0')).join('');
+                hashes.push(f._sha256);
+            } catch (_) {
+                f._sha256 = '';
+            }
+        }
+    }
+    const known = new Set();
+    if (hashes.length) {
+        const r = await fetch('/admin/images/precheck', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCsrfToken(),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ hashes }),
+        });
+        const j = await parseJsonResponse(r);
+        if (j && j.success && j.hits) Object.keys(j.hits).forEach(h => known.add(h));
+    }
+    const dupNames = [];
+    for (let i = batches.length - 1; i >= 0; i--) {
+        batches[i] = batches[i].filter(f => {
+            if (f._sha256 && known.has(f._sha256)) { dupNames.push(f.name); return false; }
+            return true;
+        });
+    }
+    return dupNames;
+}
+
 function initDropZone() {
     const zone = document.querySelector('.drop-zone');
     if (!zone) return;
@@ -829,7 +880,7 @@ function initDropZone() {
 
     document.getElementById('upload-submit')?.addEventListener('click', () => handleFiles(input ? input.files : []));
 
-    function handleFiles(files) {
+    async function handleFiles(files) {
         if (!files.length) return;
         if (uploading) { showToast('上传进行中，请等待当前批次完成', 'error', 4000); return; }
 
@@ -881,6 +932,29 @@ function initDropZone() {
 
         uploading = true;
 
+        // 预检命中就直接跳过，连字节都不传；全部命中时不必进上传流程
+        var preDuplicates = [];
+        if (shouldPrecheck(batches)) {
+            if (progressBar && progressFill) {
+                progressBar.classList.remove('hidden');
+                progressFill.style.width = '0%';
+                progressFill.classList.add('processing');
+            }
+            try {
+                preDuplicates = await dropKnownContent(batches);
+            } catch (e) {
+                if (window.console) console.warn('precheck skipped:', e);
+            }
+            batches = batches.filter(function(b) { return b.length; });
+            if (!batches.length) {
+                uploading = false;
+                if (progressBar) progressBar.classList.add('hidden');
+                if (progressFill) progressFill.classList.remove('processing');
+                showToast('所选 ' + preDuplicates.length + ' 张均已存在，未新增', 'info', 6000);
+                return;
+            }
+        }
+
         if (!(progressBar && progressFill)) {
             buildForm(batches[0]).submit();
             uploading = false;
@@ -889,7 +963,7 @@ function initDropZone() {
 
         var batchCount = batches.length;
         var uploadedCount = 0, allErrors = [];
-        var allDuplicates = [];
+        var allDuplicates = preDuplicates;
         progressBar.classList.remove('hidden');
         progressFill.style.width = '0%';
         progressFill.classList.remove('processing');

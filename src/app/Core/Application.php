@@ -6,7 +6,7 @@ namespace App\Core;
 class Application
 {
     /** 自迁移版本戳：与 settings.schema_version 一致则跳过迁移；新增迁移必须递增。 */
-    private const SCHEMA_VERSION = '2026-11-04-1';
+    private const SCHEMA_VERSION = '2026-11-17-1';
 
     private static ?self $instance = null;
     private Router $router;
@@ -183,6 +183,7 @@ class Application
             $migrationError = $this->ensureImageColumns($db);
             $this->ensureStorageProfileTable($db);
             $this->ensureAuditLogTable($db);
+            $this->ensureContentHashTable($db);
             $this->ensureStatsTables($db);
             $exp = self::schemaExpectations();
             $userErr = $this->ensureColumns($db, 'users', $exp['columns']['users']);
@@ -392,6 +393,11 @@ class Application
             INDEX `idx_created` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         $db->exec($sql);
+    }
+
+    private function ensureContentHashTable(\PDO $db): void
+    {
+        \App\Models\ContentHash::ensureTable($db);
     }
 
     private function ensureStatsTables(\PDO $db): void

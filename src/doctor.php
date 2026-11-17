@@ -379,6 +379,15 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                     }
                 }
             }
+            // 内容哈希索引表：缺了它上传去重退化为 MD5 兜底（运行时迁移会自动建）
+            $chTable = $pdo->query("SHOW TABLES LIKE 'content_hashes'")->fetchColumn() !== false;
+            check(
+                'Content hash index table',
+                $chTable,
+                $chTable ? 'content_hashes present' : 'content_hashes missing — 访问一次站点由运行时迁移自动创建',
+                true
+            );
+
             if ($schemaMissing === []) {
                 check('Schema migration completeness', true, 'all columns + indexes expected by the app are present');
                 try {

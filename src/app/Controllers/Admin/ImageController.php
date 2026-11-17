@@ -10,6 +10,7 @@ use App\Core\Config;
 use App\Core\Session;
 use App\Models\Image;
 use App\Models\Category;
+use App\Models\ContentHash;
 use App\Models\StorageProfile;
 
 class ImageController extends Controller
@@ -442,6 +443,124 @@ class ImageController extends Controller
     }
 
     /**
+     * 一次读盘算两个摘要：SHA-256 是判重键，MD5 只用于匹配尚未回填索引的老数据。
+     *
+     * @return array{sha256:?string, md5:?string}
+     */
+    private function hashFileBoth(string $file): array
+    {
+        $sha = hash_init('sha256');
+        $md5 = hash_init('md5');
+        $fh = @fopen($file, 'rb');
+        if ($fh === false) {
+            return ['sha256' => null, 'md5' => null];
+        }
+        while (!feof($fh)) {
+            $chunk = fread($fh, 1048576);
+            if ($chunk === false) {
+                break;
+            }
+            hash_update($sha, $chunk);
+            hash_update($md5, $chunk);
+        }
+        fclose($fh);
+        return ['sha256' => hash_final($sha), 'md5' => hash_final($md5)];
+    }
+
+    /**
+     * 查索引 → 未命中则原子占位。返回 null = 抢到（可以继续处理）；否则返回占用者。
+     * 占位失败只有两种可能：并发方刚插入，或失败的旧行还占着（已就地清掉）。
+     *
+     * @return array{sha256:string, image_id:?int, kind:string}|null
+     */
+    private function claimHash(string $sha256, string $kind): ?array
+    {
+        for ($pass = 0; $pass < 3; $pass++) {
+            $hit = ContentHash::find($sha256);
+            if ($hit === null) {
+                if (ContentHash::reserve($sha256, $kind)) {
+                    return null;
+                }
+                continue;
+            }
+            if ($this->purgeFailedHolder($hit)) {
+                continue;
+            }
+            return $hit;
+        }
+        return ContentHash::find($sha256) ?? ['sha256' => $sha256, 'image_id' => null, 'kind' => $kind];
+    }
+
+    /** 处理失败的图不该永久占住哈希：删掉它（外键级联释放索引），让重传把这张图修好。 */
+    private function purgeFailedHolder(array $hit): bool
+    {
+        $id = $hit['image_id'] ?? null;
+        if ($id === null) {
+            return false;
+        }
+        $img = Image::find((int) $id);
+        if ($img === null) {
+            ContentHash::release((string) $hit['sha256']);
+            return true;
+        }
+        if ((string) ($img->process_status ?? '') !== 'failed') {
+            return false;
+        }
+        try {
+            return $img->delete();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** @param array{sha256:string, image_id:?int, kind:string} $hit */
+    private function duplicateNote(string $name, array $hit): string
+    {
+        $id = $hit['image_id'] ?? null;
+        if ($id === null) {
+            return "{$name}：相同内容正在上传或处理中，已跳过";
+        }
+        $img = Image::find((int) $id);
+        if ($img === null) {
+            return "{$name}：与库中已有内容重复，已跳过";
+        }
+        if ((string) ($img->process_status ?? '') !== 'done') {
+            return "{$name}：与库中正在处理的图片「{$img->original_name}」相同，已跳过";
+        }
+        $kind = (string) ($hit['kind'] ?? '');
+        if (str_starts_with($kind, 'thumb_')) {
+            return "{$name}：与图片「{$img->original_name}」的缩略图（" . substr($kind, 6) . '）内容相同，已跳过';
+        }
+        return "{$name}：与已有图片「{$img->original_name}」重复，已跳过";
+    }
+
+    /**
+     * 老数据兜底：索引尚未回填时用 MD5 匹配，命中即把哈希补写进索引。
+     *
+     * @param string[] $md5Candidates
+     */
+    private function legacyDuplicate(array $md5Candidates, string $srcSha256, string $dstSha256): ?Image
+    {
+        if ($md5Candidates === []) {
+            return null;
+        }
+        $hit = Image::findByContentHash([], $md5Candidates);
+        if ($hit === null) {
+            return null;
+        }
+        try {
+            $known = trim((string) $hit->file_sha256);
+            if ($known !== '') {
+                ContentHash::record((int) $hit->id, [$known === $dstSha256 ? ContentHash::KIND_STORED : ContentHash::KIND_SOURCE => $known]);
+            } else {
+                ContentHash::record((int) $hit->id, [ContentHash::KIND_SOURCE => $srcSha256]);
+            }
+        } catch (\Throwable) {
+        }
+        return $hit;
+    }
+
+    /**
      * 多尺寸缩略图（不放大，单档失败不影响其它档）。
      *
      * @return array{readable: bool, thumbs: array<string, array{tmp: string, key: string}>, reason: string}
@@ -506,6 +625,8 @@ class ImageController extends Controller
                     'tmp' => $tmp,
                     'key' => \App\Models\Image::thumbKey($size, $path),
                     'bytes' => $bytes > 0 ? $bytes : null,   // 0 = 未知
+                    // 产出哈希进索引：用户把本站缩略图存下来再传时能被认出
+                    'sha256' => @hash_file('sha256', $tmp) ?: null,
                 ];
                 $pendingTmp = null;
             }
@@ -554,18 +675,41 @@ class ImageController extends Controller
         }
     }
 
+    /** 把成功上传的缩略图哈希写进索引；失败不致命，图片本身已经入库。 */
+    private function recordThumbHashes(int $imageId, array $hashes): void
+    {
+        $pairs = [];
+        foreach ($hashes as $size => $hash) {
+            $kind = ContentHash::THUMB_KINDS[(string) $size] ?? null;
+            if ($kind !== null && is_string($hash) && $hash !== '') {
+                $pairs[$kind] = $hash;
+            }
+        }
+        if ($pairs === []) {
+            return;
+        }
+        try {
+            ContentHash::record($imageId, $pairs);
+        } catch (\Throwable) {
+        }
+    }
+
     private function uploadThumbs(\App\Storage\StorageInterface $driver, array $thumbs): array
     {
         $keys = [];
         $bytes = [];
+        $hashes = [];
         foreach ($thumbs as $size => $t) {
             try {
                 $driver->upload($t['tmp'], $t['key'], 'image/webp');
                 $keys[$size] = $t['key'];
-                // 只记**上传成功**档的字节数（失败档的对象不存在，记了就是谎报）
+                // 只记**上传成功**档的字节数与哈希（失败档的对象不存在，记了就是谎报）
                 $b = (int) ($t['bytes'] ?? 0);
                 if ($b > 0) {
                     $bytes[$size] = $b;
+                }
+                if (is_string($t['sha256'] ?? null) && $t['sha256'] !== '') {
+                    $hashes[$size] = $t['sha256'];
                 }
             } catch (\Throwable) {
                 // 单档失败不影响其它档
@@ -573,7 +717,7 @@ class ImageController extends Controller
                 @unlink($t['tmp']);
             }
         }
-        return ['keys' => $keys, 'bytes' => $bytes];
+        return ['keys' => $keys, 'bytes' => $bytes, 'hashes' => $hashes];
     }
 
     /** 致命错误也让端点返回可读 JSON（否则响应体为空，前端只看到 "Unexpected end of JSON input"）。 */
@@ -635,6 +779,12 @@ class ImageController extends Controller
     public function processQueue(Request $request): void
     {
         $this->jsonFatalGuard('process-queue');
+
+        // 回收中途死掉的请求留下的空占位（10 分钟内不动才算，避免误删正在处理的）
+        try {
+            ContentHash::sweepStale(10);
+        } catch (\Throwable) {
+        }
 
         $batchSize = max(1, min(self::QUEUE_BATCH_MAX, (int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT)));
         // 预算从认领前开始算：复位/探测/取批同样受网关超时约束
@@ -754,6 +904,7 @@ class ImageController extends Controller
                     }
 
                     $thumbUp = $this->uploadThumbs($storage, $gen['thumbs']);
+                    $this->recordThumbHashes($id, $thumbUp['hashes'] ?? []);
                     $thumbKeys = $thumbUp['keys'];
                     $thumbPath = $thumbKeys['md'] ?? null;
                     foreach ($thumbKeys as $thumbKey) {
@@ -1051,6 +1202,7 @@ class ImageController extends Controller
                     // 副本的删除统一交给 finally，否则生成阶段抛异常就会漏掉一整份原图
                     $gen = $this->makeThumbnails($localFile, (string) $row['mime_type'], $path);
                     $thumbUp = $this->uploadThumbs($driver, $gen['thumbs']);
+                    $this->recordThumbHashes($id, $thumbUp['hashes'] ?? []);
                     $thumbKeys = $thumbUp['keys'];
 
                     // 只回填缩略图，process_status 保持 done
@@ -1329,7 +1481,7 @@ class ImageController extends Controller
         $cursor  = $fromId ?? ($apply ? (int) \App\Models\Setting::get('original_convert_cursor', '0') : 0);
 
         $stmt = $pdo->prepare(
-            "SELECT `id`, `path`, `mime_type`, `storage_profile_id` FROM `images`"
+            "SELECT `id`, `path`, `mime_type`, `storage_profile_id`, `file_sha256` FROM `images`"
             . " WHERE `id` > ? AND `process_status` = 'done' AND `path` <> '' AND `path` NOT LIKE '%.webp'"
             . " ORDER BY `id` ASC LIMIT {$batch}"
         );
@@ -1462,6 +1614,23 @@ class ImageController extends Controller
                     $id,
                 ])) {
                     throw new \RuntimeException('数据库更新失败');
+                }
+
+                // 产出哈希随字节一起换：旧值只在确实指向本行时才释放，避免误删别人的索引
+                try {
+                    $newSha = ($sha === false || $sha === '') ? '' : $sha;
+                    $oldSha = trim((string) ($row['file_sha256'] ?? ''));
+                    if ($newSha !== '') {
+                        if ($oldSha !== '' && $oldSha !== $newSha) {
+                            $holder = ContentHash::find($oldSha);
+                            if ($holder !== null && $holder['image_id'] === $id) {
+                                ContentHash::release($oldSha);
+                            }
+                        }
+                        ContentHash::record($id, [ContentHash::KIND_STORED => $newSha]);
+                    }
+                } catch (\Throwable) {
+                    // 索引维护失败不影响转码结果本身
                 }
 
                 // 旧对象删失败不影响服务（新对象已就位），计入 orphan 风险
@@ -1922,6 +2091,11 @@ class ImageController extends Controller
                     }
                     if ($image->save()) {
                         $updated++;
+                        // 回填的哈希同步进索引，之后判重不再依赖 MD5 兜底
+                        try {
+                            ContentHash::record($id, [ContentHash::KIND_STORED => $sha]);
+                        } catch (\Throwable) {
+                        }
                         $results[] = ['id' => $id, 'ok' => true];
                     } else {
                         $failed++;
@@ -1946,6 +2120,19 @@ class ImageController extends Controller
             'failed' => $failed,
             'results' => $results,
         ]);
+    }
+
+    /**
+     * POST /admin/images/precheck —— 批量查哈希，前端据此跳过已知内容、不传字节。
+     * 只是省流量的优化：真正的判定在 upload() 的抢位里，预检结果过时也不会造成误判。
+     */
+    public function precheck(Request $request): void
+    {
+        $raw = $request->input('hashes', []);
+        if (!is_array($raw)) {
+            $raw = [];
+        }
+        $this->json(['success' => true, 'hits' => ContentHash::findMany(array_slice($raw, 0, 500))]);
     }
 
     public function upload(Request $request): void
@@ -2020,10 +2207,25 @@ class ImageController extends Controller
                 continue;
             }
 
-            // 源字节与落盘字节各算一套哈希：转码前后的存量行只对得上其中一套，
-            // 只查一套会让去重静默失效（同一张图下一批判不出重复）
-            $srcMd5 = @hash_file('md5', $tmpName);
-            $srcSha = @hash_file('sha256', $tmpName);
+            // 源字节哈希：判重的唯一依据。落盘哈希会随转码参数变化，不能当键。
+            $srcHashers = $this->hashFileBoth($tmpName);
+            $srcSha256 = $srcHashers['sha256'];
+            if ($srcSha256 === null) {
+                $errors[] = "{$originalName}: 无法读取文件内容（哈希计算失败）";
+                continue;
+            }
+
+            if (isset($batchHashes[$srcSha256])) {
+                $duplicates[] = "{$originalName}：与本批次中「{$batchHashes[$srcSha256]}」重复，已跳过";
+                continue;
+            }
+
+            // 抢位即判重：索引未命中则原子占位；撞唯一键说明并发方抢先（先查后插必然漏）
+            $holder = $this->claimHash($srcSha256, ContentHash::KIND_SOURCE);
+            if ($holder !== null) {
+                $duplicates[] = $this->duplicateNote($originalName, $holder);
+                continue;
+            }
 
             // 原图统一转 WebP；失败/不划算则保持原格式，不阻断上传
             $conv = $this->convertOriginalToWebp($tmpName, $detectedMime);
@@ -2034,61 +2236,32 @@ class ImageController extends Controller
                 $fileSize = (int) @filesize($tmpName);
             }
 
-            // 未转码时落盘哈希与源字节相同，直接复用省一次读盘
-            $dstMd5 = $conv['ok'] ? @hash_file('md5', $tmpName) : $srcMd5;
-            $dstSha = $conv['ok'] ? @hash_file('sha256', $tmpName) : $srcSha;
+            $dstHashers = $conv['ok'] ? $this->hashFileBoth($tmpName) : $srcHashers;
+            $dstSha256 = $dstHashers['sha256'] ?? $srcSha256;
+            $fileHash = $dstHashers['md5'];
+            $fileSha256 = $dstSha256;
 
-            // 入库用落盘字节哈希，与「哈希回填」「转换历史原图」口径一致
-            $fileHash = ($dstMd5 !== false && $dstMd5 !== '') ? $dstMd5 : null;
-            $fileSha256 = ($dstSha !== false && $dstSha !== '') ? $dstSha : null;
-            $srcHash = ($srcMd5 !== false && $srcMd5 !== '') ? $srcMd5 : null;
-            $srcSha256 = ($srcSha !== false && $srcSha !== '') ? $srcSha : null;
-
-            if ($fileSha256 !== null || $srcSha256 !== null) {
-                $shaCands = array_values(array_unique(array_filter([$fileSha256, $srcSha256])));
-                $md5Cands = array_values(array_unique(array_filter([$fileHash, $srcHash])));
-
-                // 批内初筛：同批同文件必然同源字节
-                $batchKey = $srcSha256 ?? $fileSha256;
-                if (isset($batchHashes[$batchKey])) {
-                    $duplicates[] = "{$originalName}：与本批次中「{$batchHashes[$batchKey]}」重复，已跳过";
+            // 产出哈希只认「老行只存了落盘字节」与「用户把本站产出的 WebP/缩略图又传回来」
+            // 这两种情况；同一张原创图是否重复，由上面的源哈希决定。
+            if ($dstSha256 !== $srcSha256) {
+                $holder = $this->claimHash($dstSha256, ContentHash::KIND_STORED);
+                if ($holder !== null) {
+                    ContentHash::release($srcSha256);
+                    $duplicates[] = $this->duplicateNote($originalName, $holder);
                     continue;
                 }
+            }
 
-                // file_hash 是 CHAR(64) 却只存 32 位 MD5，尾空格比较受排序规则影响，
-                // 不按模糊匹配就永远命中不了（去重静默失效）
-                $existing = Image::findByContentHash($shaCands, []);
-                $matchedByMd5 = false;
-                if ($existing === null && $md5Cands !== []) {
-                    $existing = Image::findByContentHash([], $md5Cands);
-                    $matchedByMd5 = $existing !== null;
-                }
-
-                if ($existing !== null) {
-                    $existingSha = trim((string) $existing->file_sha256);
-                    if ($matchedByMd5) {
-                        if ($existingSha === '') {
-                            // 旧行没有强哈希：MD5 命中即算重复，顺手回填强哈希
-                            try {
-                                \App\Core\Database::getInstance()
-                                    ->prepare("UPDATE `images` SET `file_sha256` = ? WHERE `id` = ?")
-                                    ->execute([$fileSha256 ?? $srcSha256, (int) $existing->id]);
-                            } catch (\Throwable) {
-                                // 回填失败不影响判定
-                            }
-                        } elseif (!in_array($existingSha, $shaCands, true)) {
-                            // 强哈希不等：只是 MD5 碰撞，放行不误杀
-                            $existing = null;
-                        }
-                    }
-                }
-
-                if ($existing !== null) {
-                    $duplicates[] = "{$originalName}：与已有图片「{$existing->original_name}」重复，已跳过";
-                    continue;
-                }
-
-                $batchHashes[$batchKey] = $originalName;
+            // 老数据尚未回填索引：MD5 兜底一次，命中即补写索引，此后走快路径。
+            $legacy = $this->legacyDuplicate(
+                array_values(array_unique(array_filter([$srcHashers['md5'], $dstHashers['md5']]))),
+                $srcSha256,
+                $dstSha256
+            );
+            if ($legacy !== null) {
+                ContentHash::release($srcSha256, $dstSha256 !== $srcSha256 ? $dstSha256 : '');
+                $duplicates[] = "{$originalName}：与已有图片「{$legacy->original_name}」重复，已跳过";
+                continue;
             }
 
             // 新布局：{yyyy}/{mm}/{uuid}/original.{ext}，缩略图落同目录 thumb-{size}.webp
@@ -2133,7 +2306,18 @@ class ImageController extends Controller
                 }
                 $uploaded++;
 
+                // 成功才登记批内去重表：失败的文件本批内还允许再试一次
+                $batchHashes[$srcSha256] = $originalName;
+
+                // 占位转正：索引行指向真实图片，之后命中即可直接返回这张图
+                ContentHash::attach($srcSha256, (int) $image->id);
+                if ($dstSha256 !== $srcSha256) {
+                    ContentHash::attach($dstSha256, (int) $image->id);
+                }
+
             } catch (\Throwable $e) {
+                // 落库失败必须把占位还回去，否则这张图从此再也传不上来
+                ContentHash::release($srcSha256, $dstSha256 !== $srcSha256 ? $dstSha256 : '');
                 $errors[] = "{$originalName}: Storage error - {$e->getMessage()}";
             }
         }
