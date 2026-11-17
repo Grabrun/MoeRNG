@@ -9,6 +9,7 @@ class Application
     private const SCHEMA_VERSION = '2026-11-17-1';
 
     private static ?self $instance = null;
+    private static bool $cliBooted = false;
     private Router $router;
     private bool $installed = false;
     private string $basePath;
@@ -55,15 +56,9 @@ class Application
         $this->installed = Config::get('app.installed', false);
 
         if ($this->installed) {
-            Database::init([
-                'host' => Config::get('database.host', '127.0.0.1'),
-                'port' => Config::get('database.port', 3306),
-                'database' => Config::get('database.database', ''),
-                'username' => Config::get('database.username', ''),
-                'password' => Config::get('database.password', ''),
-            ]);
+            Database::init(self::databaseConfig());
 
-            $this->loadSettings();
+            self::loadSettings();
 
             // 版本一致则整体跳过自迁移（否则每次请求几十条 SHOW COLUMNS + 写入）。
             if ((string) Config::get('settings.schema_version', '') !== self::SCHEMA_VERSION) {
@@ -75,7 +70,7 @@ class Application
         }
     }
 
-    private function loadSettings(): void
+    private static function loadSettings(): void
     {
         try {
             $settings = \App\Models\Setting::allAsKeyValue();
@@ -84,6 +79,46 @@ class Application
             }
         } catch (\Throwable) {
         }
+    }
+
+    private static function databaseConfig(): array
+    {
+        return [
+            'host' => Config::get('database.host', '127.0.0.1'),
+            'port' => Config::get('database.port', 3306),
+            'database' => Config::get('database.database', ''),
+            'username' => Config::get('database.username', ''),
+            'password' => Config::get('database.password', ''),
+        ];
+    }
+
+    /**
+     * CLI 引导：只加载配置、连接参数与站点设置。
+     *
+     * CLI 脚本不经过 Application::create()，缺了这一步 Database 会拿空配置去连
+     * 127.0.0.1:3306（空库名空账号），在 socket-only 或非默认端口的 MySQL 上直接 2002。
+     * 不启 session、不发响应头、不跑自迁移 —— 那些属于请求生命周期，脚本要控制自己的副作用。
+     */
+    public static function bootstrapCli(string $basePath): void
+    {
+        if (self::$cliBooted) {
+            return;
+        }
+        self::$cliBooted = true;
+
+        date_default_timezone_set('Asia/Shanghai');
+
+        Config::init(rtrim($basePath, '/\\') . '/config');
+        Config::load();
+
+        if (!Config::get('app.installed', false)) {
+            return;
+        }
+
+        Database::init(self::databaseConfig());
+
+        // 队列 worker 会用到 thumb_quality / thumbs_enabled 等设置，不加载就会静默用默认值。
+        self::loadSettings();
     }
 
     private function sendSecurityHeaders(bool $withStorageDomains): void

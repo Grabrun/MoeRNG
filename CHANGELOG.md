@@ -70,6 +70,23 @@ NO PAD 下裸比较永不命中。
 
 **升级顺序（重要）**：先覆盖部署新代码，再跑迁移 —— 旧代码带 `WHERE file_hash = ?`，删列后会报错。
 
+### 修复：CLI 脚本连不上数据库（`2002 Connection refused`）
+
+`Config::init()` / `Database::init()` 只写在 `Application::bootstrap()` 里，而那只在 HTTP 入口
+（`index.php` / `admin.php` / `api.php`）被调用。CLI 脚本 `require bootstrap.php` 后直接
+`Database::getInstance()`，拿到的是**空配置** → 默认连 `127.0.0.1:3306`、空库名空账号，
+在 socket-only 或非默认端口的 MySQL 上必然 2002，站点本身却一切正常。
+
+- `Application::bootstrapCli()`：CLI 专用引导，只加载配置、连接参数与站点设置，
+  不启 session、不发响应头、不跑自迁移；
+- `bootstrap.php` 在 `PHP_SAPI === 'cli'` 时调用它，所有 CLI 脚本一次性受益；
+- 连接参数收敛到 `databaseConfig()`，HTTP 与 CLI 不再各写一份；
+- 未安装站点直接返回，保留「站点尚未安装」的提示语义。
+
+影响面：`migrate-to-latest.php`、`process-queue*.php`、`backfill-*.php`、
+`migrate-legacy-refs.php`、`migrate-apikey-hash.php` 此前在「MySQL 不走 127.0.0.1:3306」
+的环境上全部不可用（只有 Web 后台能跑）。
+
 ## [2.0.0] - 2026-11-17
 
 ### 注释治理：全库去历史化（代码零改动）

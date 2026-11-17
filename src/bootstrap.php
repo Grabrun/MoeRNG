@@ -81,3 +81,9 @@ function moerng_bootstrap_fail(string $problem, string $hint): never
 
     exit(1);
 }
+
+// CLI 不走 Application::create()，配置与数据库凭据得在这里补 —— 否则 Database
+// 用空配置连 127.0.0.1:3306，在 socket-only / 非默认端口的 MySQL 上必报 2002。
+if (PHP_SAPI === 'cli') {
+    \App\Core\Application::bootstrapCli(__DIR__);
+}
