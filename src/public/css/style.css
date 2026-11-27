@@ -273,8 +273,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .gallery-cat-title { font-size: 1.05rem; font-weight: 500; margin-bottom: 14px; color: var(--text); }
 .gallery-cat-count { font-size: 0.78rem; font-weight: 400; color: var(--text-muted); margin-left: 8px; }
 #gallery .pagination-wrap { justify-content: center; }
-.gallery-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.gallery-head { position: relative; text-align: center; margin-bottom: 18px; }
 .gallery-head .section-title { margin-bottom: 4px; }
+/* 按钮脱离文档流：标题始终相对整栏居中，不会被按钮挤偏 */
+#gallery-refresh { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
+@media (max-width: 639px) {
+    #gallery-refresh { position: static; transform: none; margin-top: 12px; }
+}
 .gallery-group { margin-bottom: 20px; }
 .gallery-group:last-child { margin-bottom: 0; }
 .gallery-group-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
