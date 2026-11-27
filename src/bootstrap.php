@@ -17,7 +17,7 @@ if (!defined('MOERNG_START')) {
 define('MOERNG_ROOT', __DIR__);
 
 if (!defined('APP_VERSION')) {
-    define('APP_VERSION', '2.1.0-beta.4');
+    define('APP_VERSION', '2.1.0');
 }
 
 // 缓存戳含资源 mtime，改 CSS/JS 而未升版本号时也能刷新缓存。
