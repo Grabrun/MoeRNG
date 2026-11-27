@@ -53,6 +53,15 @@
                                     <code>请求尺寸 → md → 原图</code> 回退，<strong>绝不返回 404</strong>。
                                     <code>url</code> 与宽高、格式、字节数始终描述同一张图。</td>
                             </tr>
+                            <tr>
+                                <td><code>device</code></td>
+                                <td>string</td>
+                                <td>否</td>
+                                <td>-</td>
+                                <td>按构图取图：<code>pc</code> 横图（含方图）、<code>pe</code> 竖图。
+                                    不传则按 UA 判断；无 UA 的请求不过滤，与旧行为一致。
+                                    该方向暂时没有图时回退到全部，不会 404。</td>
+                            </tr>
                         </tbody>
                     </table>
                     <p class="text-muted text-small">

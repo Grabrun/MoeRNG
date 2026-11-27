@@ -1,59 +1,41 @@
-# ADR-002：随机图按设备取横/竖图（`device` 参数）
+# ADR-002：随机图按设备返回横图/竖图
 
 | 项 | 值 |
 |---|---|
-| 状态 | **Proposed**（2026-11-28 重写，替代同日初稿） |
+| 状态 | Accepted（2026-11-28 确认按「修数据源 + 查询层判定」实施） |
 | 日期 | 2026-11-28 |
-| 影响范围 | `ApiController::random`、`Image::random`、`views/docs.php`、`README.md` |
-| 版本建议 | 新功能 → 下一功能线 MINOR+1 |
+| 影响 | `Image::random()`、`ApiController::random`、`ImageController`（EXIF 纠正）、`docs.php`、`README.md` |
+| 版本 | 2.2.0（新功能，2.1.1 已发布） |
 
-## 1. 目标
+## 规则
 
-桌面端别老给竖图，手机端别老给横图。允许调用方显式指定。
+1. `?device=pc|pe` 显式指定：`pc` 取横图（`width >= height`，含方图），`pe` 取竖图（`height > width`）。
+2. 不传时按 UA 判断：含 `Mobile` / `iPhone` / `iPod` → `pe`，其余有 UA → `pc`，**无 UA（curl、服务端调用）→ 不过滤**。
+3. 该方向没有图 → 去掉条件重取一次，不返回 404。
+4. **判定依据必须可信**：`width/height` 存的是「实际显示尺寸」。竖拍 JPEG 的像素是横的、
+   EXIF 标着要转 90°，上传时若原图未被转码就按 EXIF 交换宽高再入库（方向 5–8）；
+   转码成功时图已被转正，`getimagesize()` 拿到的就是显示尺寸，不再交换。
 
-## 2. 全部规则
+## 不做
 
-- **横图** = `width >= height`；**竖图** = `height > width`。不做 `square` 分类。
-- 新参数 `device`：`pc` / `pe` / `auto` / `any`，默认 `auto`。
-- `auto` 的判断：
+不加列、不加索引、不加迁移；不改响应结构（宽高本来就在）；不加 `fallback` / `orientation` / `device_source` 之类参数或字段；不动前台首页；不做方向占比统计。
 
-  ```php
-  $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-  if ($ua === '') { $device = 'any'; }   // 无 UA 的老调用方，行为不变
-  else { $device = preg_match('/Mobile|Android|iPhone|iPad/i', $ua) ? 'pe' : 'pc'; }
-  ```
+## 改动
 
-- 该方向没有图：**忽略方向随机给一张**。不 404、不加 strict 模式。
-- 响应**不加新字段**。`width/height` 本来就在响应里，方向由调用方自行判断。
-- 尺寸为 0 的历史行只出现在 `any` 结果里。
-
-## 3. 明确不做
-
-| 不做 | 原因 |
+| 文件 | 改动 |
 |---|---|
-| 生成列 + 索引 + 自迁移 | 几千张图直接 `WHERE width >= height` 就够；索引等真有规模问题再加 |
-| `orientation` 参数 | 与 `device` 表达同一件事 |
-| 互斥校验、参数冲突 400 | 只有一种参数，无从冲突 |
-| `fallback=strict`、`fallback_applied`、`device_source` | 失败形态只有「给图」一种，不需要可观测字段 |
-| `ClientDevice` 类、Client Hints | 一条 UA 正则够用 |
-| 健康检查横/竖计数、后台设置项 | 不改变任何决策 |
-| 服务端裁剪/letterbox | 不新增图片副本，方向只作为筛选条件 |
+| `Image::random()` | 加可选 `$device`，SQL 多一个条件；空结果再跑一轮（约 +15 行） |
+| `ApiController::random` | 解析参数 + UA 判断（约 +8 行） |
+| `ImageController`（上传） | 未转码的 JPEG 按 EXIF 5–8 交换宽高（+6 行） |
+| `ImageController`（批量转码） | 转码成功时回写真实宽高，历史竖拍照片顺带纠正（+8 行） |
+| `docs.php` / `README.md` | 参数表各加一行 |
+| `api_contract_test.js` | 6 条断言锁行为 |
 
-## 4. 唯一保留的兼容性处理
+## 已知代价
 
-无 UA 请求归 `any`。没有这行，默认 `auto` 会把所有 curl 调用方切成只吃横图，
-属于上线即破坏既有行为。这一行是必需的，不是防御性设计。
-
-## 5. 实施
-
-1. `Image::random()` 加可选方向条件，复用现有 COUNT + OFFSET 逻辑；
-2. `ApiController::random()` 解析 `device`（§2 的代码）；
-3. `views/docs.php` 参数表加一行，README 接口表加一行；
-4. `.dsh/api_contract_test.js` 补：pc 只出横、pe 只出竖、无 UA 不过滤、无匹配时给任意图。
-
-## 6. 修订记录
-
-| 日期 | 变更 |
-|---|---|
-| 2026-11-27 | 初稿：生成列、索引、双参数、降级开关、检测来源回报等，过度设计 |
-| 2026-11-28 | 按「不要过度设计」重写为单参数、单规则版本，砍掉索引与全部附加字段 |
+- 降级静默：`pe` 请求在全是横图的站会拿到横图，响应里看不出来。调用方该用 `object-fit: cover` 兜住构图。
+- 宽度比较走不了索引；但 `random()` 本来就是全表 `COUNT(*)`，查询次数和扫描量级都不变。
+- **历史竖拍照片仍可能记着横向宽高**（本次改动只覆盖新上传与今后转码的图）。要纠正存量：
+  跑一次「设置 → 维护 · 媒体维护 → 转换历史原图为 WebP」，转码成功后宽高会按真实输出回写。
+  不单独提供回填脚本 —— 转码功能本身就会产生正确尺寸，没必要为此再多一个 CLI 入口。
+- EXIF 扩展不可用（`exif_read_data` 缺失）时无法判断方向，按原样入库，不猜。

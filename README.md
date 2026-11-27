@@ -91,6 +91,7 @@ Base URL：`https://your-domain.com`
 | `GET /api/v1/random?category=landscape` | 按分类取图（含子分类） |
 | `GET /api/v1/random?type=redirect` | 302 重定向直出图片 |
 | `GET /api/v1/random?type=json&size=md` | JSON 结构化（默认），size 取 sm / md / lg / original |
+| `GET /api/v1/random?device=pe` | 只取竖图（`pc` 取横图；不传按 UA 判断，无 UA 不过滤） |
 | `GET /api/v1/images?page=1&limit=20` | 图片列表（limit 最大 100） |
 | `GET /api/v1/categories` | 分类列表 |
 | `GET /api/v1/stats` | 服务统计 |

@@ -361,7 +361,11 @@ class Image extends Model
         return count($parts) >= 2 ? implode(', ', $parts) : '';
     }
 
-    public static function random(?int $categoryId = null): ?self
+    /**
+     * 随机取一张。$device 为 pc / pe 时按构图过滤（pc=横图含方图，pe=竖图）；
+     * 该方向没有图就去掉条件重取一次 —— <img src> 场景里 404 裂图比构图不合更糟。
+     */
+    public static function random(?int $categoryId = null, ?string $device = null): ?self
     {
         if ($categoryId !== null) {
             $ids = self::getCategoryAndChildIds($categoryId);
@@ -375,25 +379,36 @@ class Image extends Model
             $params = [];
         }
 
-        $pdo = Database::getInstance();
-        $cnt = $pdo->prepare("SELECT COUNT(*) FROM images WHERE {$where}");
-        $cnt->execute($params);
-        $total = (int) $cnt->fetchColumn();
-        if ($total === 0) return null;
+        $dir = $device === 'pc'
+            ? ' AND width >= height AND height > 0'
+            : ($device === 'pe' ? ' AND height > width' : '');
 
-        // COUNT 与 SELECT 非同一快照，OFFSET 可能落在存活集之外 → 重试后回退 LIMIT 1。
-        for ($attempt = 0; $attempt < 2; $attempt++) {
-            $offset = random_int(0, $total - 1);
-            $stmt = $pdo->prepare("SELECT * FROM images WHERE {$where} LIMIT 1 OFFSET {$offset}");
+        $pdo = Database::getInstance();
+
+        // 无 device 时只跑一轮，与旧行为完全一致；有 device 时第二轮是不带方向的兜底
+        foreach ($dir === '' ? [''] : [$dir, ''] as $cond) {
+            $scope = $where . $cond;
+            $cnt = $pdo->prepare("SELECT COUNT(*) FROM images WHERE {$scope}");
+            $cnt->execute($params);
+            $total = (int) $cnt->fetchColumn();
+            if ($total === 0) continue;
+
+            // COUNT 与 SELECT 非同一快照，OFFSET 可能落在存活集之外 → 重试后回退 LIMIT 1。
+            for ($attempt = 0; $attempt < 2; $attempt++) {
+                $offset = random_int(0, $total - 1);
+                $stmt = $pdo->prepare("SELECT * FROM images WHERE {$scope} LIMIT 1 OFFSET {$offset}");
+                $stmt->execute($params);
+                $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+                if ($row) return self::hydrate($row);
+            }
+
+            $stmt = $pdo->prepare("SELECT * FROM images WHERE {$scope} LIMIT 1");
             $stmt->execute($params);
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
             if ($row) return self::hydrate($row);
         }
 
-        $stmt = $pdo->prepare("SELECT * FROM images WHERE {$where} LIMIT 1");
-        $stmt->execute($params);
-        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-        return $row ? self::hydrate($row) : null;
+        return null;
     }
 
     /** 随机取某分类（null = 未分类）下的 N 张 active 图；COUNT + 随机窗口，避免 ORDER BY RAND() 的 filesort。 */

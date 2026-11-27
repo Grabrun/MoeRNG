@@ -1629,18 +1629,29 @@ class ImageController extends Controller
                     $bytes = (int) @filesize($destCopy);
                 }
                 $sha = @hash_file('sha256', $destCopy);
+                // 转码已把 EXIF 方向转正，输出尺寸才是「实际显示」的宽高；
+                // 顺手回写，历史 JPEG 的宽高错位（竖拍照片被记成横图）也一并纠正。
+                $outInfo = @getimagesize($destCopy);
+                $outW = $outInfo ? (int) $outInfo[0] : 0;
+                $outH = $outInfo ? (int) $outInfo[1] : 0;
+                $dimSql = ($outW > 0 && $outH > 0) ? ', `width` = ?, `height` = ?' : '';
 
                 $upd = $pdo->prepare(
                     "UPDATE `images` SET `path` = ?, `filename` = ?, `mime_type` = 'image/webp',"
-                    . " `file_size` = ?, `file_sha256` = ?, `url` = '' WHERE `id` = ?"
+                    . " `file_size` = ?, `file_sha256` = ?, `url` = ''{$dimSql} WHERE `id` = ?"
                 );
-                if (!$upd->execute([
+                $updParams = [
                     $newPath,
                     basename($newPath),
                     $bytes,
                     ($sha === false || $sha === '') ? null : $sha,
-                    $id,
-                ])) {
+                ];
+                if ($dimSql !== '') {
+                    $updParams[] = $outW;
+                    $updParams[] = $outH;
+                }
+                $updParams[] = $id;
+                if (!$upd->execute($updParams)) {
                     throw new \RuntimeException('数据库更新失败');
                 }
 
@@ -2258,6 +2269,15 @@ class ImageController extends Controller
                 $imgInfo = @getimagesize($tmpName);
                 $width = $imgInfo ? $imgInfo[0] : 0;
                 $height = $imgInfo ? $imgInfo[1] : 0;
+                // 未转码的 JPEG 保留 EXIF 方向：像素是横的、浏览器会转成竖的。
+                // 宽高必须跟实际显示一致，否则 API 宽高、缩略图元数据和 PC/PE 判定全错。
+                // 转码成功时图像已被转正，getimagesize 拿到的就是显示尺寸，不能再交换。
+                if ($width > 0 && $height > 0 && !$conv['ok']) {
+                    $o = self::jpegOrientation($tmpName, $detectedMime);
+                    if ($o >= 5 && $o <= 8) {
+                        [$width, $height] = [$height, $width];
+                    }
+                }
 
                 // 上传只落临时目录即算成功，后续由队列 Worker 生成缩略图并上传最终存储
                 $incomingFile = self::incomingDir() . '/' . $remotePath;

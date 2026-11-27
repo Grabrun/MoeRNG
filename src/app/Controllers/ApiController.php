@@ -120,7 +120,14 @@ class ApiController extends Controller
             $categoryId = (int) $cat->id;
         }
 
-        $image = Image::random($categoryId);
+        // 构图自适应：显式 device 优先；无 UA（curl / 服务端调用）不过滤，避免收窄既有调用方的取图集合。
+        $device = strtolower(trim((string) $request->input('device', '')));
+        if (!in_array($device, ['pc', 'pe'], true)) {
+            $ua = (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
+            $device = $ua === '' ? '' : (preg_match('/Mobile|iPhone|iPod/i', $ua) ? 'pe' : 'pc');
+        }
+
+        $image = Image::random($categoryId, $device === '' ? null : $device);
 
         if (!$image) {
             $this->json([
