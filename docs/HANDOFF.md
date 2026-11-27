@@ -169,7 +169,7 @@ MoeRNG/
 │  │  │                      #   ApiKey（P1 哈希）, StorageProfile（P2 引用计数）, Setting, AuditLog
 │  │  └─ Storage/            # StorageInterface + Local（P2 ..防护/幂等）+ 6 云驱动 + S3Driver
 │  │                         #   （P2 TLS/SSRF/下载上限）+ SignedUrl（P2 chmod/时间窗）
-│  ├─ cli/                   # backfill-thumbs*.php；migrate-apikey-hash.php（P1，dry-run/--apply）
+│  ├─ cli/                   # process-queue.php（常驻消费者）；migrate-to-latest.php（一次性迁移）；migrate-apikey-hash.php（dry-run/--apply）
 │  ├─ public/js/             # front.js（前台，MR-22 待修）、app.js（后台）、helpers.js（MR-65）
 │  ├─ views/                 # admin/、install/、partials/（h() 转义纪律）
 │  ├─ sdk/                   # 6 家官方 SDK（.gitignore 忽略，打包注入；COS 钉 dev-master 待解 MR-06/24/68）

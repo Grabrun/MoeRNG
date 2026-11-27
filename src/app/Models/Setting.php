@@ -32,11 +32,19 @@ class Setting extends Model
              ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)"
         );
         $stmt->execute([$key, $value]);
+
+        // 同步内存副本：Application 启动时已把全部设置灌进 Config，不回写会让同一请求读到旧值。
+        \App\Core\Config::set('settings.' . $key, $value);
     }
 
+    /** 优先读内存副本（启动时已加载全量），避免热路径每请求重复 SELECT。 */
     public static function get(string $key, string $default = ''): string
     {
+        $cached = \App\Core\Config::get('settings.' . $key, null);
+        if ($cached !== null) {
+            return (string) $cached;
+        }
         $setting = self::find($key);
-        return $setting ? $setting->value : $default;
+        return $setting ? (string) $setting->value : $default;
     }
 }

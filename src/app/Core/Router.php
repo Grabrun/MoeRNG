@@ -30,11 +30,6 @@ class Router
         $this->addRoute('POST', $path, $handler, $middleware);
     }
 
-    public function delete(string $path, callable|array $handler, array $middleware = []): void
-    {
-        $this->addRoute('DELETE', $path, $handler, $middleware);
-    }
-
     private function addRoute(string $method, string $path, callable|array $handler, array $middleware): void
     {
         $path = $this->prefix . '/' . ltrim($path, '/');
@@ -46,14 +41,9 @@ class Router
             'path' => $path,
             'handler' => $handler,
             'middleware' => array_merge($this->groupMiddleware, $middleware),
-            'pattern' => $this->compilePattern($path),
+            // 路由是内部字面量；转义后正则元字符不会改变匹配语义。
+            'pattern' => '#^' . preg_quote($path, '#') . '$#',
         ];
-    }
-
-    private function compilePattern(string $path): string
-    {
-        $pattern = preg_replace('/\{([a-zA-Z_]+)\}/', '(?P<$1>[^/]+)', $path);
-        return '#^' . $pattern . '$#';
     }
 
     public function dispatch(string $method, string $uri): mixed
@@ -67,13 +57,11 @@ class Router
         }
 
         foreach ($this->routes as $route) {
-            if ($route['method'] !== $method && $route['method'] !== 'ANY') {
+            if ($route['method'] !== $method) {
                 continue;
             }
 
-            if (preg_match($route['pattern'], $uri, $matches)) {
-                $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
-
+            if (preg_match($route['pattern'], $uri)) {
                 $handler = $route['handler'];
                 foreach (array_reverse($route['middleware']) as $mwClass) {
                     $next = $handler;
@@ -84,7 +72,7 @@ class Router
                 }
 
                 // 不读 php://input：没有调用方消费请求体，避免 GET 也白读一次。
-                $request = new Request($method, $uri, $params, $_GET, $_POST, getallheaders() ?: []);
+                $request = new Request($method, $uri, $_GET, $_POST, getallheaders() ?: []);
                 return $this->invoke($handler, $request);
             }
         }

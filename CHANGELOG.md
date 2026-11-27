@@ -11,7 +11,8 @@
 
 ### 新增 · 随机图按设备返回横图/竖图
 
-`/api/v1/random?device=pc|pe`：`pc` 取 `width >= height`（方图归横屏），`pe` 取 `height > width`；
+`/api/v1/random?device=pc|pe|any`：`pc` 取 `width >= height`（方图归横屏），`pe` 取 `height > width`，
+`any` 强制不过滤；
 不传时按 UA 判断（含 `Mobile` / `iPhone` / `iPod` → `pe`），无 UA 的 curl 与服务端调用不加过滤，
 取图集合与旧版一致。指定方向没有图时去掉条件重取一次，不返回 404。
 
@@ -21,6 +22,39 @@
 
 上传时按 EXIF 方向 5–8 交换宽高（仅未转码的 JPEG）；批量转码成功后回写输出文件的真实宽高，
 存量竖拍照片跑一次「维护 · 媒体维护 → 转换历史原图为 WebP」即可纠正。
+
+### 修复 · 安全审计与过度开发审计（全量）
+
+**会导致功能损坏或数据风险**
+
+- `/admin/images/ids` 调用了不存在的 `Image::query()`，跨页全选必然 500 —— 改为直接预处理查询；
+- 自动备份在请求线程同步执行且开始前不落标记：进程被杀后下一个请求立刻重试 —— 先写 `started`，1 小时内不重复；
+- 安装向导用原始 SQL 写 `storage_profiles.config`，对象存储 AK/SK 明文入库 —— 补 `CredentialCipher::sealConfig()`；
+- `backup` / `backup-delete` / `cache-clear` / `test-mail` 只校验登录、不校验管理员 —— 补 `RequireAdminMiddleware`；
+- 上传大小取 `$_FILES['size']`（客户端可伪造）—— 改为 `filesize($tmpName)`；
+- 显式选择的存储实例不可用时静默回落默认实例，图片会落进非预期的桶 —— 改为明确报错；
+- `Image::delete()` 先删对象再删库，DB 失败即「文件没了、记录还在」—— 改为先删记录、存储失败只记审计。
+
+**静默失败与兼容**
+
+- `Setting::get()` 每请求重复 SELECT，且与 Config 内存副本形成双通道 —— 优先读内存、`set()` 同步回写；
+- 日志导出 CSV 未防公式注入（detail 含登录名）—— `= + - @` 开头加前缀；
+- `mail_encryption=tls` 实际是明文 —— 实现 STARTTLS，并按域名校验证书（连的仍是已校验 IP）；
+- remember cookie 自动登录不轮换 session id —— 补 `Session::regenerate()`；
+- `config/.htaccess` 与 `public/uploads/.htaccess` 只有 Apache 2.2 语法 —— 双语法兼容；
+- nginx 伪静态片段缺 `backups|var` 与 `.zip`，与正文不一致 —— 同步；
+- `Category::getTree()` 逐层查询 —— 一次取全表在内存建树；
+- `device` 补 `any`（强制不过滤），文档同步。
+
+**删除不会执行/没有执行点的代码**
+
+- `permissions` 权限勾选（UI + 写入 + 展示）但无任何鉴权分支 —— 移除交互，DB 列保留；
+- `backfill-thumbs.php` / `backfill-thumbs-batch.php`（依赖被禁用的 `exec`）、
+  `migrate-legacy-refs.php` / `backfill-content-hashes.php`（已被 `migrate-to-latest.php` 覆盖）—— 删除；
+- `app.js` 中永不执行的 API 测试器副本（真正生效的是 `front.js`）—— 删除；
+- `ApiKey::validate()`、`Category::images()`、`ContentHash::forImage()`、`Image::processingState()` —— 删除；
+- Router 的 DELETE / ANY / `{param}` 与 `Request::$params`（全项目无使用者）—— 删除；
+- 图库渲染失败只显示空态、不留痕 —— 补 `error_log`。
 
 ## [2.1.1] - 2026-11-28
 

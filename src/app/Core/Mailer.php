@@ -58,10 +58,14 @@ class Mailer
         $fromName = trim(Setting::get('mail_from_name', 'MoeRNG'));
 
         // 连已校验的 IP 而非 hostname：hostname 会再解析一次，攻击者可借 DNS 重绑定（TOCTOU）指向内网。
+        // peer_name 用原始主机名：连的是 IP，证书校验仍须对域名，否则 ssl:// 一律校验失败。
+        $context = stream_context_create([
+            'ssl' => ['peer_name' => $host, 'SNI_enabled' => true],
+        ]);
         $remote = ($enc === 'ssl' ? 'ssl://' : '') . $safeIp;
         $errno = 0;
         $errstr = '';
-        $fp = @fsockopen($remote, $port, $errno, $errstr, 10);
+        $fp = @stream_socket_client($remote . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $context);
         if (!$fp) {
             return "无法连接 SMTP 服务器：{$errstr} ({$errno})";
         }
@@ -78,6 +82,21 @@ class Mailer
         if (!$cmd('EHLO moerng')) {
             fclose($fp);
             return 'EHLO 失败：' . end($log);
+        }
+        // TLS = 显式 STARTTLS 升级（587 端口常规做法）；ssl = 连接即 TLS（465）。
+        if ($enc === 'tls') {
+            if (!$cmd('STARTTLS')) {
+                fclose($fp);
+                return 'STARTTLS 被拒绝（服务器可能不支持，或应改用 SSL/465）：' . end($log);
+            }
+            if (@stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT) !== true) {
+                fclose($fp);
+                return 'STARTTLS 握手失败：证书校验或协议协商未通过';
+            }
+            if (!$cmd('EHLO moerng')) {
+                fclose($fp);
+                return 'STARTTLS 后 EHLO 失败：' . end($log);
+            }
         }
         if ($user !== '') {
             if (!$cmd('AUTH LOGIN')) {

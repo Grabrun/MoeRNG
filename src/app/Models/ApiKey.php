@@ -4,15 +4,14 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Core\Model;
-use App\Core\Database;
 
 class ApiKey extends Model
 {
     protected static string $table = 'api_keys';
 
-    // permissions 是预留字段，当前不参与鉴权；加写端点时必须同步实现权限校验。
+    // api_keys.permissions 列保留但不再有写入/读取入口：没有鉴权执行点的权限勾选只会误导运维。
     protected static array $fillable = [
-        'name', 'key_hash', 'key_prefix', 'permissions', 'rate_limit', 'rate_window', 'status'
+        'name', 'key_hash', 'key_prefix', 'rate_limit', 'rate_window', 'status'
     ];
 
     public static function generateKey(): string
@@ -26,18 +25,16 @@ class ApiKey extends Model
         return hash('sha256', $key);
     }
 
+    /** @var array<string, self|null> 请求级缓存：鉴权中间件与限流中间件会查同一个 key。 */
+    private static array $byKeyCache = [];
+
     public static function findByKey(string $key): ?self
     {
-        return self::firstWhere('key_hash', self::hashKey($key));
-    }
-
-    public static function validate(string $key): ?self
-    {
-        $apiKey = self::findByKey($key);
-        if (!$apiKey || $apiKey->status !== 'active') {
-            return null;
+        $hash = self::hashKey($key);
+        if (array_key_exists($hash, self::$byKeyCache)) {
+            return self::$byKeyCache[$hash];
         }
-        return $apiKey;
+        return self::$byKeyCache[$hash] = self::firstWhere('key_hash', self::hashKey($key));
     }
 
     public function getRateLimit(): int

@@ -21,6 +21,8 @@ class AuthMiddleware
                 try {
                     $user = User::findByRememberToken($raw);
                     if ($user && $user->isActive()) {
+                        // cookie 自动登录同样是一次登录态变更，必须换新 session id。
+                        Session::regenerate();
                         Session::set('user_id', $user->id);
                         Session::set('user_role', $user->role);
                         Session::set('user_name', (string) $user->username);

@@ -306,7 +306,8 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             $dirOk = is_dir($dir) && is_writable($dir);
             check('Local upload dir', $dirOk, $dirOk ? $dir : ($dir . ' (missing or not writable)'));
 
-            $mode = method_exists($driver, 'servingMode') ? $driver->servingMode() : 'signed';
+            // servingMode() 只属于 LocalDriver（接口只覆盖上传/删除/取址）。
+            $mode = $driver instanceof \App\Storage\LocalDriver ? $driver->servingMode() : 'signed';
             check('Local serving mode', true, $mode === 'cdn'
                 ? 'cdn — ' . $driver->baseUrl() . '（CDN 需回源到 ' . $dir . '）'
                 : 'signed — /files?p=…&e=…&s=…（短时签名，无固定直链）');
@@ -394,7 +395,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                     $noSha = (int) $pdo->query("SELECT COUNT(*) FROM images WHERE file_sha256 IS NULL OR file_sha256=''")->fetchColumn();
                     if ($noSha > 0) {
                         check('Image hash backfill', false,
-                            "{$noSha} 张缺 file_sha256 — 请运行 php src/cli/backfill-content-hashes.php --apply");
+                            "{$noSha} 张缺 file_sha256 — 请运行 php cli/migrate-to-latest.php --apply");
                     } else {
                         check('Image hash backfill', true, 'all images carry SHA-256');
                     }
@@ -508,7 +509,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
             } else {
                 check('Legacy data migration', false,
                     "{$noProfile} 张缺存储实例归属、{$urlLeft} 行残留 url —— "
-                    . '运行 php src/cli/migrate-legacy-refs.php --apply'
+                    . '运行 php cli/migrate-to-latest.php --apply'
                     . '（迁移前这些图片的读取会明确报错）');
             }
         } catch (Throwable $e) {

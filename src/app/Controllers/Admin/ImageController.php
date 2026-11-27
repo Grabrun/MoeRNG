@@ -7,6 +7,7 @@ use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\Config;
+use App\Core\Database;
 use App\Core\Session;
 use App\Models\Image;
 use App\Models\Category;
@@ -110,8 +111,13 @@ class ImageController extends Controller
             $sql .= " WHERE {$where}";
         }
         $sql .= ' ORDER BY id DESC';
-        $rows = Image::query($sql, $params);
-        $ids = array_map(static fn ($r) => (int) $r['id'], $rows);
+        // 只取 id 列：hydrate 整个模型没必要，这里是跨页全选的轻量清单。
+        $stmt = Database::getInstance()->prepare($sql);
+        $stmt->execute($params);
+        $ids = array_map(
+            static fn ($r) => (int) $r['id'],
+            $stmt->fetchAll(\PDO::FETCH_ASSOC)
+        );
         $this->json(['ids' => $ids, 'total' => count($ids)]);
     }
 
@@ -2154,10 +2160,20 @@ class ImageController extends Controller
             $this->redirect('/admin/images');
         }
 
-        // 未指定或未启用时回退默认实例；没有任何可用实例是硬错误，不做设置兜底
+        // 显式选择的实例不可用时直接报错：静默改用默认实例会让图片落进非预期的桶，事后极难追。
         $profileId = (int) $request->input('storage_profile_id', '0');
         $profile = $profileId > 0 ? StorageProfile::find($profileId) : null;
-        if ($profile === null || !$profile->isEnabled() || !$profile->isUsable()) {
+        if ($profileId > 0) {
+            if ($profile === null) {
+                throw new \RuntimeException('所选存储实例不存在（#' . $profileId . '），请刷新页面后重试。');
+            }
+            if (!$profile->isEnabled()) {
+                throw new \RuntimeException('所选存储实例「' . $profile->name . '」已停用，请换一个实例或先启用它。');
+            }
+            if (!$profile->isUsable()) {
+                throw new \RuntimeException('所选存储实例「' . $profile->name . '」凭据不完整，请到「存储管理」补全配置。');
+            }
+        } else {
             $profile = StorageProfile::defaultProfile();
         }
         if ($profile === null) {
@@ -2181,18 +2197,20 @@ class ImageController extends Controller
             $tmpName = $files['tmp_name'][$i];
             // original_name 列是 VARCHAR(255)，严格模式下超长会让整次上传失败；不参与路径构造
             $originalName = mb_substr((string) $files['name'][$i], 0, 255);
-            $fileSize = $files['size'][$i];
 
             if ($files['error'][$i] !== UPLOAD_ERR_OK) {
-                $errors[] = "{$originalName}: Upload error code {$files['error'][$i]}";
+                $errors[] = $this->uploadErrorMessage($originalName, (int) $files['error'][$i]);
                 continue;
             }
 
+            // 以磁盘上的真实字节数为准：$_FILES['size'] 由客户端提供，可伪造绕过应用层上限。
+            $fileSize = (int) @filesize($tmpName);
+
             // 单图大小上限（0 = 不限制，只受 PHP 约束）
             $maxBytes = self::uploadMaxBytes();
-            if ($maxBytes > 0 && (int) $fileSize > $maxBytes) {
+            if ($maxBytes > 0 && $fileSize > $maxBytes) {
                 $errors[] = sprintf(
-                    '%s: 超过单图大小上限（%.1f MB > %d MB），请在「系统设置 → 图片与存储」调整',
+                    '%s：超过单图大小上限（%.1f MB > %d MB），请在「系统设置 → 图片与存储」调整',
                     $originalName,
                     (int) $fileSize / 1048576,
                     intdiv($maxBytes, 1048576)
@@ -2203,20 +2221,20 @@ class ImageController extends Controller
             $detectedMime = finfo_file($finfo, $tmpName);
 
             if (!in_array($detectedMime, $this->allowedMimeTypes, true)) {
-                $errors[] = "{$originalName}: Invalid file type ({$detectedMime})";
+                $errors[] = "{$originalName}：文件类型不支持（{$detectedMime}）";
                 continue;
             }
 
             $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
             if (!in_array($ext, $this->allowedExtensions, true)) {
-                $errors[] = "{$originalName}: Invalid file extension (.{$ext})";
+                $errors[] = "{$originalName}：扩展名不支持（.{$ext}）";
                 continue;
             }
 
             // 源字节哈希：判重的唯一依据。落盘哈希会随转码参数变化，不能当键。
             $srcSha256 = $this->sha256File($tmpName);
             if ($srcSha256 === null) {
-                $errors[] = "{$originalName}: 无法读取文件内容（哈希计算失败）";
+                $errors[] = "{$originalName}：无法读取文件内容（哈希计算失败）";
                 continue;
             }
 
@@ -2324,7 +2342,7 @@ class ImageController extends Controller
             } catch (\Throwable $e) {
                 // 落库失败必须把占位还回去，否则这张图从此再也传不上来
                 ContentHash::release($srcSha256, $dstSha256 !== $srcSha256 ? $dstSha256 : '');
-                $errors[] = "{$originalName}: Storage error - {$e->getMessage()}";
+                $errors[] = "{$originalName}：{$e->getMessage()}";
             }
         }
 
@@ -2351,7 +2369,7 @@ class ImageController extends Controller
         }
 
         if ($uploaded > 0 || $dupCount > 0) {
-            $msg = $uploaded > 0 ? "Successfully uploaded {$uploaded} image(s)." : '所选图片均为重复，未新增。';
+            $msg = $uploaded > 0 ? "上传成功 {$uploaded} 张（已进入处理队列）。" : '所选图片均为重复，未新增。';
             if ($dupCount > 0) {
                 $msg .= $uploaded > 0 ? " 重复跳过 {$dupCount} 张。" : "（共 {$dupCount} 张）";
             }
@@ -2363,6 +2381,21 @@ class ImageController extends Controller
         }
 
         $this->redirect('/admin/images');
+    }
+
+    /** PHP 上传错误码转成可操作的中文说明。 */
+    private function uploadErrorMessage(string $name, int $code): string
+    {
+        $reason = match ($code) {
+            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => '文件超过服务器允许的大小（检查 upload_max_filesize / post_max_size）',
+            UPLOAD_ERR_PARTIAL => '文件只上传了一部分，请重试',
+            UPLOAD_ERR_NO_FILE => '没有收到文件内容',
+            UPLOAD_ERR_NO_TMP_DIR => '服务器缺少临时目录（upload_tmp_dir）',
+            UPLOAD_ERR_CANT_WRITE => '服务器写入临时文件失败（磁盘满或权限不足）',
+            UPLOAD_ERR_EXTENSION => '上传被 PHP 扩展拦截',
+            default => '上传失败（错误码 ' . $code . '）',
+        };
+        return "{$name}：{$reason}";
     }
 
     public function update(Request $request): void
@@ -2490,7 +2523,7 @@ class ImageController extends Controller
     {
         $order = $request->input('order', []);
         if (empty($order) || !is_array($order)) {
-            $this->json(['error' => 'No order data.'], 400);
+            $this->json(['error' => '没有收到排序数据。'], 400);
         }
 
         $data = [];

@@ -89,7 +89,9 @@ class HomeController extends Controller
             if ($uncategorized) {
                 $sections[] = ['name' => '未分类', 'images' => $uncategorized];
             }
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            // 图库降级为空态是产品决定；但必须留痕，否则故障看起来像「站点没图」。
+            error_log('[MoeRNG] 图库渲染失败，已降级为空态：' . $e->getMessage());
         }
 
         $this->render('gallery', $this->frontData() + [

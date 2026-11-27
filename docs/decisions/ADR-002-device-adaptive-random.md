@@ -9,7 +9,8 @@
 
 ## 规则
 
-1. `?device=pc|pe` 显式指定：`pc` 取横图（`width >= height`，含方图），`pe` 取竖图（`height > width`）。
+1. `?device=pc|pe|any` 显式指定：`pc` 取横图（`width >= height`，含方图），`pe` 取竖图（`height > width`），
+   `any` 强制不过滤（浏览器 UA 也能测全量）。
 2. 不传时按 UA 判断：含 `Mobile` / `iPhone` / `iPod` → `pe`，其余有 UA → `pc`，**无 UA（curl、服务端调用）→ 不过滤**。
 3. 该方向没有图 → 去掉条件重取一次，不返回 404。
 4. **判定依据必须可信**：`width/height` 存的是「实际显示尺寸」。竖拍 JPEG 的像素是横的、

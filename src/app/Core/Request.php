@@ -7,7 +7,6 @@ class Request
 {
     public readonly string $method;
     public readonly string $uri;
-    public readonly array $params;
     public readonly array $query;
     public readonly array $post;
     public readonly array $headers;
@@ -19,14 +18,12 @@ class Request
     public function __construct(
         string $method,
         string $uri,
-        array $params = [],
         array $query = [],
         array $post = [],
         array $headers = []
     ) {
         $this->method = strtoupper($method);
         $this->uri = $uri;
-        $this->params = $params;
         $this->query = $query;
         $this->post = $post;
         $this->headers = array_change_key_case($headers, CASE_LOWER);

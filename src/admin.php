@@ -56,12 +56,12 @@ $router->group('/admin', function ($router) {
 
     $router->get('/settings', [$settings, 'index']);
     $router->post('/settings/save', [$settings, 'save'], [\App\Middleware\RequireAdminMiddleware::class]);
-    $router->post('/settings/cache-clear', [$settings, 'cacheClear']);
-    $router->post('/settings/backup', [$settings, 'backupNow']);
-    $router->post('/settings/backup-delete', [$settings, 'backupDelete']);
+    $router->post('/settings/cache-clear', [$settings, 'cacheClear'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/settings/backup', [$settings, 'backupNow'], [\App\Middleware\RequireAdminMiddleware::class]);
+    $router->post('/settings/backup-delete', [$settings, 'backupDelete'], [\App\Middleware\RequireAdminMiddleware::class]);
     $router->get('/settings/health', [$settings, 'health']);
     $router->post('/settings/health-fix', [$settings, 'healthFix'], [\App\Middleware\RequireAdminMiddleware::class]);
-    $router->post('/settings/test-mail', [$settings, 'testMail']);
+    $router->post('/settings/test-mail', [$settings, 'testMail'], [\App\Middleware\RequireAdminMiddleware::class]);
     $router->post('/settings/logo-upload', [$settings, 'logoUpload'], [\App\Middleware\RequireAdminMiddleware::class]);
     $router->get('/settings/logs', [$settings, 'logs']);
     $router->get('/settings/logs/export', [$settings, 'logsExport']);

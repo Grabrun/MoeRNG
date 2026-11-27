@@ -88,7 +88,7 @@ class InstallController extends Controller
         if (!$connected) {
             $this->render('install/step2', [
                 'db' => $dbConfig,
-                'error' => 'Database connection failed. Please check your credentials.',
+                'error' => '数据库连接失败，请检查地址、库名、账号与密码。',
             ]);
         }
 
@@ -107,7 +107,7 @@ class InstallController extends Controller
         $admin = \App\Core\Session::get('install_admin');
         if (empty($admin['email']) || empty($admin['username']) || empty($admin['password'])) {
             $this->render('install/step3', [
-                'error' => 'All fields are required.',
+                'error' => '邮箱、用户名和密码都需要填写。',
             ]);
         }
 
@@ -199,11 +199,15 @@ class InstallController extends Controller
                         continue;
                     }
                     $isDefault = !$hasDefault && ($p === $storageDefaultProvider || $sort === 1);
+                    // 安装入口绕过 StorageProfile::save()，必须手动密封：否则 AK/SK 明文入库。
                     $insertProfile->execute([
                         '对象存储 · ' . ($labels[$p] ?? strtoupper($p)),
                         's3',
                         $p,
-                        json_encode($cfg, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                        json_encode(
+                            \App\Core\CredentialCipher::sealConfig($cfg),
+                            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                        ),
                         $isDefault ? 1 : 0,
                         $sort++,
                     ]);
@@ -213,12 +217,23 @@ class InstallController extends Controller
                 }
             }
             if (!$hasDefault) {
+                // 安装输入不可信：只接受项目内相对路径，绝对路径与 .. 一律回退默认目录。
+                $localPath = trim((string) $request->input('storage_local_path', \App\Storage\LocalDriver::defaultRelDir()));
+                $normalized = str_replace('\\', '/', $localPath);
+                $unsafe = $localPath === ''
+                    || str_starts_with($normalized, '/')
+                    || str_contains($normalized, '://')
+                    || (bool) preg_match('#^[A-Za-z]:#', $normalized)
+                    || in_array('..', explode('/', $normalized), true);
+                if ($unsafe) {
+                    $localPath = \App\Storage\LocalDriver::defaultRelDir();
+                }
                 $insertProfile->execute([
                     '本地存储',
                     'local',
                     '',
                     json_encode(
-                        ['path' => $request->input('storage_local_path', \App\Storage\LocalDriver::defaultRelDir())],
+                        ['path' => $localPath],
                         JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
                     ),
                     1,
@@ -250,7 +265,7 @@ class InstallController extends Controller
             $this->render('install/step1', [
                 'checks' => $this->checkEnvironment(),
                 'allPassed' => true,
-                'error' => 'Installation failed: ' . $e->getMessage(),
+                'error' => '安装失败：' . $e->getMessage(),
             ]);
         }
     }
@@ -260,7 +275,7 @@ class InstallController extends Controller
         $checks = [];
 
         $checks[] = [
-            'name' => 'PHP Version >= 8.4',
+            'name' => 'PHP 版本 ≥ 8.4',
             'status' => version_compare(PHP_VERSION, '8.4.0', '>='),
             'current' => PHP_VERSION,
             'required' => '8.4.0',
@@ -269,10 +284,10 @@ class InstallController extends Controller
         $requiredExtensions = ['pdo_mysql', 'curl', 'json', 'fileinfo', 'mbstring', 'gd'];
         foreach ($requiredExtensions as $ext) {
             $checks[] = [
-                'name' => "Extension: {$ext}",
+                'name' => "PHP 扩展：{$ext}",
                 'status' => extension_loaded($ext),
-                'current' => extension_loaded($ext) ? 'Enabled' : 'Not enabled',
-                'required' => 'Enabled',
+                'current' => extension_loaded($ext) ? '已启用' : '未启用',
+                'required' => '需启用',
             ];
         }
 
@@ -283,10 +298,10 @@ class InstallController extends Controller
         foreach ($dirs as $label => $dir) {
             $writable = is_dir($dir) ? is_writable($dir) : is_writable(dirname($dir));
             $checks[] = [
-                'name' => "Directory writable: {$label}",
+                'name' => "目录可写：{$label}",
                 'status' => $writable,
-                'current' => $writable ? 'Writable' : 'Not writable',
-                'required' => 'Writable',
+                'current' => $writable ? '可写' : '不可写',
+                'required' => '需可写',
             ];
         }
 

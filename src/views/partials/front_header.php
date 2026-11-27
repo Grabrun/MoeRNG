@@ -10,6 +10,8 @@ $navItems = [
 ];
 $fullTitle = $pageTitle ?? ($siteName . ' - ' . $siteSlogan);
 $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。多级分类、JSON 与 302 双模式，可自托管部署。');
+// 优先配置的 base_url，其次消毒后的请求 Host（避免 og:url 被 Host 头污染）。
+$siteBase = rtrim((string) (\App\Core\Application::getInstance()?->baseUrl() ?? ''), '/');
 ?><!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -22,7 +24,7 @@ $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。多级分类、J
     <meta property="og:title" content="<?= h($fullTitle) ?>">
     <meta property="og:type" content="website">
     <meta property="og:description" content="<?= h($metaDesc) ?>">
-    <meta property="og:url" content="<?= h('https://' . ($_SERVER['HTTP_HOST'] ?? 'example.com') . '/') ?>">
+    <meta property="og:url" content="<?= h($siteBase . '/') ?>">
     <meta property="og:site_name" content="<?= h($siteName) ?>">
     <meta property="og:locale" content="zh_CN">
     <meta name="twitter:card" content="summary_large_image">
@@ -35,7 +37,7 @@ $metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。多级分类、J
         "@type": "WebApplication",
         "name": "<?= h($siteName) ?>",
         "description": "随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式",
-        "url": "<?= h('https://' . ($_SERVER['HTTP_HOST'] ?? 'example.com') . '/') ?>",
+        "url": "<?= h($siteBase . '/') ?>",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Web",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },

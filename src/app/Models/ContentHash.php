@@ -211,20 +211,6 @@ final class ContentHash
         }
     }
 
-    /** @return list<array{sha256:string, kind:string}> */
-    public static function forImage(int $imageId): array
-    {
-        $st = Database::getInstance()->prepare(
-            'SELECT `sha256`, `kind` FROM `content_hashes` WHERE `image_id` = ?'
-        );
-        $st->execute([$imageId]);
-        $out = [];
-        foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $row) {
-            $out[] = ['sha256' => (string) $row['sha256'], 'kind' => (string) $row['kind']];
-        }
-        return $out;
-    }
-
     public static function tableExists(): bool
     {
         try {

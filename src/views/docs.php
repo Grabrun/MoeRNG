@@ -58,7 +58,8 @@
                                 <td>string</td>
                                 <td>否</td>
                                 <td>-</td>
-                                <td>按构图取图：<code>pc</code> 横图（含方图）、<code>pe</code> 竖图。
+                                <td>按构图取图：<code>pc</code> 横图（含方图）、<code>pe</code> 竖图、
+                                    <code>any</code> 不限构图。
                                     不传则按 UA 判断；无 UA 的请求不过滤，与旧行为一致。
                                     该方向暂时没有图时回退到全部，不会 404。</td>
                             </tr>

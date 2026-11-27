@@ -71,6 +71,15 @@ class Session
         return $val;
     }
 
+    /** 登录态变化（含 remember cookie 自动登录）后轮换 session id，防会话固定。 */
+    public static function regenerate(): void
+    {
+        self::start();
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+    }
+
     public static function destroy(): void
     {
         self::start();

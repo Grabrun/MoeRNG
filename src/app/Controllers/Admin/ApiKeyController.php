@@ -36,7 +36,6 @@ class ApiKeyController extends Controller
             'name' => $name,
             'key_hash' => ApiKey::hashKey($plainKey),
             'key_prefix' => substr($plainKey, 0, 16),
-            'permissions' => json_encode($this->normalizePermissions($request), JSON_UNESCAPED_UNICODE),
             'rate_limit' => $this->positiveInt($request->input('rate_limit'), 60),
             'rate_window' => $this->positiveInt($request->input('rate_window'), 60),
             'status' => 'active',
@@ -75,16 +74,14 @@ class ApiKeyController extends Controller
         $apiKey->name = $name;
         $apiKey->rate_limit = $this->positiveInt($request->input('rate_limit'), (int) $apiKey->rate_limit);
         $apiKey->rate_window = $this->positiveInt($request->input('rate_window'), (int) $apiKey->rate_window);
-        $apiKey->permissions = json_encode($this->normalizePermissions($request), JSON_UNESCAPED_UNICODE);
 
         if (!$apiKey->save()) {
             $this->fail('API Key 更新失败。', 500, self::PAGE);
         }
 
         \App\Models\AuditLog::record('apikey_update', [
-            'id'          => (int) $apiKey->id,
-            'name'        => (string) $apiKey->name,
-            'permissions' => json_decode((string) ($apiKey->permissions ?: '[]'), true) ?: [],
+            'id'   => (int) $apiKey->id,
+            'name' => (string) $apiKey->name,
         ]);
 
         $this->ok('API Key 已更新。', ['item' => $this->present($apiKey)], self::PAGE);
@@ -138,18 +135,6 @@ class ApiKeyController extends Controller
         $this->ok('API Key 已删除。', ['id' => $id], self::PAGE);
     }
 
-    private function normalizePermissions(Request $request): array
-    {
-        $allowed = ['read', 'write', 'admin'];
-        $input = $request->input('permissions', []);
-        if (!is_array($input)) {
-            $input = [$input];
-        }
-
-        $permissions = array_values(array_intersect($allowed, array_map('strval', $input)));
-        return $permissions ?: ['read'];
-    }
-
     private function positiveInt(mixed $value, int $fallback): int
     {
         $int = (int) $value;
@@ -162,7 +147,6 @@ class ApiKeyController extends Controller
             'id' => (int) $apiKey->id,
             'name' => (string) $apiKey->name,
             'key_preview' => (string) $apiKey->key_prefix . '...',
-            'permissions' => json_decode((string) ($apiKey->permissions ?: '[]'), true) ?: [],
             'rate_limit' => (int) $apiKey->rate_limit,
             'rate_window' => (int) $apiKey->rate_window,
             'status' => (string) $apiKey->status,

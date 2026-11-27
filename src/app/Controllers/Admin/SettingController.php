@@ -6,7 +6,6 @@ namespace App\Controllers\Admin;
 use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Session;
-use App\Core\Config;
 use App\Core\Mailer;
 use App\Core\BackupService;
 use App\Models\Setting;
@@ -43,7 +42,7 @@ class SettingController extends Controller
                 'login_lockout_minutes' => ['type' => 'number', 'label' => '锁定时间（分钟）', 'default' => '15', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1440], 'help' => '锁定期内该 IP 无法登录（成功登录自动重置计数）'],
                 'api_rate_limit_enabled' => ['type' => 'toggle', 'label' => '接口频率限制', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '对公开 API（/api/v1）按 IP 限流，防止滥用'],
                 'api_rate_limit_per_minute' => ['type' => 'number', 'label' => '每分钟最大请求数', 'default' => '100', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1000], 'help' => '单个 IP 每分钟允许的请求数（仅限流开启时生效）'],
-                'api_key_auth_required' => ['type' => 'toggle', 'label' => 'API Key 认证', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后公开 API 必须携带有效 X-API-Key 头；默认关闭。Key 的权限字段目前是预留项，暂不参与鉴权'],
+                'api_key_auth_required' => ['type' => 'toggle', 'label' => 'API Key 认证', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后公开 API 必须携带有效 X-API-Key 头；默认关闭'],
             ],
         ],
         'media' => [
@@ -92,7 +91,7 @@ class SettingController extends Controller
                 'mail_enabled' => ['type' => 'toggle', 'label' => '邮件通知开关', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '总开关：关闭后所有邮件通知不发送'],
                 'mail_host' => ['type' => 'text', 'label' => 'SMTP 服务器', 'default' => '', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '如 smtp.qq.com / smtp.exmail.qq.com'],
                 'mail_port' => ['type' => 'number', 'label' => 'SMTP 端口', 'default' => '465', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 65535], 'help' => 'SSL 加密通常 465，TLS 通常 587'],
-                'mail_encryption' => ['type' => 'select', 'label' => '加密方式', 'default' => 'ssl', 'options' => ['ssl' => 'SSL', 'tls' => 'TLS', 'none' => '无'], 'rules' => ['in:ssl,tls,none'], 'help' => 'SSL 使用 ssl:// 加密直连（推荐）；TLS/无 均为明文连接（当前未实现 STARTTLS 升级），敏感环境请选 SSL'],
+                'mail_encryption' => ['type' => 'select', 'label' => '加密方式', 'default' => 'ssl', 'options' => ['ssl' => 'SSL', 'tls' => 'TLS', 'none' => '无'], 'rules' => ['in:ssl,tls,none'], 'help' => 'SSL = 连接即加密（通常 465，推荐）；TLS = STARTTLS 升级（通常 587）；无 = 明文，仅限本机或内网服务器'],
                 'mail_username' => ['type' => 'text', 'label' => 'SMTP 用户名', 'default' => '', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '通常是完整邮箱地址'],
                 'mail_password' => ['type' => 'password', 'label' => 'SMTP 密码/授权码', 'default' => '', 'maxlength' => 200, 'rules' => ['max' => 200], 'help' => '第三方邮箱请使用授权码而非登录密码'],
                 'mail_from' => ['type' => 'email', 'label' => '发件人地址', 'default' => '', 'rules' => ['email' => true, 'max' => 200], 'help' => '收件人看到的发件邮箱'],
@@ -177,7 +176,7 @@ class SettingController extends Controller
             'diff' => $diff,
         ]);
 
-        Config::reload();
+        // Setting::set 已同步写入 Config，无需 reload（reload 只重读 config/*.php，会丢掉 settings 缓存）。
 
         Session::flash('success', '「' . self::GROUPS[$group]['label'] . '」已保存' . ($diff === [] ? '（无变更）' : '，变更 ' . count($diff) . ' 项'));
         $this->redirect('/admin/settings?tab=' . $group . '#' . $group);
@@ -351,6 +350,16 @@ class SettingController extends Controller
         ]);
     }
 
+    /** CSV 公式注入防护：Excel 会把 = + - @ 或制表/回车开头的单元格当公式执行。 */
+    private static function csvCell(mixed $value): string
+    {
+        $s = (string) $value;
+        if ($s !== '' && strpbrk($s[0], "=+-@\t\r") !== false) {
+            return "'" . $s;
+        }
+        return $s;
+    }
+
     public function logsExport(Request $request): void
     {
         $search = trim((string) $request->input('q', ''));
@@ -383,11 +392,11 @@ class SettingController extends Controller
         fputcsv($out, ['time', 'username', 'action', 'detail', 'ip']);
         foreach ($rows as $row) {
             fputcsv($out, [
-                $row['created_at'] ?? '',
-                $row['username'] ?? '',
-                $row['action'] ?? '',
-                $row['detail'] ?? '',
-                $row['ip'] ?? '',
+                self::csvCell($row['created_at'] ?? ''),
+                self::csvCell($row['username'] ?? ''),
+                self::csvCell($row['action'] ?? ''),
+                self::csvCell($row['detail'] ?? ''),
+                self::csvCell($row['ip'] ?? ''),
             ]);
         }
         fclose($out);
@@ -564,7 +573,7 @@ class SettingController extends Controller
                 'detail' => ($noProfile === 0 && $urlLeft === 0)
                     ? '无历史兼容数据残留'
                     : "{$noProfile} 张缺存储实例归属、{$urlLeft} 行残留 url 列 —— "
-                        . '运行 php src/cli/migrate-legacy-refs.php --apply 完成一次性迁移'
+                        . '运行 php cli/migrate-to-latest.php --apply 完成一次性迁移'
                         . '（迁移前这些图片的读取会明确报错）',
                 'fixable' => false,
                 'extra' => ['no_profile' => $noProfile, 'url_left' => $urlLeft],
@@ -632,7 +641,7 @@ class SettingController extends Controller
                     $detail .= "；库内已有 {$dupGroups} 组内容完全相同的记录（历史漏判，需自行清理）";
                 }
                 if ($indexed < $images) {
-                    $detail .= '；' . ($images - $indexed) . ' 张图尚未进索引（历史行，可跑 backfill-content-hashes 补齐）';
+                    $detail .= '；' . ($images - $indexed) . ' 张图尚未进索引（历史行，可用「补全历史图片哈希」或 php cli/migrate-to-latest.php --apply 补齐）';
                 }
                 if ($stale > 0) {
                     $detail .= "；{$stale} 个超时占位待回收（队列每轮自动清理）";

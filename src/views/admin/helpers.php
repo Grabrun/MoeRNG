@@ -10,6 +10,8 @@ function admin_header($title, $bodyClass = '') {
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= \App\Core\Session::csrfToken() ?>">
+    <?php /* 队列单批张数：前端从这里读，避免与 ImageController 的常量各写一份 */ ?>
+    <meta name="queue-batch" content="<?= (int) \App\Controllers\Admin\ImageController::QUEUE_BATCH_DEFAULT ?>">
     <title><?= h($title) ?> - <?= h($brand) ?> 管理面板</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=<?= ASSET_VER ?>">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=<?= ASSET_VER ?>">

@@ -9,12 +9,8 @@ use App\Core\Database;
 class Category extends Model
 {
     protected static string $table = 'categories';
-    protected static array $fillable = ['name', 'slug', 'description', 'parent_id', 'sort_order', 'status'];
-
-    public function images()
-    {
-        return Image::where('category_id', $this->id);
-    }
+    // categories.status 列保留（历史 schema 兼容），但没有读取/切换入口，不再写入。
+    protected static array $fillable = ['name', 'slug', 'description', 'parent_id', 'sort_order'];
 
     public function children(): array
     {
@@ -40,15 +36,33 @@ class Category extends Model
         return $asModels ? array_map(fn($row) => self::hydrate($row), $rows) : $rows;
     }
 
+    /** 一次取全表按 parent_id 分组；树遍历只走内存，避免逐层查询（N+1）。 */
+    private static function rowsByParent(): array
+    {
+        $stmt = Database::getInstance()->query(
+            "SELECT * FROM `categories` ORDER BY `sort_order` ASC, `id` ASC"
+        );
+        $map = [];
+        foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            $map[(int) ($row['parent_id'] ?? 0)][] = $row;
+        }
+        return $map;
+    }
+
     public static function getTree(?int $parentId = null, int $depth = 0): array
     {
-        // 脏数据里 parent_id 自引用环的硬停。
+        return self::buildTree(self::rowsByParent(), (int) $parentId, $depth);
+    }
+
+    /** 脏数据里 parent_id 自引用环的硬停。 */
+    private static function buildTree(array $map, int $parentId, int $depth): array
+    {
         if ($depth > 20) return [];
 
         $tree = [];
-        foreach (self::childrenRowsOf($parentId) as $cat) {
+        foreach ($map[$parentId] ?? [] as $cat) {
             $node = $cat;
-            $node['children'] = self::getTree((int) $cat['id'], $depth + 1);
+            $node['children'] = self::buildTree($map, (int) $cat['id'], $depth + 1);
             $tree[] = $node;
         }
         return $tree;
@@ -56,16 +70,22 @@ class Category extends Model
 
     public static function getFlatTree(?int $parentId = null, int $depth = 0): array
     {
-        if ($depth > 20) return [];
-
         $result = [];
-        foreach (self::childrenRowsOf($parentId, true) as $cat) {
+        self::walkFlat(self::rowsByParent(), (int) $parentId, $depth, $result);
+        return $result;
+    }
+
+    private static function walkFlat(array $map, int $parentId, int $depth, array &$result): void
+    {
+        if ($depth > 20) return;
+
+        foreach ($map[$parentId] ?? [] as $row) {
+            $cat = self::hydrate($row);
             $cat->depth = $depth;
             $cat->prefix = str_repeat('-- ', $depth);
             $result[] = $cat;
-            $result = array_merge($result, self::getFlatTree((int) $cat->id, $depth + 1));
+            self::walkFlat($map, (int) $row['id'], $depth + 1, $result);
         }
-        return $result;
     }
 
     public static function getBySlug(string $slug): ?self

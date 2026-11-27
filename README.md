@@ -15,7 +15,7 @@
 - 🎲 **真随机取图** — 计数 + 随机偏移，每次请求独立抽样（避开 `ORDER BY RAND()` 的 filesort）
 - 🌳 **多级分类树** — 任意嵌套，按分类（含子分类）取图
 - ⚡ **双模式返回** — JSON 结构化数据 / 302 重定向直出图片
-- 🔐 **API Key + 限流** — 可选鉴权，DB token bucket 速率限制（默认关闭）
+- 🔐 **API Key + 限流** — 可选鉴权，按 IP / Key 的数据库固定窗口计数限流（默认关闭）
 - ☁️ **6 家对象存储** — 腾讯云 COS / 阿里云 OSS / AWS S3 / 华为云 OBS / 又拍云 / 七牛 Kodo（全部官方 SDK，零自研签名），多存储实例管理
 - 🎨 **萌系视觉** — 粉紫主题 + 深浅色切换
 - 🛡️ **安全基线** — CSP / 安全响应头 / 防会话固定 / 签名密钥独立 / 限流 fail-closed / 操作审计 / 全链路 CSRF 防护 / 登录双维度锁定 / 存储凭据 AES-256-GCM 加密存储
@@ -91,7 +91,7 @@ Base URL：`https://your-domain.com`
 | `GET /api/v1/random?category=landscape` | 按分类取图（含子分类） |
 | `GET /api/v1/random?type=redirect` | 302 重定向直出图片 |
 | `GET /api/v1/random?type=json&size=md` | JSON 结构化（默认），size 取 sm / md / lg / original |
-| `GET /api/v1/random?device=pe` | 只取竖图（`pc` 取横图；不传按 UA 判断，无 UA 不过滤） |
+| `GET /api/v1/random?device=pe` | 只取竖图（`pc` 取横图，`any` 不限；不传按 UA 判断，无 UA 不过滤） |
 | `GET /api/v1/images?page=1&limit=20` | 图片列表（limit 最大 100） |
 | `GET /api/v1/categories` | 分类列表 |
 | `GET /api/v1/stats` | 服务统计 |

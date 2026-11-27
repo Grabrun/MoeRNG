@@ -262,7 +262,7 @@ class StorageProfile extends Model
         if ($profileId <= 0) {
             throw new \RuntimeException(
                 '图片记录缺少存储实例归属（storage_profile_id 为空，属迁移前历史数据）。'
-                . '请运行 php src/cli/migrate-legacy-refs.php --apply 完成一次性迁移。'
+                . '请运行 php cli/migrate-to-latest.php --apply 完成一次性迁移。'
             );
         }
 
@@ -270,7 +270,7 @@ class StorageProfile extends Model
         if ($profile === null) {
             throw new \RuntimeException(
                 '图片记录指向的存储实例 #' . $profileId . ' 不存在。'
-                . '请到「存储管理」恢复该实例，或运行 php src/cli/migrate-legacy-refs.php 重新绑定。'
+                . '请到「存储管理」恢复该实例，或运行 php cli/migrate-to-latest.php --apply 重新绑定。'
             );
         }
         return self::cachedDriver($profile);

@@ -185,30 +185,6 @@ if (document.readyState === 'loading') {
         });
     });
 
-    (function () {
-        var hint = document.getElementById('save-hint');
-        if (!hint) return;
-        var form = hint.closest('form');
-        if (!form) return;
-        var dirty = false;
-        var mark = function () {
-            if (dirty) return;
-            dirty = true;
-            hint.textContent = '有未保存的修改，请记得点击保存';
-            hint.style.color = 'var(--warning)';
-        };
-        form.addEventListener('input', mark);
-        form.addEventListener('change', mark);
-        form.addEventListener('submit', function () {
-            dirty = false;
-        });
-        window.addEventListener('beforeunload', function (e) {
-            if (!dirty) return;
-            e.preventDefault();
-            e.returnValue = '';
-        });
-    })();
-
     var csrfMeta = document.querySelector('meta[name="csrf-token"]');
     var csrf = csrfMeta ? csrfMeta.content : '';
     document.querySelectorAll('[data-logo-upload]').forEach(function (btn) {

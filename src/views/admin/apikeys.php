@@ -15,7 +15,6 @@
                 <tr>
                     <th>名称</th>
                     <th>Key</th>
-                    <th>权限</th>
                     <th>速率限制</th>
                     <th>状态</th>
                     <th>操作</th>
@@ -23,23 +22,14 @@
             </thead>
             <tbody>
                 <?php foreach ($apiKeys as $key): ?>
-                <?php
-                    $perms = json_decode($key->permissions ?: '[]', true) ?: [];
-                    $active = $key->status === 'active';
-                ?>
+                <?php $active = $key->status === 'active'; ?>
                 <tr data-id="<?= $key->id ?>"
                     data-name="<?= h($key->name) ?>"
                     data-rate-limit="<?= h($key->rate_limit) ?>"
-                    data-rate-window="<?= h($key->rate_window) ?>"
-                    data-permissions="<?= h(json_encode($perms, JSON_UNESCAPED_UNICODE)) ?>">
+                    data-rate-window="<?= h($key->rate_window) ?>">
                     <td><?= h($key->name) ?></td>
                     <td>
                         <code class="text-xs"><?= h($key->key_prefix) ?>...</code>
-                    </td>
-                    <td>
-                        <?php foreach ($perms as $p): ?>
-                        <span class="badge badge-info"><?= h($p) ?></span>
-                        <?php endforeach; ?>
                     </td>
                     <td><?= h($key->rate_limit) ?> / <?= h($key->rate_window) ?>s</td>
                     <td><span class="badge badge-<?= $active ? 'success' : 'danger' ?>"><?= h($key->status) ?></span></td>
@@ -53,7 +43,7 @@
                 </tr>
                 <?php endforeach; ?>
                 <tr id="apikey-empty" class="<?= empty($apiKeys) ? '' : 'hidden' ?>">
-                    <td colspan="6" class="text-center text-muted">还没有 API Key。点「生成 Key」创建第一个。</td>
+                    <td colspan="5" class="text-center text-muted">还没有 API Key。点「生成 Key」创建第一个。</td>
                 </tr>
             </tbody>
         </table>
@@ -67,15 +57,6 @@
             <?= $csrf_field ?>
             <input type="hidden" name="id" id="key-id">
             <div class="form-group"><label>名称</label><input type="text" name="name" id="key-name" class="form-control" required placeholder="如「博客前端」"></div>
-            <div class="form-group">
-                <label>权限范围</label>
-                <div class="flex gap-2 flex-wrap">
-                    <label class="flex gap-6 align-center pointer"><input type="checkbox" name="permissions[]" value="read" checked> read</label>
-                    <label class="flex gap-6 align-center pointer"><input type="checkbox" name="permissions[]" value="write"> write</label>
-                    <label class="flex gap-6 align-center pointer"><input type="checkbox" name="permissions[]" value="admin"> admin</label>
-                </div>
-                <p class="text-muted text-small mb-0">预留字段，<strong>当前不参与鉴权</strong>：/api/v1/* 全部为只读端点，鉴权只看 Key 是否有效且启用。勾选与否不影响实际权限。</p>
-            </div>
             <div class="grid grid-2">
                 <div class="form-group">
                     <label>速率限制（请求数）</label>

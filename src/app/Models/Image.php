@@ -206,13 +206,6 @@ class Image extends Model
         return $out;
     }
 
-    /** 键缺失返回 pending（从未处理）—— 存量行无需回填的依据。 */
-    public function processingState(string $item = self::ITEM_THUMB_META): string
-    {
-        return self::decodeProcessingState((string) ($this->attributes['processing_state'] ?? ''))[$item]
-            ?? self::STATE_PENDING;
-    }
-
     /** 合并写入：保留其它处理项的键。 */
     public static function withProcessingState(?string $json, string $item, string $state): string
     {
@@ -523,35 +516,50 @@ class Image extends Model
 
     public function delete(): bool
     {
-        // 按 thumbs 登记逐 key 删除：漏删缩略图会在对象存储留下孤儿文件。
-        $storage = self::driverFor($this);
+        // 先删记录再删文件：反过来一旦 DB 删除失败，就会出现「文件没了、行还在」的坏记录。
+        // 存储侧失败只留孤儿文件，记审计即可，不回滚记录。
+        $deleted = parent::delete();
+        if (!$deleted) {
+            return false;
+        }
+
+        \App\Models\AuditLog::record('image_delete', [
+            'id'       => (int) $this->attributes['id'],
+            'filename' => (string) ($this->attributes['filename'] ?? ''),
+            'path'     => (string) ($this->attributes['path'] ?? ''),
+            'storage'  => (string) ($this->attributes['storage'] ?? ''),
+        ]);
+
         $failed = [];
-        foreach ($this->allStorageKeys() as $key) {
-            try {
-                if (!$storage->delete($key)) {
+        try {
+            $storage = self::driverFor($this);
+            foreach ($this->allStorageKeys() as $key) {
+                try {
+                    if (!$storage->delete($key)) {
+                        $failed[] = $key;
+                    }
+                } catch (\Throwable) {
                     $failed[] = $key;
                 }
-            } catch (\Throwable) {
-                $failed[] = $key;
             }
-        }
-        $deleted = parent::delete();
-        if ($deleted) {
-            \App\Models\AuditLog::record('image_delete', [
-                'id'       => (int) $this->attributes['id'],
-                'filename' => (string) ($this->attributes['filename'] ?? ''),
-                'path'     => (string) ($this->attributes['path'] ?? ''),
-                'storage'  => (string) ($this->attributes['storage'] ?? ''),
+        } catch (\Throwable $e) {
+            // 存储实例缺失/配置损坏不应阻止记录删除。
+            $failed = $this->allStorageKeys();
+            \App\Models\AuditLog::record('image_delete_storage_failed', [
+                'id'    => (int) $this->attributes['id'],
+                'paths' => $failed,
+                'error' => $e->getMessage(),
             ]);
-            if (!empty($failed)) {
-                // 存储删除失败但 DB 已删：文件将成为孤儿，记审计便于排查。
-                \App\Models\AuditLog::record('image_delete_storage_failed', [
-                    'id'   => (int) $this->attributes['id'],
-                    'paths' => $failed,
-                ]);
-            }
+            return true;
         }
-        return $deleted;
+
+        if (!empty($failed)) {
+            \App\Models\AuditLog::record('image_delete_storage_failed', [
+                'id'    => (int) $this->attributes['id'],
+                'paths' => $failed,
+            ]);
+        }
+        return true;
     }
 
     private function allStorageKeys(): array

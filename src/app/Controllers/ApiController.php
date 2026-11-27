@@ -120,9 +120,12 @@ class ApiController extends Controller
             $categoryId = (int) $cat->id;
         }
 
-        // 构图自适应：显式 device 优先；无 UA（curl / 服务端调用）不过滤，避免收窄既有调用方的取图集合。
+        // 构图自适应：显式 device 优先（any = 强制不限，用于浏览器里测全量）；
+        // 不传或无 UA（curl / 服务端调用）不过滤，避免收窄既有调用方的取图集合。
         $device = strtolower(trim((string) $request->input('device', '')));
-        if (!in_array($device, ['pc', 'pe'], true)) {
+        if ($device === 'any') {
+            $device = '';
+        } elseif (!in_array($device, ['pc', 'pe'], true)) {
             $ua = (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
             $device = $ua === '' ? '' : (preg_match('/Mobile|iPhone|iPod/i', $ua) ? 'pe' : 'pc');
         }

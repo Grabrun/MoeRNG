@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS `api_keys` (
     -- 只存 key 的 SHA-256；key_prefix 仅用于后台识别
     `key_hash` CHAR(64) NOT NULL UNIQUE,
     `key_prefix` VARCHAR(24) NOT NULL DEFAULT '',
+    -- 预留列：/api/v1 全部只读，没有鉴权执行点；后台已移除权限勾选，保留列以免破坏存量库
     `permissions` JSON,
     `rate_limit` INT NOT NULL DEFAULT 60,
     `rate_window` INT NOT NULL DEFAULT 60,

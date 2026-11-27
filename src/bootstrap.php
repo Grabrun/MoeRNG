@@ -23,7 +23,7 @@ if (!defined('APP_VERSION')) {
 // 缓存戳含资源 mtime，改 CSS/JS 而未升版本号时也能刷新缓存。
 if (!defined('ASSET_VER')) {
     $assetMtime = 0;
-    foreach (['public/css/style.css', 'public/js/app.js', 'public/js/helpers.js'] as $assetFile) {
+    foreach (['public/css/style.css', 'public/js/app.js', 'public/js/front.js', 'public/js/helpers.js'] as $assetFile) {
         $m = @filemtime(__DIR__ . '/' . $assetFile);
         if ($m !== false && $m > $assetMtime) {
             $assetMtime = $m;

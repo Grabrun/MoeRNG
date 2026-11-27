@@ -87,7 +87,7 @@
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('shield', 28) ?></div>
                 <h3>速率限制</h3>
-                <p>可选 API Key 鉴权与令牌桶限流，剩余额度通过 <code>X-RateLimit-*</code> 响应头返回。</p>
+                <p>可选 API Key 鉴权与按 IP / Key 的固定窗口限流，剩余额度通过 <code>X-RateLimit-*</code> 响应头返回。</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('cloud', 28) ?></div>

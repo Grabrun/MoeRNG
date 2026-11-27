@@ -112,160 +112,6 @@ window.copyText = async function(text) {
     return ok;
 };
 
-function initApiTester() {
-    const tester = document.getElementById('api-tester');
-    if (!tester) return;
-
-    const categorySelect = document.getElementById('test-category');
-    const typeSelect = document.getElementById('test-type');
-    const sizeSelect = document.getElementById('test-size');
-    const runBtn = document.getElementById('test-run');
-    const resultBox = document.getElementById('test-result');
-    const urlDisplay = document.getElementById('test-url');
-    const curlDisplay = document.getElementById('test-curl');
-    const statusBadge = document.getElementById('test-status');
-    const durationEl = document.getElementById('test-duration');
-    const metaBox = document.getElementById('test-meta');
-
-    const TEST_HISTORY_KEY = 'moerng_test_history';
-
-    function showMeta(status, statusText, ms) {
-        if (!metaBox) return;
-        // 用 classList：.hidden 带 !important，内联 display 会被覆盖
-        const ok = status >= 200 && status < 400;
-        metaBox.classList.remove('hidden');
-        if (statusBadge) {
-            statusBadge.textContent = status + ' ' + statusText;
-            statusBadge.className = 'badge ' + (ok ? 'badge-success' : 'badge-danger');
-        }
-        if (durationEl) durationEl.textContent = '响应时间 ' + formatDuration(ms);
-    }
-    function formatDuration(ms) {
-        if (ms < 1000) return Math.round(ms) + 'ms';
-        return (ms / 1000).toFixed(2) + 's';
-    }
-    function saveTestHistory(url, summary) {
-        try {
-            let h = JSON.parse(localStorage.getItem(TEST_HISTORY_KEY) || '[]');
-            h.unshift({ url: url, summary: summary, time: Date.now() });
-            if (h.length > 10) h = h.slice(0, 10);
-            localStorage.setItem(TEST_HISTORY_KEY, JSON.stringify(h));
-        } catch (e) { /* private mode — ignore */ }
-    }
-
-    // 参数与路径只有这一份：URL 展示、cURL 提示、真实请求都由它派生
-    function buildParams() {
-        const params = new URLSearchParams();
-        if (categorySelect.value) params.set('category', categorySelect.value);
-        if (typeSelect.value) params.set('type', typeSelect.value);
-        if (sizeSelect && sizeSelect.value) params.set('size', sizeSelect.value);
-        return params;
-    }
-
-    function buildApiPath() {
-        const qs = buildParams().toString();
-        return '/api/v1/random' + (qs ? '?' + qs : '');
-    }
-
-    function updateUrl() {
-        const url = window.location.origin + buildApiPath();
-        urlDisplay.textContent = url;
-        curlDisplay.textContent = 'curl -H "X-API-Key: YOUR_API_KEY" "' + url + '"';
-    }
-
-    categorySelect.addEventListener('change', updateUrl);
-    typeSelect.addEventListener('change', updateUrl);
-    if (sizeSelect) sizeSelect.addEventListener('change', updateUrl);
-    updateUrl();
-
-    runBtn.addEventListener('click', async function() {
-        runBtn.disabled = true;
-        runBtn.textContent = 'Loading...';
-        resultBox.innerHTML = '<div class="spinner"></div>';
-        if (metaBox) metaBox.classList.add('hidden');
-
-        const type = typeSelect.value;
-        const apiPath = buildApiPath();
-        const t0 = performance.now();
-
-        // redirect 分支靠 Image 异步完成，用 Promise 保证 finally 在两条分支都执行
-        let resolveRequest;
-        const requestDone = new Promise(r => { resolveRequest = r; });
-
-        try {
-            if (type === 'redirect') {
-                // 跨域 302 目标不带 CORS 头时 fetch 会失败，改用 Image 探测（img 渲染不受 CORS 限制）
-                const tester = new Image();
-                tester.alt = 'Random Image';
-                tester.style.cssText = 'max-width:100%;max-height:400px;object-fit:contain;';
-                tester.onload = function() {
-                    const ms = performance.now() - t0;
-                    tester.removeAttribute('style');
-                    tester.style.cssText = 'max-width:100%;max-height:400px;object-fit:contain;display:block;margin:0 auto;';
-                    resultBox.innerHTML = '';
-                    resultBox.appendChild(tester);
-                    showMeta(200, 'OK', ms);
-                    saveTestHistory(apiPath, '302 → 图片 (200 OK, ' + formatDuration(ms) + ')');
-                    resolveRequest();
-                };
-                tester.onerror = function() {
-                    const ms = performance.now() - t0;
-                    resultBox.innerHTML =
-                        '<pre style="color:var(--danger)">重定向目标无法加载（目标地址不可达或返回非图片）。'
-                        + '\n这是一个客户端 CORS 探测限制 —— 在 curl / 服务器端 HTTP 客户端中跟随 302 是正常的，'
-                        + '浏览器 fetch 在跨域时会拦截（Failed to fetch）。'
-                        + '\n本测试改用 img 探测，已绕开此限制。'
-                        + '\n\n请求 URL：' + apiPath + '</pre>';
-                    showMeta(0, 'Failed', ms);
-                    saveTestHistory(apiPath, '加载失败 (' + formatDuration(ms) + ')');
-                    resolveRequest();
-                };
-                // 302+图片会被启发式缓存，追加时间戳+随机数强制重新请求
-                var cacheBust = (apiPath.indexOf('?') > -1 ? '&' : '?') + '_=' + Date.now() + Math.random();
-                tester.src = apiPath + cacheBust;
-            } else {
-                const resp = await fetch(apiPath, { cache: 'no-store' });
-                const ms = performance.now() - t0;
-                let text = await resp.text();
-                let pretty;
-                try { pretty = JSON.stringify(JSON.parse(text), null, 2); }
-                catch (e) { pretty = text; }
-                if (!resp.ok) {
-                    let hint = '';
-                    try { const j = JSON.parse(text); hint = (j && (j.message || j.error)) || ''; }
-                    catch (e2) { /* non-JSON body */ }
-                    // 用 renderSafeText（textContent）避免存储型 XSS，见 helpers.js
-                    window.renderSafeText(resultBox,
-                        '请求失败（HTTP ' + resp.status + '）'
-                        + (hint ? '\n' + hint : '\n接口返回了非 JSON 错误体 —— 多为网关/伪静态（URL Rewrite）未配置，请求未到达应用层。')
-                        + '\n\n原始响应：\n' + pretty,
-                        'test-result-error');
-                    showMeta(resp.status, resp.statusText || 'Error', ms);
-                    saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
-                    resolveRequest();
-                } else {
-                    window.renderSafeText(resultBox, pretty, 'test-result-raw');
-                    showMeta(resp.status, resp.statusText || 'OK', ms);
-                    saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
-                    resolveRequest();
-                }
-            }
-
-            await requestDone;
-        } catch(e) {
-            const ms = performance.now() - t0;
-            // 异常分支也必须 resolve，否则 await requestDone 永久挂起
-            window.renderSafeText(resultBox, 'Error: ' + e.message, 'test-result-error');
-            showMeta(0, 'Network Error', ms);
-            saveTestHistory(apiPath, 'Error: ' + e.message);
-            resolveRequest();
-        }
-
-        runBtn.disabled = false;
-        runBtn.textContent = 'Send Request';
-    });
-}
-
 function initImageGrid() {
     const grid = document.querySelector('.image-grid');
     if (!grid) return;
@@ -601,11 +447,6 @@ function initApiKeys() {
         document.getElementById('key-rate-limit').value = data ? data.rateLimit : 60;
         document.getElementById('key-rate-window').value = data ? data.rateWindow : 60;
 
-        const perms = data ? data.permissions : ['read'];
-        form.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-            cb.checked = perms.indexOf(cb.value) !== -1;
-        });
-
         modalTitle.textContent = mode === 'update' ? '编辑 API Key' : '生成 API Key';
         submitBtn.textContent = mode === 'update' ? '保存' : '生成';
     }
@@ -618,13 +459,11 @@ function initApiKeys() {
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
         const mode = form.dataset.mode === 'update' ? 'update' : 'create';
-        const permissions = Array.from(form.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
 
         const payload = {
             name: document.getElementById('key-name').value.trim(),
             rate_limit: document.getElementById('key-rate-limit').value,
-            rate_window: document.getElementById('key-rate-window').value,
-            'permissions[]': permissions.length ? permissions : ['read']
+            rate_window: document.getElementById('key-rate-window').value
         };
         if (mode === 'update') payload.id = document.getElementById('key-id').value;
 
@@ -658,14 +497,11 @@ function initApiKeys() {
 
         // 完整 key 不进 DOM，只能创建后从弹窗复制一次；丢失就删除重建
         if (action === 'edit') {
-            let permissions = [];
-            try { permissions = JSON.parse(row.dataset.permissions || '[]'); } catch (err) { permissions = []; }
             resetForm('update', {
                 id: id,
                 name: row.dataset.name || '',
                 rateLimit: row.dataset.rateLimit || 60,
-                rateWindow: row.dataset.rateWindow || 60,
-                permissions: permissions
+                rateWindow: row.dataset.rateWindow || 60
             });
             openModal('apikey-modal');
             return;
@@ -714,15 +550,12 @@ function initApiKeys() {
         row.dataset.name = item.name;
         row.dataset.rateLimit = item.rate_limit;
         row.dataset.rateWindow = item.rate_window;
-        row.dataset.permissions = JSON.stringify(item.permissions);
 
-        const badges = item.permissions.map(p => '<span class="badge badge-info">' + escapeHtml(p) + '</span>').join(' ');
         const active = item.status === 'active';
 
         row.innerHTML =
             '<td>' + escapeHtml(item.name) + '</td>' +
             '<td><code class="key-preview">' + escapeHtml(item.key_preview) + '</code></td>' +
-            '<td>' + badges + '</td>' +
             '<td>' + item.rate_limit + ' / ' + item.rate_window + 's</td>' +
             '<td><span class="badge badge-' + (active ? 'success' : 'danger') + '">' + escapeHtml(item.status) + '</span></td>' +
             '<td><div class="flex gap-1">' +
@@ -2099,7 +1932,6 @@ function initQueuePage() {
 
 document.addEventListener('DOMContentLoaded', function() {
     initThemeToggle();
-    initApiTester();
     initImageGrid();
     initHealthPanel();
     initQueuePage();

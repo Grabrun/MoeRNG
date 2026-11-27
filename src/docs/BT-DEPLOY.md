@@ -218,8 +218,8 @@ journalctl -u moerng-queue -n 50 --no-pager   # 或 tail -f /www/wwwlogs/moerng-
 
 两个都配也不冲突：守护负责近实时，cron 只在守护挂掉又没拉起时兜底。
 
-补全历史缩略图：后台「图片处理」页的「补全缩略图」按钮（推荐）。
-`php cli/backfill-thumbs.php` 也能跑，但它靠 `exec` 分批，`disable_functions` 里有 `exec` 时会直接拒绝执行并提示改用按钮。
+补全历史缩略图：后台「图片处理」页的「补全缩略图」按钮（唯一入口，分批执行、可反复点）。
+它不依赖 `exec`，在禁用 `exec` / `proc_open` / `popen` 的宝塔环境下同样可用。
 
 ## 6. 关于「对象存储前端直传」（已移除）
 

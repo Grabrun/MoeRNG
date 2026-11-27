@@ -44,7 +44,6 @@ class CategoryController extends Controller
             'description' => $request->input('description', ''),
             'parent_id' => $request->input('parent_id') ? (int) $request->input('parent_id') : null,
             'sort_order' => (int) $request->input('sort_order', '0'),
-            'status' => 'active',
         ]);
 
         if ($name === '') {

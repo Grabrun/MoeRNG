@@ -6,7 +6,7 @@ namespace App\Core;
 class Application
 {
     /** 自迁移版本戳：与 settings.schema_version 一致则跳过迁移；新增迁移必须递增。 */
-    private const SCHEMA_VERSION = '2026-11-17-1';
+    private const SCHEMA_VERSION = '2026-11-28-1';
 
     private static ?self $instance = null;
     private static bool $cliBooted = false;
@@ -136,7 +136,8 @@ class Application
             }
         }
         $nonce = \App\Core\CspNonce::token();
-        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}'; style-src 'self' 'nonce-{$nonce}' https://miaoda.feishu.cn; font-src 'self' https://miaoda.feishu.cn https://sf3-scmcdn-cn.feishucdn.com; img-src {$imgSrc}; connect-src 'self' https://miaoda.feishu.cn https://sf3-scmcdn-cn.feishucdn.com; frame-ancestors 'self'");
+        // 字体样式表与 woff2 分片在飞书 CDN（前台唯一的外部资源）；其余连接一律限本站。
+        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{$nonce}'; style-src 'self' 'nonce-{$nonce}' https://miaoda.feishu.cn; font-src 'self' https://miaoda.feishu.cn https://sf3-scmcdn-cn.feishucdn.com; img-src {$imgSrc}; connect-src 'self'; frame-ancestors 'self'");
     }
 
     private function storageImageHosts(): array
@@ -277,8 +278,12 @@ class Application
         if (!is_dir($incoming)) {
             @mkdir($incoming, 0755, true);
         }
-        if (!is_file($incoming . '/.htaccess')) {
-            @file_put_contents($incoming . '/.htaccess', "Require all denied\n");
+        // Apache 2.2/2.4 双写：只写 Require all denied 在未加载 mod_authz_core 的 2.2 上不生效。
+        $guardFile = $incoming . '/.htaccess';
+        $guardBody = "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n"
+            . "<IfModule !mod_authz_core.c>\n    Order deny,allow\n    Deny from all\n</IfModule>\n";
+        if (!is_file($guardFile) || !str_contains((string) @file_get_contents($guardFile), 'mod_authz_core')) {
+            @file_put_contents($guardFile, $guardBody);
         }
 
         $expect = self::schemaExpectations();
@@ -550,7 +555,9 @@ class Application
             }
         }
 
-        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+        $scheme = $https ? 'https' : 'http';
         $host = $this->sanitizeHost((string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
         return "{$scheme}://{$host}";
     }
@@ -634,6 +641,12 @@ class Application
         if (time() - $last < $hours * 3600) {
             return;
         }
+        // 上一次尝试没写完状态（备份被 max_execution_time / 网关超时杀掉）：
+        // 1 小时内不再重试，否则每个请求都会重新跑一次全库 dump。
+        $started = (int) ($state['started'] ?? 0);
+        if ($started > 0 && time() - $started < 3600) {
+            return;
+        }
         // 抢锁：LOCK_EX 失败说明另一个进程正在备份。
         $fh = @fopen($lockFile . '.tmp', 'c');
         if ($fh === false || !flock($fh, LOCK_EX | LOCK_NB)) {
@@ -642,8 +655,10 @@ class Application
             }
             return;
         }
+        // 先落「已开始」再干活：进程被杀时留下时间戳，下一请求不会立刻重试。
+        @file_put_contents($lockFile, json_encode(['started' => time(), 'last' => $last]), LOCK_EX);
         [$ok, $msg] = \App\Core\BackupService::create();
-        @file_put_contents($lockFile, json_encode(['last' => time(), 'ok' => $ok, 'msg' => $msg]));
+        @file_put_contents($lockFile, json_encode(['last' => time(), 'ok' => $ok, 'msg' => $msg]), LOCK_EX);
         flock($fh, LOCK_UN);
         fclose($fh);
         if ($ok && \App\Core\Mailer::enabled()
