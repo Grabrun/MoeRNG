@@ -51,7 +51,10 @@ $beat = static function () use ($heartbeatFile): void {
 };
 
 $say = static function (string $msg): void {
-    echo '[' . date('Y-m-d H:i:s') . '] ' . $msg . PHP_EOL;
+    // stdout 被重定向到文件/管道时 stdio 是块缓冲，不 flush 就要攒够 4KB 才落盘 ——
+    // 守护进程里表现为日志永远是 0 字节，排障时等于没有日志。
+    fwrite(STDOUT, '[' . date('Y-m-d H:i:s') . '] ' . $msg . PHP_EOL);
+    fflush(STDOUT);
 };
 
 /** "512M" / "-1" → 字节数；0 表示不限制。 */
