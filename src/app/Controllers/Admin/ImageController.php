@@ -720,7 +720,10 @@ class ImageController extends Controller
     private function jsonFatalGuard(string $label): void
     {
         @ini_set('memory_limit', self::HEAVY_MEMORY_LIMIT);
-        @set_time_limit(120);
+        // CLI 下 set_time_limit 按累计 CPU 时间计，会杀掉常驻 worker
+        if (PHP_SAPI !== 'cli') {
+            @set_time_limit(120);
+        }
 
         register_shutdown_function(static function () use ($label): void {
             $e = error_get_last();
@@ -801,7 +804,11 @@ class ImageController extends Controller
     public function processQueueBatch(int $batchSize = 0): array
     {
         @ini_set('memory_limit', self::HEAVY_MEMORY_LIMIT);
-        @set_time_limit(120);
+        // 只有 HTTP 需要执行时限。CLI 常驻 worker 绝不能设：set_time_limit 在 CLI 下按累计
+        // CPU 时间计（GD 转码全算），跑到 120s 会把常驻进程直接杀掉。
+        if (PHP_SAPI !== 'cli') {
+            @set_time_limit(120);
+        }
 
         // 回收中途死掉的请求留下的空占位（10 分钟内不动才算，避免误删正在处理的）
         try {

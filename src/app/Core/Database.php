@@ -68,4 +68,23 @@ class Database
     {
         self::$instance = null;
     }
+
+    /**
+     * 长驻进程探活：MySQL 的 wait_timeout 会掐掉空闲连接，懒连接不会自愈。
+     * 探测失败即丢弃实例，下次 getInstance() 自然重建。
+     */
+    public static function ping(): bool
+    {
+        if (self::$instance === null) {
+            return false;
+        }
+
+        try {
+            self::$instance->query('SELECT 1');
+            return true;
+        } catch (\Throwable) {
+            self::$instance = null;
+            return false;
+        }
+    }
 }

@@ -91,14 +91,23 @@ $totalDone = 0;
 $totalFailed = 0;
 $stalled = 0;
 $maxStalled = 3;
+// 距上次成功往返的时间。MySQL 会按 wait_timeout 掐掉空闲连接，而懒连接不会自愈。
+$lastOkAt = time();
 
 while (true) {
     $round++;
     $started = microtime(true);
 
+    // 空闲超过一分钟才探活（忙时每轮本来就动了连接，不必多一次往返）
+    if (time() - $lastOkAt >= 60 && !\App\Core\Database::ping() && $round > 1) {
+        $say('数据库连接已失效，已重置，下一轮自动重连');
+    }
+
     try {
         $res = $controller->processQueueBatch($batch);
     } catch (\Throwable $e) {
+        // 连接级异常（gone away / 2006 / 2013）必须丢弃实例，否则之后每轮都拿到同一个死连接
+        \App\Core\Database::reset();
         $say('第 ' . $round . ' 批异常: ' . $e->getMessage());
         if (!$loop) {
             exit(1);
@@ -115,6 +124,9 @@ while (true) {
         sleep($idle);
         continue;
     }
+
+    // 到这里说明这一轮数据库往返成功，刷新探活计时
+    $lastOkAt = time();
 
     // 认领冲突不算失败：退避重试，不计入「零进展」。
     if (!empty($res['contended'])) {

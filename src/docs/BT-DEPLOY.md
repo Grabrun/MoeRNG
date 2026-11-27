@@ -150,20 +150,50 @@ php -r 'var_dump(function_exists("exec"));'   # false 也能正常跑 worker
 |---|---|
 | 名称 | `moerng-queue` |
 | 运行目录 | `/www/wwwroot/你的站点` |
-| 启动命令 | `/www/server/php/84/bin/php cli/process-queue.php --loop=5` |
+| 启动命令 | `/www/server/php/84/bin/php cli/process-queue.php --loop=5 --max-mem=256` |
 | 进程数 | 1 |
 | 自动重启 | 开 |
 | 日志 | `/www/wwwlogs/moerng-queue.log` |
 
-等价 systemd 单元：
+四个容易踩的点：
+
+1. **命令必须是 CLI 的 php**（`/www/server/php/84/bin/php`），不是 `php-fpm`；
+   先 `php -v` 确认版本，路径不对守护会反复重启。
+2. **运行目录就是站点根**（含 `cli/`、`config/`、`storage/`）。宝塔的启动命令不支持
+   `cd xxx && php ...` 这种 shell 串，切目录靠「运行目录」字段。
+3. **`storage/` 需对运行用户可写**（`chown -R www:www storage`），否则临时目录与心跳文件写不进。
+4. **每次覆盖部署后要重启这个守护进程**。CLI 是长驻进程，不会像 FPM 那样随请求重载代码；
+   不重启就会一直跑旧代码（症状：改了队列逻辑却毫无变化）。
+
+等价 systemd 单元（`/etc/systemd/system/moerng-queue.service`）：
 
 ```ini
+[Unit]
+Description=MoeRNG queue worker
+After=network.target mysql.service
+
 [Service]
-ExecStart=/www/server/php/84/bin/php /www/wwwroot/你的站点/cli/process-queue.php --loop=5
+Type=simple
+User=www
+WorkingDirectory=/www/wwwroot/你的站点
+ExecStart=/www/server/php/84/bin/php cli/process-queue.php --loop=5 --max-mem=256
 Restart=always
 RestartSec=5
-WorkingDirectory=/www/wwwroot/你的站点
+StandardOutput=append:/www/wwwlogs/moerng-queue.log
+StandardError=append:/www/wwwlogs/moerng-queue.log
+
+[Install]
+WantedBy=multi-user.target
 ```
+
+```bash
+systemctl daemon-reload && systemctl enable --now moerng-queue
+systemctl status moerng-queue --no-pager
+journalctl -u moerng-queue -n 50 --no-pager   # 或 tail -f /www/wwwlogs/moerng-queue.log
+```
+
+> `--max-mem=256` 是主动退出阈值：单进程长跑无法换进程回收内存，到阈值就自杀，
+> 由守护在 5 秒内拉起。不配则按 `memory_limit` 的 75% 兜底。
 
 ### 方式 B：计划任务（最省心，最长 5 分钟延迟）
 
@@ -176,6 +206,15 @@ WorkingDirectory=/www/wwwroot/你的站点
 - 手跑一次：`php cli/process-queue.php`，应输出「队列为空，无需处理」或逐批的处理结果；
 - 常驻模式每轮会写 `storage/queue.heartbeat`，后台「系统设置 → 健康检查」的
   **图片处理** 一项会显示「消费者 N 秒前心跳」；显示「未检测到队列消费者」就说明常驻进程没起来。
+- 命令行核对心跳新鲜度（应在 10 秒内）：
+
+  ```bash
+  cd /www/wwwroot/你的站点 && echo "心跳距今 $(( $(date +%s) - $(stat -c %Y storage/queue.heartbeat) ))s"
+  ```
+
+- 日志里应有 `队列消费者启动：每批 20 张，空闲每 5s 轮询`，随后是每批的结果行。
+  长时间空闲后出现一次 `数据库连接已失效，已重置，下一轮自动重连` 属正常自愈
+  （MySQL 的 wait_timeout 会掐掉空闲连接）。
 
 两个都配也不冲突：守护负责近实时，cron 只在守护挂掉又没拉起时兜底。
 
