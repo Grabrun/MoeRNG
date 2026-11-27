@@ -517,13 +517,20 @@ class SettingController extends Controller
             $qFailed = (int) $pdo->query(
                 "SELECT COUNT(*) FROM `images` WHERE process_status = 'failed'"
             )->fetchColumn();
+            $hbFile = \App\Controllers\Admin\ImageController::heartbeatFile();
+            $hbAge = is_file($hbFile) ? max(0, time() - (int) @filemtime($hbFile)) : null;
+            $worker = $hbAge === null
+                ? '未检测到队列消费者 —— 常驻进程未启动时，只有上传页/处理页会推队列'
+                : ($hbAge <= 120
+                    ? "消费者 {$hbAge}s 前心跳"
+                    : "消费者已 {$hbAge}s 无心跳，可能已停止");
             $checks['image_queue'] = [
                 'ok' => $qPending === 0 && $qFailed === 0,
-                'detail' => $qPending === 0 && $qFailed === 0
+                'detail' => ($qPending === 0 && $qFailed === 0
                     ? '处理队列为空'
-                    : "待处理 {$qPending} 张, 失败 {$qFailed} 张",
+                    : "待处理 {$qPending} 张, 失败 {$qFailed} 张") . ' · ' . $worker,
                 'fixable' => true,
-                'extra' => ['pending' => $qPending, 'failed' => $qFailed],
+                'extra' => ['pending' => $qPending, 'failed' => $qFailed, 'worker_age' => $hbAge],
             ];
         } catch (\Throwable $e) {
             $checks['image_queue'] = ['ok' => true, 'detail' => '队列统计失败（跳过）: ' . $e->getMessage(), 'fixable' => false, 'extra' => []];

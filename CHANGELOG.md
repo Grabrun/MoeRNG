@@ -9,6 +9,27 @@
 
 ## [未发布] - 2026-11-17
 
+### 队列消费者可在服务端自行循环（不依赖 exec / fork）
+
+宝塔默认把 `exec` / `proc_open` / `popen` / `shell_exec` / `pcntl_fork` 全部列入
+`disable_functions`，原先「父脚本 exec 起子进程」的 worker 在这种环境里根本起不来 ——
+唯一的触发器就只剩浏览器标签页，关掉即停摆。
+
+- `ImageController::processQueueBatch()` 拆出来：只返回结果数组，不输出、不 `exit`；
+  HTTP 端点 `processQueue()` 退化成「调它 + `json()`」，两条入口共用同一份实现；
+- `cli/process-queue.php` 改为**单进程内循环**：不再 fork、不再 exec，直接调上面的方法；
+- 新增内存看门狗（`--max-mem=MiB`，默认取 `memory_limit` 的 75%）：单进程长跑无法靠换进程
+  回收内存，到阈值主动 `exit(0)`，交给进程守护重启；
+- `--loop[=秒]` 常驻、`--batch=N` 单批张数，语义不变；`cron` 仍可每 5 分钟跑一次清空即退；
+- 致命错误统一走 `markInflightFailed()`：HTTP 的 shutdown 钩子与 CLI 共用，在途行标 failed
+  （不再等 5 分钟复位窗口）；
+- 每轮写 `storage/queue.heartbeat`，健康检查「图片处理」一项显示「消费者 N 秒前心跳」，
+  没心跳就明说「未检测到队列消费者」——不再只报「待处理 N 张」让人猜；
+- `docs/BT-DEPLOY.md` 第 5 节重写：路径改回部署后的 `cli/`（原先写成 `src/cli/`，照抄报
+  `Could not open input file`），补宝塔「进程守护管理器」配置与 `exec` 自检；
+- `cli/backfill-thumbs.php` 仍依赖 exec，检测到被禁用时给出可执行替代（后台「补全缩略图」按钮），
+  不再抛未捕获的 `Error`。
+
 ### 上传判重重构：内容哈希索引 + 原子占位
 
 **为什么改**：旧判据是「先查后插」——两个人同时传同一张图必然各插一行；判重还在转码之后，

@@ -20,6 +20,13 @@ foreach (array_slice($argv, 1) as $arg) {
 
 require dirname(__DIR__) . '/bootstrap.php';
 
+// 本脚本靠 exec 起子进程；宝塔默认禁用 exec（PHP 8 下直接 Error），先给出可执行的替代方案。
+if (!function_exists('exec')) {
+    fwrite(STDERR, "exec 已被 disable_functions 禁用，本脚本无法分批执行。\n"
+        . "替代方案：后台「图片处理」页的「补全缩略图」按钮（同一份实现），或临时放开 exec 后再运行。\n");
+    exit(1);
+}
+
 // 上限只认 QUEUE_BATCH_MAX（单一来源）。
 $batch = max(1, min(
     \App\Controllers\Admin\ImageController::QUEUE_BATCH_MAX,

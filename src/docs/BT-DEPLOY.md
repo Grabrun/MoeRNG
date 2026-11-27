@@ -118,37 +118,69 @@ curl -sI https://你的域名/public/css/style.css | grep -iE "cache-control|exp
 - **图片 404 / 签名失效**：确认已重启 PHP-FPM；签名密钥存 `config/signing_key.php`
 - **对象存储图片加载失败**：检查 CSP——v1.2.1-beta.2 起 CSP 自动白名单存储 CDN/源站域名，若仍失败请确认存储管理里的 CDN/源站域名已配置
 
-## 5. 后台处理队列：让它不依赖浏览器
+## 5. 后台处理队列：让服务端自己跑
 
-上传后的缩略图/转码处理原先只由**浏览器**驱动（上传完跑一次、或点「开始处理」）。
-关掉标签页即停摆，无人操作则积压永不消化。CLI 入口补上服务端消费者：
+上传请求只把行写成 `pending`，缩略图与最终存储由消费者处理。**消费者可以完全在服务端循环**，
+不需要任何浏览器页面开着。有两条路，选一条即可：
 
 ```bash
-php src/cli/process-queue.php            # 清空积压后退出
-php src/cli/process-queue.php --loop     # 常驻，空闲每 10 秒轮询
-php src/cli/process-queue.php --batch=50 # 指定单批张数（上限见 QUEUE_BATCH_MAX）
+# 部署后脚本在站点根的 cli/ 下（仓库源码里才多一层 src/）
+php cli/process-queue.php                # 把积压清空后退出（适合 cron）
+php cli/process-queue.php --loop         # 常驻，空闲每 10 秒轮询（适合进程守护）
+php cli/process-queue.php --loop=3       # 同上，空闲 3 秒
+php cli/process-queue.php --batch=50     # 单批张数（上限见 QUEUE_BATCH_MAX）
+php cli/process-queue.php --max-mem=256  # 常驻进程内存上限（MiB），到达后主动退出等守护拉起
 ```
 
-两者可同时存在：Web 与 CLI 靠数据库层的「条件 UPDATE 认领」互斥，认领失败会退避重试，
-不需要额外加锁。
+**worker 是单进程内循环**，不 fork、不 exec。宝塔默认把 `exec` / `proc_open` / `popen` /
+`shell_exec` / `pcntl_fork` 全部列进 `disable_functions`，靠子进程的写法在那种环境里起不来。
+自检一下：
 
-**cron（推荐，最省心）** —— 每 5 分钟跑一次，自身清空后退出：
-
-```cron
-*/5 * * * * cd /www/wwwroot/你的站点 && /www/server/php/84/bin/php src/cli/process-queue.php >/dev/null 2>&1
+```bash
+php -r 'var_dump(function_exists("exec"));'   # false 也能正常跑 worker
 ```
 
-**supervisor（需要近实时）** —— 常驻进程，空闲轮询：
+> Web 与 CLI 可同时存在：靠数据库层的「条件 UPDATE 认领」互斥，认领失败退避重试，不需要加锁。
+
+### 方式 A：进程守护（近实时，推荐）
+
+宝塔「软件商店 → 进程守护管理器」新增一个守护进程：
+
+| 字段 | 值 |
+|---|---|
+| 名称 | `moerng-queue` |
+| 运行目录 | `/www/wwwroot/你的站点` |
+| 启动命令 | `/www/server/php/84/bin/php cli/process-queue.php --loop=5` |
+| 进程数 | 1 |
+| 自动重启 | 开 |
+| 日志 | `/www/wwwlogs/moerng-queue.log` |
+
+等价 systemd 单元：
 
 ```ini
-[program:moerng-queue]
-command=/www/server/php/84/bin/php /www/wwwroot/你的站点/src/cli/process-queue.php --loop
-autostart=true
-autorestart=true
-stdout_logfile=/www/wwwlogs/moerng-queue.log
+[Service]
+ExecStart=/www/server/php/84/bin/php /www/wwwroot/你的站点/cli/process-queue.php --loop=5
+Restart=always
+RestartSec=5
+WorkingDirectory=/www/wwwroot/你的站点
 ```
 
-补全历史缩略图另有 `php src/cli/backfill-thumbs.php`（同一套父/子进程结构）。
+### 方式 B：计划任务（最省心，最长 5 分钟延迟）
+
+```cron
+*/5 * * * * cd /www/wwwroot/你的站点 && /www/server/php/84/bin/php cli/process-queue.php >/dev/null 2>&1
+```
+
+### 确认它真的在跑
+
+- 手跑一次：`php cli/process-queue.php`，应输出「队列为空，无需处理」或逐批的处理结果；
+- 常驻模式每轮会写 `storage/queue.heartbeat`，后台「系统设置 → 健康检查」的
+  **图片处理** 一项会显示「消费者 N 秒前心跳」；显示「未检测到队列消费者」就说明常驻进程没起来。
+
+两个都配也不冲突：守护负责近实时，cron 只在守护挂掉又没拉起时兜底。
+
+补全历史缩略图：后台「图片处理」页的「补全缩略图」按钮（推荐）。
+`php cli/backfill-thumbs.php` 也能跑，但它靠 `exec` 分批，`disable_functions` 里有 `exec` 时会直接拒绝执行并提示改用按钮。
 
 ## 6. 关于「对象存储前端直传」（已移除）
 

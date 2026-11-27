@@ -729,25 +729,7 @@ class ImageController extends Controller
                 return;
             }
             $detail = $e['message'] . ' @ ' . basename((string) $e['file']) . ':' . $e['line'];
-
-            $marked = 0;
-            if (self::$inflightIds !== []) {
-                try {
-                    $pdo = \App\Core\Database::getInstance();
-                    $ids = array_map('intval', self::$inflightIds);
-                    $pdo->prepare(
-                        "UPDATE `images` SET `process_status` = 'failed', `process_error` = ?"
-                        . " WHERE `process_status` = 'processing' AND `id` IN ("
-                        . implode(',', array_fill(0, count($ids), '?')) . ")"
-                    )->execute(array_merge(
-                        [mb_substr('处理中断（' . $label . ' 致命错误）: ' . $detail, 0, 480)],
-                        $ids
-                    ));
-                    $marked = count($ids);
-                } catch (\Throwable) {
-                    // 忽略：下次运行开头仍会复位 processing 行
-                }
-            }
+            $marked = self::markInflightFailed('处理中断（' . $label . ' 致命错误）: ' . $detail);
 
             if (!headers_sent()) {
                 http_response_code(500);
@@ -765,16 +747,61 @@ class ImageController extends Controller
         });
     }
 
+    /**
+     * 把本进程已认领、仍停在 processing 的行标为 failed（致命错误 / 进程即将退出时用）。
+     * 返回实际标记行数；失败静默返回 0 —— 下次运行开头的复位仍会兜住。
+     */
+    public static function markInflightFailed(string $reason): int
+    {
+        if (self::$inflightIds === []) {
+            return 0;
+        }
+        try {
+            $pdo = \App\Core\Database::getInstance();
+            $ids = array_map('intval', self::$inflightIds);
+            $stmt = $pdo->prepare(
+                "UPDATE `images` SET `process_status` = 'failed', `process_error` = ?"
+                . " WHERE `process_status` = 'processing' AND `id` IN ("
+                . implode(',', array_fill(0, count($ids), '?')) . ")"
+            );
+            $stmt->execute(array_merge([mb_substr($reason, 0, 480)], $ids));
+            return $stmt->rowCount();
+        } catch (\Throwable) {
+            return 0;
+        }
+    }
+
     /** 临时存放目录（storage/incoming，web 不可达）。 */
     public static function incomingDir(): string
     {
         return dirname(__DIR__, 3) . '/storage/incoming';
     }
 
-    /** 每次处理一小批 pending：生成缩略图 → 上传 → 置 done；失败置 failed 并留临时文件供重试。 */
+    /** 队列消费者心跳文件：CLI worker 每轮写，健康检查读 mtime 判断它是否还活着。 */
+    public static function heartbeatFile(): string
+    {
+        return dirname(__DIR__, 3) . '/storage/queue.heartbeat';
+    }
+
+    /** HTTP 入口：跑一批并输出 JSON。 */
     public function processQueue(Request $request): void
     {
         $this->jsonFatalGuard('process-queue');
+        $payload = $this->processQueueBatch((int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT));
+        // 失败仍回 500（与拆分前一致），前端只认 success，但外部监控按状态码判断
+        $this->json($payload, empty($payload['success']) ? 500 : 200);
+    }
+
+    /**
+     * 处理一小批 pending 行（HTTP 与 CLI 共用；只返回结果，不输出、不 exit）。
+     * 生成缩略图 → 上传最终存储 → 置 done；失败置 failed 并留临时文件供重试。
+     *
+     * @return array<string,mixed>
+     */
+    public function processQueueBatch(int $batchSize = 0): array
+    {
+        @ini_set('memory_limit', self::HEAVY_MEMORY_LIMIT);
+        @set_time_limit(120);
 
         // 回收中途死掉的请求留下的空占位（10 分钟内不动才算，避免误删正在处理的）
         try {
@@ -782,15 +809,17 @@ class ImageController extends Controller
         } catch (\Throwable) {
         }
 
-        $batchSize = max(1, min(self::QUEUE_BATCH_MAX, (int) $request->input('batch', (string) self::QUEUE_BATCH_DEFAULT)));
+        // 每批重新记录在途 id：上一批的 id 不能留给本批的致命错误处理
+        self::$inflightIds = [];
+
+        $batchSize = max(1, min(self::QUEUE_BATCH_MAX, $batchSize > 0 ? $batchSize : self::QUEUE_BATCH_DEFAULT));
         // 预算从认领前开始算：复位/探测/取批同样受网关超时约束
         $startedAt = microtime(true);
 
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
-            return;
+            return ['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()];
         }
 
         // 复位上次中断遗留的 processing 行；陈旧窗口避免把其它 worker 在途的行打回 pending
@@ -830,7 +859,7 @@ class ImageController extends Controller
                 );
                 if ($marked !== count($ids)) {
                     // 已被并发方抢先：返回 contended 让前端退避，否则会退化成以 RTT 为间隔的紧循环
-                    $this->json([
+                    return [
                         'success' => true,
                         'contended' => true,
                         'done' => 0,
@@ -840,8 +869,7 @@ class ImageController extends Controller
                             "SELECT COUNT(*) FROM `images` WHERE `process_status` = 'pending'"
                         )->fetchColumn(),
                         'results' => [],
-                    ]);
-                    return;
+                    ];
                 }
                 self::$inflightIds = $ids;
             }
@@ -978,7 +1006,7 @@ class ImageController extends Controller
         $remaining = $stats['pending'];
         $failedLeft = $stats['failed'];
 
-        $this->json([
+        return [
             'success' => true,
             'total' => $stats['total'],
             'remaining' => $remaining,
@@ -988,7 +1016,7 @@ class ImageController extends Controller
             'skipped' => $skipped,
             'stats' => $stats,
             'results' => $results,
-        ]);
+        ];
     }
 
     /**
