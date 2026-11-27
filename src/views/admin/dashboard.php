@@ -24,7 +24,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
 
 <div class="page-header">
     <h1>仪表盘</h1>
-    <p>欢迎回到 MoeRNG 管理面板</p>
+    <p>图片、分类、请求量与运行状态，一页看完。</p>
 </div>
 
 <div class="quick-actions reveal">
@@ -58,22 +58,22 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     <div class="stat-card">
         <div class="stat-icon c-primary"><?= icon('image', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_images'] ?>"><?= number_format($stats['total_images']) ?></div>
-        <div class="stat-label">图片资源</div>
+        <div class="stat-label">图片</div>
     </div>
     <div class="stat-card">
         <div class="stat-icon c-accent"><?= icon('folder-tree', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_categories'] ?>"><?= number_format($stats['total_categories']) ?></div>
-        <div class="stat-label">分类数量</div>
+        <div class="stat-label">分类</div>
     </div>
     <div class="stat-card">
         <div class="stat-icon c-info"><?= icon('users', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_users'] ?>"><?= number_format($stats['total_users']) ?></div>
-        <div class="stat-label">管理员账号</div>
+        <div class="stat-label">管理员</div>
     </div>
     <div class="stat-card">
         <div class="stat-icon c-warning"><?= icon('key', 24) ?></div>
         <div class="stat-value" data-count="<?= (int)$stats['total_api_keys'] ?>"><?= number_format($stats['total_api_keys']) ?></div>
-        <div class="stat-label">API Keys（<?= (int)$stats['active_api_keys'] ?> 启用）</div>
+        <div class="stat-label">API Key（<?= (int)$stats['active_api_keys'] ?> 个启用）</div>
     </div>
 </div>
 
@@ -84,7 +84,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
             <a href="/admin/images" class="text-muted text-small">查看全部 →</a>
         </div>
         <?php if (empty($recentImages)): ?>
-            <p class="text-muted">暂无图片，去 <a href="/admin/images">图片管理</a> 上传第一张吧。</p>
+            <p class="text-muted">还没有图片。到 <a href="/admin/images">图片管理</a> 上传第一张。</p>
         <?php else: ?>
         <!-- img 绝对定位：避免图片固有高度撑爆卡片，导致 aspect-ratio 失效。 -->
         <div class="recent-grid">
@@ -100,7 +100,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     <div class="card">
         <h3 class="mb-2">分类分布</h3>
         <?php if (empty($categoryStats)): ?>
-            <p class="text-muted">暂无分类。</p>
+            <p class="text-muted">还没有分类。分类用于按主题组织图片，可任意嵌套。</p>
         <?php else: ?>
         <div class="vstack">
             <?php $maxCount = max(1, $categoryStats[0]['count']); ?>
@@ -122,7 +122,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     <div class="card">
         <div class="flex flow-summary-head">
             <h3 class="mb-2">存储用量</h3>
-            <span class="text-muted text-small">共 <?= (int)$usage['count'] ?> 张有效图片</span>
+            <span class="text-muted text-small">共 <?= (int)$usage['count'] ?> 张图片</span>
         </div>
         <div class="grid grid-3 text-center mb-3">
             <div>
@@ -156,7 +156,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
     <div class="card">
         <h3 class="mb-2">最近操作</h3>
         <?php if (empty($logs)): ?>
-            <p class="text-muted">暂无操作日志。</p>
+            <p class="text-muted">还没有操作记录。上传、删除、改设置等动作都会记在这里。</p>
         <?php else: ?>
         <div class="vstack vstack-0">
             <?php foreach ($logs as $log): ?>
@@ -174,9 +174,9 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
 <div class="grid grid-2 mt-3 reveal">
     <div class="card">
         <div class="flex flow-summary-head">
-            <h3 class="mb-2">流量统计</h3>
+            <h3 class="mb-2">请求统计</h3>
             <?php $grandTotal = (int)$apiStats['total'] + (int)$visitStats['total']; ?>
-            <span class="text-small">总流量：<strong class="c-primary"><?= number_format($grandTotal) ?></strong> 次请求</span>
+            <span class="text-small">累计 <strong class="c-primary"><?= number_format($grandTotal) ?></strong> 次请求</span>
         </div>
         <div class="grid grid-2 traffic-summary">
             <div>
@@ -232,7 +232,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
             <div>
                 <div class="flex metric-head">
                     <span class="metric-label"><?= $m['label'] ?></span>
-                    <span class="metric-value"><?= $show ? $m['val'] . ' %' : '不可用' ?></span>
+                    <span class="metric-value"><?= $show ? $m['val'] . ' %' : '无法读取' ?></span>
                 </div>
                 <div class="metric-track">
                     <div class="metric-fill" data-w="<?= $show ? min(100, $m['val']) : 0 ?>" data-bg="<?= $m['color'] ?>"></div>
@@ -245,7 +245,7 @@ $status       ??= ['cpu' => null, 'mem' => null, 'disk' => null, 'php_mem' => nu
             <div class="flex flex-between env-row"><span class="text-muted">PHP 版本</span><span><?= h($system['php']) ?></span></div>
             <div class="flex flex-between env-row"><span class="text-muted">内存上限</span><span><?= h($status['mem_limit'] ?? '-') ?></span></div>
             <div class="flex flex-between env-row"><span class="text-muted">当前进程占用</span><span><?= human_bytes((float)($status['php_mem'] ?? 0)) ?></span></div>
-            <div class="flex flex-between env-row"><span class="text-muted">时区</span><span><?= h($system['timezone']) ?>（中国标准时间）</span></div>
+            <div class="flex flex-between env-row"><span class="text-muted">时区</span><span><?= h($system['timezone']) ?></span></div>
         </div>
     </div>
 </div>

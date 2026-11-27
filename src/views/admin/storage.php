@@ -3,7 +3,7 @@
 <div class="page-header flex-between">
     <div>
         <h1>存储管理</h1>
-        <p>管理多个存储实例：本地磁盘或对象存储（COS / OSS / AWS S3），上传时可动态选择。</p>
+        <p>本地磁盘或六家对象存储（COS / OSS / S3 / OBS / 又拍云 / 七牛）可并存，上传时按实例选择。</p>
     </div>
     <button class="btn btn-primary btn-sm" id="profile-new"><?= icon('plus', 16) ?> 新增存储实例</button>
 </div>
@@ -86,7 +86,7 @@
     <div id="profile-empty" class="empty-state <?= empty($profiles) ? '' : 'hidden' ?>">
         <div class="empty-icon"><?= icon('cloud', 32) ?></div>
         <h3>还没有存储实例</h3>
-        <p>点击「新增存储实例」创建第一个存储方案（本地磁盘或对象存储）</p>
+        <p>点「新增存储实例」创建第一个，本地磁盘或对象存储都行。</p>
     </div>
 </div>
 
@@ -119,11 +119,11 @@
 
             <div id="profile-local-fields">
                 <div class="form-group">
-                    <label>本地存储路径 <small class="text-muted">（相对项目根目录，可空默认 public/uploads）</small></label>
+                    <label>本地存储路径 <small class="text-muted">（相对项目根目录；留空用 public/uploads）</small></label>
                     <input type="text" name="cfg_path" id="profile-cfg-path" class="form-control" placeholder="public/uploads">
                 </div>
                 <div class="form-group">
-                    <label>CDN 加速域名（可选） <small class="text-muted">（本地图片经 CDN 域名提供，留空用本站地址）</small></label>
+                    <label>CDN 加速域名（可选） <small class="text-muted">（留空则用本站地址）</small></label>
                     <input type="text" name="cfg_cdn_local" id="profile-cfg-cdn-local" class="form-control" placeholder="https://cdn.example.com">
                 </div>
                 <div class="form-group">
@@ -136,23 +136,23 @@
                 <div class="grid grid-2">
                     <div class="form-group pv-field" data-field="key">
                         <label class="pv-label">Access Key<span class="pv-req">*</span></label>
-                        <input type="text" name="cfg_key" id="profile-cfg-key" class="form-control" placeholder="" autocomplete="off">
+                        <input type="text" name="cfg_key" id="profile-cfg-key" class="form-control" placeholder="如 AKIDxxxx" autocomplete="off">
                     </div>
                     <div class="form-group pv-field" data-field="secret">
                         <label class="pv-label">Secret Key<span class="pv-req">*</span></label>
-                        <input type="password" name="cfg_secret" id="profile-cfg-secret" class="form-control" placeholder="" autocomplete="new-password">
+                        <input type="password" name="cfg_secret" id="profile-cfg-secret" class="form-control" placeholder="保存后加密存储，不回显" autocomplete="new-password">
                     </div>
                     <div class="form-group pv-field" data-field="region">
                         <label class="pv-label">Region<span class="pv-req">*</span></label>
-                        <input type="text" name="cfg_region" id="profile-cfg-region" class="form-control" placeholder="">
+                        <input type="text" name="cfg_region" id="profile-cfg-region" class="form-control" placeholder="如 ap-guangzhou">
                     </div>
                     <div class="form-group pv-field" data-field="bucket">
                         <label class="pv-label">Bucket<span class="pv-req">*</span></label>
-                        <input type="text" name="cfg_bucket" id="profile-cfg-bucket" class="form-control" placeholder="">
+                        <input type="text" name="cfg_bucket" id="profile-cfg-bucket" class="form-control" placeholder="存储桶名称">
                     </div>
                     <div class="form-group pv-field" data-field="endpoint">
                         <label class="pv-label">Endpoint<span class="pv-req">*</span></label>
-                        <input type="text" name="cfg_endpoint" id="profile-cfg-endpoint" class="form-control" placeholder="">
+                        <input type="text" name="cfg_endpoint" id="profile-cfg-endpoint" class="form-control" placeholder="如 cos.ap-guangzhou.myqcloud.com">
                     </div>
                     <div class="form-group pv-field" data-field="cdn">
                         <label class="pv-label">CDN 加速域名（可选）</label>

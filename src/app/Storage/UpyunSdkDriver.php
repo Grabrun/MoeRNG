@@ -50,7 +50,7 @@ class UpyunSdkDriver implements StorageInterface
     {
         $handle = @fopen($localPath, 'rb');
         if ($handle === false) {
-            throw new \RuntimeException("无法打开本地文件: {$localPath}");
+            throw new \RuntimeException("无法打开本地文件：{$localPath}");
         }
         try {
             $this->client()->write($remotePath, $handle, ['Content-Type' => $contentType]);

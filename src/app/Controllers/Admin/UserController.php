@@ -35,12 +35,12 @@ class UserController extends Controller
         }
 
         if (empty($email) || empty($username) || empty($password)) {
-            Session::flash('error', 'All fields are required.');
+            Session::flash('error', '用户名、邮箱和密码都需要填写。');
             $this->redirect('/admin/users');
         }
 
         if (User::findByEmail($email)) {
-            Session::flash('error', 'Email already exists.');
+            Session::flash('error', '该邮箱已被使用。');
             $this->redirect('/admin/users');
         }
 
@@ -60,7 +60,7 @@ class UserController extends Controller
             'role'     => (string) $user->role,
         ]);
 
-        Session::flash('success', 'User created successfully.');
+        Session::flash('success', '账号已创建。');
         $this->redirect('/admin/users');
     }
 
@@ -70,7 +70,7 @@ class UserController extends Controller
         $user = User::find($id);
 
         if (!$user) {
-            $this->json(['error' => 'User not found.'], 404);
+            $this->json(['error' => '账号不存在。'], 404);
         }
 
         $user->username = $request->input('username', $user->username);
@@ -99,7 +99,7 @@ class UserController extends Controller
             'password_changed' => !empty($password),
         ]);
 
-        Session::flash('success', 'User updated successfully.');
+        Session::flash('success', '账号信息已更新。');
         $this->redirect('/admin/users');
     }
 
@@ -109,7 +109,7 @@ class UserController extends Controller
         $user = User::find($id);
 
         if (!$user) {
-            $this->json(['error' => 'User not found.'], 404);
+            $this->json(['error' => '账号不存在。'], 404);
         }
 
         $user->status = $user->status === 'active' ? 'disabled' : 'active';
@@ -121,7 +121,7 @@ class UserController extends Controller
             'status'   => (string) $user->status,
         ]);
 
-        $this->json(['success' => true, 'message' => 'Status updated.']);
+        $this->json(['success' => true, 'message' => '状态已更新。']);
     }
 
     public function delete(Request $request): void

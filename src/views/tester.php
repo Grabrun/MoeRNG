@@ -39,13 +39,9 @@
                     </div>
                 </div>
                 <p class="text-muted text-small">
-                    传什么 <code>size</code> 就返回那张图：响应里的 <code>url</code>、<code>width</code>、
-                    <code>height</code>、<code>mime_type</code>、<code>file_size</code>
-                    <strong>全部描述 <code>url</code> 指向的那一张</strong>。
-                    <code>size</code> 缺省是原图；所选尺寸尚未生成时会按
-                    <code>请求尺寸 → md → 原图</code> 回退（绝不 404），
-                    响应里的 <code>size</code> 字段如实回报<strong>实际生效</strong>的尺寸，
-                    所以回退也能被察觉。
+                    传什么 <code>size</code> 就返回哪一张：<code>url</code> 与宽高、格式、字节数
+                    <strong>全部描述</strong>同一张图。<strong>缺省是原图</strong>；所选尺寸尚未生成时按
+                    「请求尺寸 → md → 原图」回退，响应里的 <code>size</code> 是实际生效的档位。
                 </p>
                 <p class="mb-2"><strong>请求 URL：</strong> <code id="test-url" class="wrap-all">-</code>
                     <button type="button" class="copy-btn copy-btn-inline" data-copy="test-url" aria-label="复制 URL" title="复制 URL"><?= icon('copy', 14) ?></button>

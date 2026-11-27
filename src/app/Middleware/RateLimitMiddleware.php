@@ -27,7 +27,7 @@ class RateLimitMiddleware
             : 'ip:' . md5((string) ($request->ip ?? 'unknown'));
 
         $windowSeconds = 60;
-        $maxRequests = max(1, (int) (Setting::get('api_rate_limit_per_minute', '60') ?: 60));
+        $maxRequests = max(1, (int) (Setting::get('api_rate_limit_per_minute', '100') ?: 100));
         if ($validKey) {
             $maxRequests = max(1, $keyModel->getRateLimit());
             $windowSeconds = max(1, (int) ($keyModel->rate_window ?: 60));
@@ -53,7 +53,7 @@ class RateLimitMiddleware
                 ->execute([$identifier, (string) $windowKey, $resetAt, $now, $now, $now]);
         } catch (\Throwable $e) {
             // 计数不可用时必须 fail-closed，否则 DB 故障期等于静默取消限流。
-            error_log('[MoeRNG] 限流计数写入失败，fail-closed 拒绝请求: ' . $e->getMessage());
+            error_log('[MoeRNG] 限流计数写入失败，fail-closed 拒绝请求：' . $e->getMessage());
             $response = new Response();
             $response->json([
                 'success' => false,

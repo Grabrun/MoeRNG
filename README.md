@@ -12,12 +12,12 @@
 
 ## ✨ 特性
 
-- 🎲 **真随机取图** — 数据库 `ORDER BY RAND()`，每次请求独立抽样
+- 🎲 **真随机取图** — 计数 + 随机偏移，每次请求独立抽样（避开 `ORDER BY RAND()` 的 filesort）
 - 🌳 **多级分类树** — 任意嵌套，按分类（含子分类）取图
 - ⚡ **双模式返回** — JSON 结构化数据 / 302 重定向直出图片
 - 🔐 **API Key + 限流** — 可选鉴权，DB token bucket 速率限制（默认关闭）
 - ☁️ **6 家对象存储** — 腾讯云 COS / 阿里云 OSS / AWS S3 / 华为云 OBS / 又拍云 / 七牛 Kodo（全部官方 SDK，零自研签名），多存储实例管理
-- 🎨 **萌系视觉** — 粉紫主题 + 主题切换 + 双语界面
+- 🎨 **萌系视觉** — 粉紫主题 + 深浅色切换
 - 🛡️ **安全基线** — CSP / 安全响应头 / 防会话固定 / 签名密钥独立 / 限流 fail-closed / 操作审计 / 全链路 CSRF 防护 / 登录双维度锁定 / 存储凭据 AES-256-GCM 加密存储
 - 🖥️ **管理后台** — 图片/分类/用户/Key/存储实例/设置/审计日志/备份；登录支持用户名或邮箱 + 记住我（7 天自动登录）
 
@@ -49,7 +49,7 @@
 |----|------|
 | 后端 | PHP 8.4 FPM（PSR-4 自研框架，零重型依赖） |
 | 数据库 | MySQL 8.0+ |
-| 会话 | Redis（`tcp://127.0.0.1:6379`） |
+| 会话 | PHP 原生会话（文件存储，无需额外服务） |
 | 服务器 | Nginx + 宝塔面板 |
 | 对象存储 | 6 家官方 SDK 聚合（qcloud/cos-sdk-v5、alibabacloud/oss-v2、aws/aws-sdk-php、esdk-obs-php、upyun-sdk-php、qiniu-sdk-php） |
 
@@ -61,7 +61,6 @@
 
 - PHP 8.4+（扩展：`pdo_mysql`, `curl`, `gd`, `simplexml`, `libxml`, `mbstring`, `fileinfo`）
 - MySQL 8.0+
-- Redis（推荐，用于会话存储）
 - Nginx
 
 ### 安装
@@ -73,7 +72,12 @@
 4. 浏览器访问站点根目录 → 进入安装向导 → 填写数据库 + 管理员 + 存储
 5. 进入 `/admin` 管理后台
 
-> **覆盖部署**：升级时直接覆盖代码文件，数据库结构在运行时自动迁移（`Application::runStorageMigration`），**无需手动执行 SQL**。部署后记得重启 PHP-FPM（清 OPcache）。
+> **覆盖部署**：小版本升级直接覆盖代码，数据库结构在运行时自动迁移，无需手动执行 SQL；部署后重启 PHP-FPM（清 OPcache）。
+>
+> **例外**：2.1.0 起 MD5 列已移除，从 2.0.x 升级必须先部署新代码再跑一次性迁移
+> `php cli/migrate-to-latest.php`（默认干跑，确认后加 `--apply`）。
+>
+> 上传后由队列生成缩略图并转存，需按 `src/docs/BT-DEPLOY.md` §5 配置常驻消费者，否则关掉页面就停。
 
 <br>
 
@@ -86,8 +90,8 @@ Base URL：`https://your-domain.com`
 | `GET /api/v1/random` | 真随机取图 |
 | `GET /api/v1/random?category=landscape` | 按分类取图（含子分类） |
 | `GET /api/v1/random?type=redirect` | 302 重定向直出图片 |
-| `GET /api/v1/random?type=json` | JSON 结构化（默认） |
-| `GET /api/v1/images?page=1&per_page=20` | 图片列表 |
+| `GET /api/v1/random?type=json&size=md` | JSON 结构化（默认），size 取 sm / md / lg / original |
+| `GET /api/v1/images?page=1&limit=20` | 图片列表（limit 最大 100） |
 | `GET /api/v1/categories` | 分类列表 |
 | `GET /api/v1/stats` | 服务统计 |
 

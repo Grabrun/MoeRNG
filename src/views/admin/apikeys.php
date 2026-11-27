@@ -3,7 +3,7 @@
 <div class="page-header flex-between">
     <div>
         <h1>API Key 管理</h1>
-        <p>管理 API 访问密钥与速率限制</p>
+        <p>每个 Key 有独立限流配额；完整 Key 只在生成时显示一次。</p>
     </div>
     <button class="btn btn-primary btn-sm" id="apikey-new">生成 Key</button>
 </div>
@@ -53,7 +53,7 @@
                 </tr>
                 <?php endforeach; ?>
                 <tr id="apikey-empty" class="<?= empty($apiKeys) ? '' : 'hidden' ?>">
-                    <td colspan="6" class="text-center text-muted">暂无 API Key，点击「生成 Key」创建</td>
+                    <td colspan="6" class="text-center text-muted">还没有 API Key。点「生成 Key」创建第一个。</td>
                 </tr>
             </tbody>
         </table>
@@ -66,7 +66,7 @@
         <form method="POST" action="/admin/apikeys/create" id="apikey-form">
             <?= $csrf_field ?>
             <input type="hidden" name="id" id="key-id">
-            <div class="form-group"><label>名称</label><input type="text" name="name" id="key-name" class="form-control" required placeholder="My App"></div>
+            <div class="form-group"><label>名称</label><input type="text" name="name" id="key-name" class="form-control" required placeholder="如「博客前端」"></div>
             <div class="form-group">
                 <label>权限范围</label>
                 <div class="flex gap-2 flex-wrap">

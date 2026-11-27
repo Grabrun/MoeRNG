@@ -243,7 +243,7 @@ class StorageProfileController extends Controller
             }
             // endpoint 的 SSRF 自检只在写入边界做一次，避免每次构造驱动都刷日志。
             foreach (S3Driver::endpointSafetyWarnings($config['endpoint'], $config['source_domain']) as $w) {
-                error_log('[MoeRNG] 存储实例 endpoint 检查: ' . $w);
+                error_log('[MoeRNG] 存储实例 endpoint 检查：' . $w);
             }
         } else {
             $config = [

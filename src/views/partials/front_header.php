@@ -9,7 +9,7 @@ $navItems = [
     'about'   => ['/about', '关于'],
 ];
 $fullTitle = $pageTitle ?? ($siteName . ' - ' . $siteSlogan);
-$metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。基于 RESTful 架构的随机二次元图片 API 服务，支持多分类、JSON 与重定向双模式。');
+$metaDesc = $pageDesc ?? ($siteName . ' - ' . $siteSlogan . '。多级分类、JSON 与 302 双模式，可自托管部署。');
 ?><!DOCTYPE html>
 <html lang="zh-CN">
 <head>

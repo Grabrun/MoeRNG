@@ -65,7 +65,7 @@ class BackupService
             $tables = $db->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);
             $fh = fopen($file, 'wb');
             if ($fh === false) {
-                return '备份文件无法写入: ' . $file;
+                return '备份文件无法写入：' . $file;
             }
             fwrite($fh, "-- MoeRNG database backup " . date('Y-m-d H:i:s') . "\n"
                 . "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n");
@@ -84,7 +84,7 @@ class BackupService
             fwrite($fh, "SET FOREIGN_KEY_CHECKS=1;\n");
             return '';
         } catch (\Throwable $e) {
-            return '数据库导出失败: ' . $e->getMessage();
+            return '数据库导出失败：' . $e->getMessage();
         } finally {
             if (is_resource($fh)) {
                 fclose($fh);
@@ -97,7 +97,7 @@ class BackupService
     {
         $dir = self::dir();
         if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
-            return [false, "无法创建备份目录: {$dir}", ''];
+            return [false, "无法创建备份目录：{$dir}", ''];
         }
         // 项目根即 web 根，故写 .htaccess/index.html 防护并给文件名加随机后缀；nginx 下 .htaccess 无效，需另配规则。
         @file_put_contents($dir . '/.htaccess', "Require all denied\n");
@@ -133,7 +133,7 @@ class BackupService
         self::prune();
 
         $size = is_file($finalFile) ? (int) filesize($finalFile) : 0;
-        return [true, '备份完成: ' . basename($finalFile) . ' (' . self::humanSize($size) . ')', basename($finalFile)];
+        return [true, '备份完成：' . basename($finalFile) . ' (' . self::humanSize($size) . ')', basename($finalFile)];
     }
 
     /** @return list<array{label: string, dir: string, exclude: list<string>}> */

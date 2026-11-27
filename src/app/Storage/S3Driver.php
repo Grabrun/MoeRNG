@@ -154,7 +154,7 @@ class S3Driver implements StorageInterface
             'qiniu' => QiniuSdkDriver::available()
                 ? new QiniuSdkDriver($this->accessKey, $this->secretKey, $this->bucket, $this->region, $this->cdnUrl, $this->signedTtl, $this->sourceDomain)
                 : throw $this->sdkMissing('qiniu'),
-            default => throw new \RuntimeException("未知存储服务商: {$this->provider}"),
+            default => throw new \RuntimeException("未知存储服务商：{$this->provider}"),
         };
     }
 

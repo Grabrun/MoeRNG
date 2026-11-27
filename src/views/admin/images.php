@@ -8,13 +8,13 @@
     <div class="flex gap-2">
         <button class="btn btn-primary btn-sm" data-toggle-class="upload-modal" data-class="active">上传图片</button>
         <button class="btn btn-outline btn-sm" id="select-all">全选本页</button>
-        <button class="btn btn-outline btn-sm" id="select-all-all">全选</button>
+        <button class="btn btn-outline btn-sm" id="select-all-all">选中全部</button>
     </div>
 </div>
 
 <div class="card mb-3">
     <form method="GET" action="/admin/images" class="flex gap-2 flex-wrap">
-        <input type="text" name="search" class="form-control" value="<?= h($search) ?>" placeholder="搜索文件名..." class="flex-1 min-w-200">
+        <input type="text" name="search" class="form-control flex-1 min-w-200" value="<?= h($search) ?>" placeholder="搜索文件名…">
         <select name="category_id" class="form-control w-200">
             <option value="">全部分类</option>
             <option value="0" <?= $categoryId==='0'?'selected':'' ?>>未分类</option>
@@ -58,8 +58,8 @@
 
 <div id="image-empty" class="empty-state <?= empty($images) ? '' : 'hidden' ?>">
     <div class="empty-icon"><?= icon('image', 32) ?></div>
-    <h3>暂无图片</h3>
-    <p>点击「上传图片」开始添加你的第一张图，或直接拖拽文件到上传窗口</p>
+    <h3>还没有图片</h3>
+    <p>上传第一张，或把文件拖进上传窗口。</p>
     <div class="empty-actions">
         <button class="btn btn-primary btn-sm" data-toggle-class="upload-modal" data-class="active"><?= icon('upload', 16) ?> 上传图片</button>
     </div>
@@ -99,9 +99,9 @@
     <button class="btn btn-outline btn-sm" id="batch-categorize" disabled>应用</button>
     <button class="btn btn-danger btn-sm" id="batch-delete">批量删除</button>
     <button class="btn btn-outline btn-sm" id="clear-selection">取消选择</button>
-    <button class="btn btn-outline btn-sm" id="backfill-hashes" title="为历史图片补算 MD5 与 SHA-256（用于重复检测）">补全历史图片哈希</button>
-    <button class="btn btn-outline btn-sm" id="requeue-failed" title="把处理失败的图片重新排入处理队列（需临时文件仍在）">重试失败项</button>
-    <button class="btn btn-outline btn-sm" id="backfill-thumbs" title="为历史图片补生成缩略图（不改动处理状态，图片始终可见）">补全历史缩略图</button>
+    <button class="btn btn-outline btn-sm" id="backfill-hashes" title="为历史图片补算 SHA-256 并写入去重索引">补全历史哈希</button>
+    <button class="btn btn-outline btn-sm" id="requeue-failed" title="把处理失败的图片重新排入队列（需要临时文件仍在）">重试失败项</button>
+    <button class="btn btn-outline btn-sm" id="backfill-thumbs" title="为历史图片补生成缩略图，不改处理状态，图片始终可见">补全缩略图</button>
 </div>
 
 <div id="backfill-progress" class="hidden backfill-float">
@@ -127,7 +127,7 @@
                 </select>
             </div>
             <div class="form-group">
-                <label>存储方案 <small class="text-muted">（可临时切换，默认选中默认方案）</small></label>
+                <label>存储方案 <small class="text-muted">（默认选中默认实例）</small></label>
                 <select name="storage_profile_id" class="form-control">
                     <?php foreach ($storageProfiles as $sp): ?>
                     <option value="<?= (int) $sp->id ?>" <?= ($defaultProfile && (int) $defaultProfile->id === (int) $sp->id) ? 'selected' : '' ?>>
@@ -142,7 +142,7 @@
                  data-max-files="<?= h(ini_get('max_file_uploads')) ?>">
                 <div class="icon"><?= icon('upload', 40) ?></div>
                 <p>拖拽图片到此处或点击上传</p>
-                <p class="text-muted"><small>支持 JPG, PNG, GIF, WebP, BMP · 单文件 ≤ <?= h(ini_get('upload_max_filesize')) ?> · 单次请求 ≤ <?= h(ini_get('post_max_size')) ?></small></p>
+                <p class="text-muted"><small>支持 JPG、PNG、GIF、WebP、BMP · 单文件 ≤ <?= h(ini_get('upload_max_filesize')) ?> · 单次请求 ≤ <?= h(ini_get('post_max_size')) ?></small></p>
                 <input type="file" name="images[]" multiple accept="image/*" class="hidden">
             </div>
         </form>
@@ -159,7 +159,7 @@
 <div class="modal-overlay" id="preview-modal">
     <div class="modal max-w-800">
         <div class="flex-between mb-2">
-            <h2 id="preview-title">预览</h2>
+            <h2 id="preview-title">大图预览</h2>
             <button class="btn btn-outline btn-sm" aria-label="关闭预览" data-toggle-class="preview-modal" data-class="active"><?= icon('x', 16) ?></button>
         </div>
         <img id="preview-image" src="" class="img-preview">

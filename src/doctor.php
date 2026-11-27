@@ -415,7 +415,7 @@ if (class_exists(\App\Storage\LocalDriver::class)) {
                         check('Image thumbnails', true, 'all images have multi-size thumbnails (sm/md/lg)');
                     } else {
                         check('Image thumbnails', true,
-                            "{$noThumb} 张缺多尺寸缩略图 — 后台「图片处理」页点击「补全历史缩略图」（不改状态，图片始终可见）",
+                            "{$noThumb} 张缺多尺寸缩略图 — 后台「图片处理」页点击「补全缩略图」（不改状态，图片始终可见）",
                             true);
                     }
                 } catch (Throwable $e) {

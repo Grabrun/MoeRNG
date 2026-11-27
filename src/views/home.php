@@ -7,12 +7,12 @@
         <div class="hero-inner">
         <div class="hero-grid">
             <div class="hero-left">
-                <span class="hero-kicker">自托管 · 真随机 · 二次元治愈系</span>
+                <span class="hero-kicker">自托管 · 随机取图 · 二次元图库</span>
                 <picture class="hero-banner-wrap">
                     <source srcset="/assets/banner.webp" type="image/webp">
                     <img class="hero-banner" src="/assets/banner.png" width="1400" height="466" alt="<?= h($siteName) ?>随机二次元图片 API 服务" fetchpriority="high">
                 </picture>
-                <p class="hero-sub"><?= h($siteSlogan) ?>。调用一次，随机返回一张治愈系二次元图片：JSON 结构化数据或 302 重定向直出，开发者拿来即用，站主完全自控。</p>
+                <p class="hero-sub"><?= h($siteSlogan) ?>。一次请求换一张图：JSON 给前端渲染，302 直接当图片地址用。自托管部署，图片和接口都在自己手里。</p>
                 <div class="btn-group">
                     <a href="/docs" class="btn btn-primary btn-lg">API 文档</a>
                     <a href="/tester" class="btn btn-outline btn-lg">在线测试</a>
@@ -21,18 +21,17 @@
                 <div class="stats">
                     <div class="stat">
                         <div class="num stat-value" data-count="<?= (int)$totalImages ?>"><?= number_format($totalImages) ?></div>
-                        <div class="label">图片资源</div>
+                        <div class="label">张图片</div>
                     </div>
                     <div class="stat">
                         <div class="num stat-value" data-count="<?= (int)$totalCategories ?>"><?= number_format($totalCategories) ?></div>
-                        <div class="label">分类主题</div>
+                        <div class="label">个分类</div>
                     </div>
                     <div class="stat">
-                        <div class="num stat-value" title="近 7 天 API 请求成功率"><?= $availability === null ? '99.9%' : number_format($availability * 100, 1) . '%' ?></div>
-                        <div class="label">服务可用性</div>
+                        <div class="num stat-value" title="近 7 天 API 请求成功率，4xx 计为可用"><?= $availability === null ? '—' : number_format($availability * 100, 1) . '%' ?></div>
+                        <div class="label">近 7 天可用率</div>
                     </div>
                 </div>
-                <p class="stats-note">实时统计 · 图片与分类随后台更新</p>
             </div>
 
             <div class="hero-stage">
@@ -67,33 +66,33 @@
         <section class="feature-grid">
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('dice', 28) ?></div>
-                <h3>真随机算法 <span class="badge badge-primary">核心</span></h3>
-                <p>数据库级 ORDER BY RAND()，每次请求独立取图：无缓存、无队列、无规律可循</p>
+                <h3>随机取图</h3>
+                <p>每次请求都在符合条件的图里独立抽一张，不轮播、不缓存，刷新多少次都不会拿到固定序列。</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('folder-tree', 28) ?></div>
-                <h3>多级分类 <span class="badge badge-primary">核心</span></h3>
-                <p>分类可无限嵌套，指定一个分类，连同它的全部子分类一起参与随机取图</p>
+                <h3>多级分类</h3>
+                <p>分类可任意嵌套；指定父分类时，整棵子树一起参与随机。</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('zap', 28) ?></div>
-                <h3>高速响应</h3>
-                <p>轻量 PHP 核心、零重型框架，API 平均响应时间低于 50ms</p>
+                <h3>轻量内核</h3>
+                <p>自研 PHP 内核，没有重型框架依赖。部署就是解压、建库、配伪静态三步。</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('shuffle', 28) ?></div>
                 <h3>双模式返回</h3>
-                <p>JSON 结构化数据，或 302 重定向直接输出图片——一套接口适配所有场景</p>
+                <p>一个接口两种输出：JSON 给前端渲染，302 直接塞进 <code>&lt;img&gt;</code> 的 src。</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('shield', 28) ?></div>
                 <h3>速率限制</h3>
-                <p>令牌桶算法限流、分级配额，剩余额度随响应头实时返回</p>
+                <p>可选 API Key 鉴权与令牌桶限流，剩余额度通过 <code>X-RateLimit-*</code> 响应头返回。</p>
             </div>
             <div class="feature-card reveal">
                 <div class="icon"><?= icon('cloud', 28) ?></div>
                 <h3>多存储实例</h3>
-                <p>本地存储与 6 家对象存储（COS / OSS / S3 / OBS / 又拍云 / 七牛）官方 SDK 接入，多实例管理、签名直链与 CDN 加速</p>
+                <p>本地存储，或 COS / OSS / S3 / OBS / 又拍云 / 七牛六家对象存储。多实例并存，签名直链，可挂 CDN。</p>
             </div>
         </section>
     </main>

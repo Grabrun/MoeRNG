@@ -1,13 +1,16 @@
 <?php
 require_once dirname(__DIR__) . '/partials/icons.php';
 
-function admin_header($title, $bodyClass = '') { ?>
+function admin_header($title, $bodyClass = '') {
+    // 站点名走设置缓存，改「系统设置 → 网站名称」后后台标题一起变
+    $brand = \App\Core\Config::get('settings.site_name', 'MoeRNG');
+    ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= \App\Core\Session::csrfToken() ?>">
-    <title><?= h($title) ?> - MoeRNG Admin</title>
+    <title><?= h($title) ?> - <?= h($brand) ?> 管理面板</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=<?= ASSET_VER ?>">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=<?= ASSET_VER ?>">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>">
@@ -19,7 +22,7 @@ function admin_header($title, $bodyClass = '') { ?>
     <div class="admin-layout">
         <aside class="sidebar" id="admin-sidebar">
             <div class="sidebar-top">
-                <a href="/admin" class="sidebar-brand"><img src="/assets/favicon-32.png" width="30" height="30" alt="MoeRNG Logo"><span>MoeRNG</span></a>
+                <a href="/admin" class="sidebar-brand"><img src="/assets/favicon-32.png" width="30" height="30" alt="<?= h($brand) ?> Logo"><span><?= h($brand) ?></span></a>
                 <button type="button" class="theme-toggle" id="theme-toggle" aria-label="切换深浅主题" title="切换深浅主题">
                     <span class="ic icon-sun"><?= icon('sun', 20) ?></span>
                     <span class="ic icon-moon"><?= icon('moon', 20) ?></span>

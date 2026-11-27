@@ -100,7 +100,7 @@ class AwsSdkDriver implements StorageInterface
             if (is_resource($stream)) {
                 fclose($stream);
             }
-            throw new \RuntimeException('对象存储 (S3) 上传失败: ' . $e->getMessage(), 0, $e);
+            throw new \RuntimeException('对象存储 (S3) 上传失败：' . $e->getMessage(), 0, $e);
         }
         if (is_resource($stream)) {
             fclose($stream);
@@ -165,7 +165,7 @@ class AwsSdkDriver implements StorageInterface
             $bare = $host . '/' . ltrim($remotePath, '/');
             if (!\App\Storage\S3Driver::isPubliclyReadable($bare)) {
                 error_log('[MoeRNG] S3 预签名失败且裸 URL 不可匿名读（不降级）: ' . $e->getMessage());
-                throw new \RuntimeException('S3 预签名失败，且该对象无法匿名访问: ' . $e->getMessage(), 0, $e);
+                throw new \RuntimeException('S3 预签名失败，且该对象无法匿名访问：' . $e->getMessage(), 0, $e);
             }
             error_log('[MoeRNG] S3 预签名失败，降级为公开读裸 URL: ' . $e->getMessage());
             return $bare;

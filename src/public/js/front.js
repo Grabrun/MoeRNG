@@ -132,12 +132,12 @@ function initApiTester() {
                 };
                 tester.onerror = function() {
                     const ms = performance.now() - t0;
-                    resultBox.innerHTML =
-                        '<pre style="color:var(--danger)">重定向目标无法加载（目标地址不可达或返回非图片）。'
-                        + '\n这是一个客户端 CORS 探测限制 —— 在 curl / 服务器端 HTTP 客户端中跟随 302 是正常的，'
-                        + '浏览器 fetch 在跨域时会拦截（Failed to fetch）。'
-                        + '\n本测试改用 img 探测，已绕开此限制。'
-                        + '\n\n请求 URL：' + apiPath + '</pre>';
+                    // 必须走 renderSafeText：apiPath 含用户可控参数，innerHTML 拼接等于反射型 XSS
+                    window.renderSafeText(resultBox,
+                        '重定向目标无法加载：地址不可达，或返回的不是图片。'
+                        + '\n这是浏览器的跨域限制；用 curl 或服务端客户端跟随 302 是正常的。'
+                        + '\n本测试改用 img 探测，已绕开该限制。'
+                        + '\n\n请求 URL：' + apiPath, 'test-result-error');
                     showMeta(0, '失败', ms);
                     saveTestHistory(apiPath, '加载失败（' + formatDuration(ms) + '）');
                     resolveRequest();
@@ -159,7 +159,7 @@ function initApiTester() {
                     // 用 renderSafeText（textContent）避免存储型 XSS，见 helpers.js
                     window.renderSafeText(resultBox,
                         '请求失败（HTTP ' + resp.status + '）'
-                        + (hint ? '\n' + hint : '\n接口返回了非 JSON 错误体 —— 多为网关/伪静态（URL Rewrite）未配置，请求未到达应用层。')
+                        + (hint ? '\n' + hint : '\n接口返回了非 JSON 错误体。常见原因是网关或伪静态（URL Rewrite）未配置，请求没有到达应用层。')
                         + '\n\n原始响应：\n' + pretty,
                         'test-result-error');
                     showMeta(resp.status, resp.statusText || '错误', ms);
@@ -167,7 +167,7 @@ function initApiTester() {
                     resolveRequest();
                 } else {
                     window.renderSafeText(resultBox, pretty, 'test-result-raw');
-                    showMeta(resp.status, resp.statusText || '成功', ms);
+                    showMeta(resp.status, '成功', ms);
                     saveTestHistory(apiPath, resp.status + ' ' + (resp.statusText || '') + ' (' + formatDuration(ms) + ')');
                     resolveRequest();
                 }

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="csrf-token" content="<?= $csrf_token ?>">
-    <title>Login - MoeRNG Admin</title>
+    <title>管理面板登录</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png?v=<?= ASSET_VER ?>">
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=<?= ASSET_VER ?>">
     <link rel="stylesheet" href="/public/css/style.css?v=<?= ASSET_VER ?>">
@@ -16,9 +16,9 @@
     </button>
     <div class="login-page">
         <div class="login-card">
-            <img class="login-logo" src="/assets/logo-72.png" width="72" height="72" alt="MoeRNG Logo">
-            <h1 class="sr-only">MoeRNG 管理面板登录</h1>
-            <p class="subtitle">管理面板登录</p>
+            <img class="login-logo" src="/assets/logo-72.png" width="72" height="72" alt="站点 Logo">
+            <h1 class="sr-only">管理面板登录</h1>
+            <p class="subtitle">登录后可管理图片、分类与设置</p>
             <?php if ($error): ?>
             <div class="alert alert-error"><?= h($error) ?></div>
             <?php endif; ?>
@@ -30,7 +30,7 @@
                 </div>
                 <div class="form-group">
                     <label>密码</label>
-                    <input type="password" name="password" class="form-control" required autocomplete="current-password" placeholder="Enter password">
+                    <input type="password" name="password" class="form-control" required autocomplete="current-password" placeholder="输入密码">
                 </div>
                 <div class="form-group login-options">
                     <label class="remember-label">

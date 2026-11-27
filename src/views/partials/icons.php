@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * 统一图标集：24x24 viewBox、1.5px stroke、currentColor。
- * 用法: <?= icon('dice', 24) ?>；尺寸 16（行内）/ 20（按钮）/ 24（独立）
+ * 用法：<?= icon('dice', 24) ?>；尺寸 16（行内）/ 20（按钮）/ 24（独立）
  */
 
 if (!function_exists('icon')) {

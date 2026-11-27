@@ -443,9 +443,8 @@ class ImageController extends Controller
     }
 
     /**
-     * 一次读盘算两个摘要：SHA-256 是判重键，MD5 只用于匹配尚未回填索引的老数据。
-     *
-     * @return array{sha256:?string, md5:?string}
+     * 流式计算文件 SHA-256，大文件不整块读入内存。
+     * 返回 null 表示读不到文件或摘要为空。
      */
     private function sha256File(string $file): ?string
     {
@@ -826,7 +825,7 @@ class ImageController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            return ['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()];
+            return ['success' => false, 'error' => '数据库连接失败：' . $e->getMessage()];
         }
 
         // 复位上次中断遗留的 processing 行；陈旧窗口避免把其它 worker 在途的行打回 pending
@@ -1093,7 +1092,7 @@ class ImageController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            $this->json(['success' => false, 'error' => '数据库连接失败：' . $e->getMessage()], 500);
             return;
         }
 
@@ -1356,7 +1355,7 @@ class ImageController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $viewVars['error'] = '数据库连接失败: ' . $e->getMessage();
+            $viewVars['error'] = '数据库连接失败：' . $e->getMessage();
             $this->render('admin/queue', $viewVars);
             return;
         }
@@ -1434,7 +1433,7 @@ class ImageController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            $this->json(['success' => false, 'error' => '数据库连接失败：' . $e->getMessage()], 500);
             return;
         }
 
@@ -1456,7 +1455,7 @@ class ImageController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            $this->json(['success' => false, 'error' => '数据库连接失败：' . $e->getMessage()], 500);
             return;
         }
         $st = $pdo->prepare(
@@ -1502,7 +1501,7 @@ class ImageController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            $this->json(['success' => false, 'error' => '数据库连接失败：' . $e->getMessage()], 500);
             return;
         }
 
@@ -1735,14 +1734,14 @@ class ImageController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            $this->json(['success' => false, 'error' => '数据库连接失败：' . $e->getMessage()], 500);
             return;
         }
 
         try {
             $staging = $this->cleanupStagingFiles($pdo, $batch, $apply);
         } catch (\Throwable $e) {
-            $this->json(['success' => false, 'error' => '清理失败: ' . $e->getMessage()], 500);
+            $this->json(['success' => false, 'error' => '清理失败：' . $e->getMessage()], 500);
             return;
         }
 
@@ -1876,7 +1875,7 @@ class ImageController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            $this->json(['success' => false, 'error' => '数据库连接失败：' . $e->getMessage()], 500);
             return;
         }
 
@@ -1983,7 +1982,7 @@ class ImageController extends Controller
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            $this->json(['success' => false, 'error' => '删除失败: ' . $e->getMessage()], 500);
+            $this->json(['success' => false, 'error' => '删除失败：' . $e->getMessage()], 500);
             return;
         }
 
@@ -2039,7 +2038,7 @@ class ImageController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            $this->json(['success' => false, 'error' => '数据库连接失败: ' . $e->getMessage()], 500);
+            $this->json(['success' => false, 'error' => '数据库连接失败：' . $e->getMessage()], 500);
             return;
         }
 
@@ -2140,7 +2139,7 @@ class ImageController extends Controller
 
         $files = $_FILES['images'] ?? null;
         if (!$files || empty($files['tmp_name'][0])) {
-            Session::flash('error', 'No files uploaded.');
+            Session::flash('error', '没有收到文件，请重新选择后上传。');
             $this->redirect('/admin/images');
         }
 
@@ -2480,6 +2479,6 @@ class ImageController extends Controller
         }
 
         Image::updateSortOrders($data);
-        $this->json(['success' => true, 'message' => 'Sort order updated.']);
+        $this->json(['success' => true, 'message' => '排序已保存。']);
     }
 }

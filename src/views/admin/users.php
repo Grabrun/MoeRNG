@@ -16,7 +16,7 @@ if ($success): ?>
 <div class="page-header flex-between">
     <div>
         <h1>用户管理</h1>
-        <p>管理后台管理员账号</p>
+        <p>可登录管理面板的账号。</p>
     </div>
     <button class="btn btn-primary btn-sm" data-open-modal="user-modal">新建用户</button>
 </div>
@@ -59,7 +59,7 @@ if ($success): ?>
                                     <?= $user->status === 'active' ? '禁用' : '启用' ?>
                                 </button>
                             </form>
-                            <form method="POST" action="/admin/users/delete" class="inline" data-confirm-submit="确定删除此用户？">
+                            <form method="POST" action="/admin/users/delete" class="inline" data-confirm-submit="删除后该账号立即失效，操作日志会保留。确定删除？">
                                 <?= $csrf_field ?>
                                 <input type="hidden" name="id" value="<?= $user->id ?>">
                                 <button type="submit" class="btn btn-danger btn-sm">删除</button>
@@ -69,7 +69,7 @@ if ($success): ?>
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($users)): ?>
-                <tr><td colspan="6" class="text-center text-muted">暂无用户</td></tr>
+                <tr><td colspan="6" class="text-center text-muted">还没有管理员账号。</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
@@ -84,7 +84,7 @@ if ($success): ?>
             <input type="hidden" name="id" id="user-id">
             <div class="form-group"><label>用户名 *</label><input type="text" name="username" id="user-username" class="form-control" required></div>
             <div class="form-group"><label>邮箱 *</label><input type="email" name="email" id="user-email" class="form-control" required></div>
-            <div class="form-group"><label>密码 <small id="pwd-hint">(留空不修改)</small></label><input type="password" name="password" id="user-password" class="form-control"></div>
+            <div class="form-group"><label>密码 <small id="pwd-hint">（留空不修改）</small></label><input type="password" name="password" id="user-password" class="form-control"></div>
             <div class="form-group"><label>角色</label>
                 <select name="role" id="user-role" class="form-control">
                     <option value="admin">Admin</option>

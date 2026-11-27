@@ -43,7 +43,7 @@ class SettingController extends Controller
                 'login_lockout_minutes' => ['type' => 'number', 'label' => '锁定时间（分钟）', 'default' => '15', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1440], 'help' => '锁定期内该 IP 无法登录（成功登录自动重置计数）'],
                 'api_rate_limit_enabled' => ['type' => 'toggle', 'label' => '接口频率限制', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '对公开 API（/api/v1）按 IP 限流，防止滥用'],
                 'api_rate_limit_per_minute' => ['type' => 'number', 'label' => '每分钟最大请求数', 'default' => '100', 'rules' => ['numeric' => true, 'min' => 1, 'max' => 1000], 'help' => '单个 IP 每分钟允许的请求数（仅限流开启时生效）'],
-                'api_key_auth_required' => ['type' => 'toggle', 'label' => 'API Key 认证（实验性）', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后公开 API 必须携带有效 X-API-Key 头；默认关闭（公开 API 保持开放）'],
+                'api_key_auth_required' => ['type' => 'toggle', 'label' => 'API Key 认证', 'default' => '0', 'rules' => ['in:0,1'], 'help' => '开启后公开 API 必须携带有效 X-API-Key 头；默认关闭。Key 的权限字段目前是预留项，暂不参与鉴权'],
             ],
         ],
         'media' => [
@@ -53,7 +53,7 @@ class SettingController extends Controller
                 'thumbs_enabled' => [
                     'type' => 'toggle', 'label' => '生成缩略图', 'default' => '1', 'rules' => ['in:0,1'],
                     'help' => '关闭后新上传图片只保留原图（不生成 320/640/1280 三档 WebP），后台与前台均直接展示原图；'
-                        . '重新开启后可用「图片处理」页的「补全历史缩略图」为存量图补齐',
+                        . '重新开启后可用「图片处理」页的「补全缩略图」为存量图补齐',
                 ],
                 'thumb_quality' => [
                     'type' => 'number', 'label' => '缩略图质量', 'default' => '82', 'rules' => ['numeric' => true, 'min' => 40, 'max' => 100],
@@ -448,7 +448,7 @@ class SettingController extends Controller
         try {
             $pdo = \App\Core\Database::getInstance();
         } catch (\Throwable $e) {
-            return ['database' => ['ok' => false, 'detail' => '数据库连接失败: ' . $e->getMessage(), 'fixable' => false, 'extra' => []]];
+            return ['database' => ['ok' => false, 'detail' => '数据库连接失败：' . $e->getMessage(), 'fixable' => false, 'extra' => []]];
         }
 
         $expect = \App\Core\Application::schemaExpectations();
@@ -486,7 +486,7 @@ class SettingController extends Controller
             'ok' => $missing === [],
             'detail' => $missing === []
                 ? '所有应自迁移的字段与索引均已就位'
-                : '缺失: ' . implode(', ', array_map(fn($m) => "{$m[0]}.{$m[1]}", $missing)),
+                : '缺失：' . implode(', ', array_map(fn($m) => "{$m[0]}.{$m[1]}", $missing)),
             'fixable' => true,
             'extra' => ['missing' => $missing],
         ];
@@ -504,7 +504,7 @@ class SettingController extends Controller
                 'ok' => $orphanFound === [],
                 'detail' => $orphanFound === []
                     ? '无遗留设置行'
-                    : '发现遗留设置行: ' . implode(', ', array_keys($orphanFound)),
+                    : '发现遗留设置行：' . implode(', ', array_keys($orphanFound)),
                 'fixable' => true,
                 'extra' => ['found' => $orphanFound],
             ];
@@ -544,7 +544,7 @@ class SettingController extends Controller
                 'ok' => $noThumb === 0,
                 'detail' => $noThumb === 0
                     ? '所有图片均已有缩略图'
-                    : "{$noThumb} 张缺多尺寸缩略图 — 到「图片处理」页点击「补全历史缩略图」（不改状态，图片始终可见）",
+                    : "{$noThumb} 张缺多尺寸缩略图 — 到「图片处理」页点击「补全缩略图」（不改状态，图片始终可见）",
                 'fixable' => true,
                 'extra' => ['missing' => $noThumb],
             ];
@@ -625,7 +625,7 @@ class SettingController extends Controller
             }
 
             if ($bad !== []) {
-                $detail = '去重判据失效: ' . implode('；', $bad) . ' —— 上传的重复图片不会被拦截';
+                $detail = '去重判据失效：' . implode('；', $bad) . ' —— 上传的重复图片不会被拦截';
             } else {
                 $detail = "去重判据正常：已索引 {$indexed} 条内容（库内 {$images} 张图）";
                 if ($dupGroups > 0) {

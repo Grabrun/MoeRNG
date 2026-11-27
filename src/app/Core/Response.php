@@ -22,7 +22,7 @@ class Response
         if ($body === false) {
             $fallback = json_encode([
                 'success' => false,
-                'error'   => 'JSON 编码失败: ' . json_last_error_msg() . '（返回数据含无法编码的内容）',
+                'error'   => 'JSON 编码失败：' . json_last_error_msg() . '（返回数据含无法编码的内容）',
                 'json_encode_failed' => true,
             ], JSON_INVALID_UTF8_SUBSTITUTE);
             echo $fallback !== false ? $fallback : '{"success":false,"error":"response encoding failed"}';

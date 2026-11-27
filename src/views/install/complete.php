@@ -25,11 +25,11 @@
 
         <div class="card text-center">
             <div class="mb-3 text-success"><?= icon('check-circle', 64) ?></div>
-            <h2 class="mb-2 text-success">安装成功！</h2>
-            <p class="text-muted mb-3">MoeRNG 已成功安装并配置完毕。</p>
+            <h2 class="mb-2 text-success">可以开始用了</h2>
+            <p class="text-muted mb-3">站点已配置完成，下面两个入口都可直接访问。</p>
 
             <div class="alert alert-info mb-3">
-                <strong>安全提示：</strong> 为了安全起见，建议删除或重命名 <code>/views/install/</code> 目录。
+                <strong>安装程序已锁定：</strong> 重复访问安装页会直接跳回首页。如需彻底移除，删除 <code>/install/</code> 目录即可。
             </div>
 
             <div class="flex gap-2 justify-center mt-3">
@@ -38,7 +38,7 @@
             </div>
 
             <div class="mt-3">
-                <p class="text-muted">API 端点:</p>
+                <p class="text-muted">API 端点：</p>
                 <p><code>GET <?= h($homeUrl) ?>api/v1/random</code></p>
             </div>
         </div>

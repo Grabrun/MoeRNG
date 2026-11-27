@@ -3,7 +3,7 @@
 <div class="page-header flex-between">
     <div>
         <h1>分类管理</h1>
-        <p>管理图片分类层级结构</p>
+        <p>按层级组织图片，可任意嵌套。</p>
     </div>
     <div class="flex gap-2">
         <button type="button" class="btn btn-outline btn-sm" id="cat-expand-all">展开全部</button>
@@ -14,7 +14,7 @@
 
 <div class="category-list" id="category-tree">
     <?php if (empty($categories)): ?>
-    <div class="card"><p class="text-center text-muted p-40">暂无分类，点击「新建分类」创建第一个分类</p></div>
+    <div class="card"><p class="text-center text-muted p-40">还没有分类。点「新建分类」创建第一个。</p></div>
     <?php else: ?>
     <?php foreach ($categories as $root): ?>
     <?php
@@ -37,7 +37,7 @@
                 <?php endif; ?>
                 <span class="text-muted ml-1">· 排序 <?= (int)($root['sort_order'] ?? 0) ?></span>
                 <?php if (isset($imageCounts[(int)$root['id']]) && $imageCounts[(int)$root['id']] > 0): ?>
-                <span class="badge badge-success ml-1"><?= (int)$imageCounts[(int)$root['id']] ?> 图</span>
+                <span class="badge badge-success ml-1"><?= (int)$imageCounts[(int)$root['id']] ?> 张图</span>
                 <?php endif; ?>
             </div>
             <div class="actions">
@@ -67,7 +67,7 @@
                     echo '<small class="text-muted">(' . h($n['slug']) . ')</small>';
                     echo '<span class="text-muted">· 排序 ' . (int)($n['sort_order'] ?? 0) . '</span>';
                     if (isset($imageCounts[(int)$n['id']]) && $imageCounts[(int)$n['id']] > 0) {
-                        echo '<span class="badge badge-success ml-1">' . (int)$imageCounts[(int)$n['id']] . ' 图</span>';
+                        echo '<span class="badge badge-success ml-1">' . (int)$imageCounts[(int)$n['id']] . ' 张图</span>';
                     }
                     if (!empty($n['description'])) {
                         echo '<div class="cat-desc text-muted">' . h($n['description']) . '</div>';
@@ -113,7 +113,7 @@
                 <input type="text" name="name" id="cat-name" class="form-control" required>
             </div>
             <div class="form-group">
-                <label>标识 (Slug)</label>
+                <label>标识（Slug）</label>
                 <input type="text" name="slug" id="cat-slug" class="form-control" placeholder="留空自动生成">
             </div>
             <div class="form-group">
@@ -136,6 +136,7 @@
             <div class="form-group">
                 <label>排序</label>
                 <input type="number" name="sort_order" id="cat-sort" class="form-control" value="0">
+                <small class="text-muted">数字越小越靠前，相同时按创建顺序。</small>
             </div>
             <div class="btn-group">
                 <button type="button" class="btn btn-outline" data-close-modal="category-modal">取消</button>

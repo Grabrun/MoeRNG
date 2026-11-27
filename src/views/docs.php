@@ -49,16 +49,16 @@
                                 <td>否</td>
                                 <td><code>original</code>（原图）</td>
                                 <td>取图尺寸：<code>sm</code>（320）/ <code>md</code>（640）/ <code>lg</code>（1280）/ <code>original</code>（原图）。
-                                    <strong>传什么就返回什么</strong>：<code>url</code> 就是该尺寸的直链，
-                                    响应里其余字段（<code>width</code> / <code>height</code> / <code>mime_type</code> /
-                                    <code>file_size</code>）<strong>都描述这一张图</strong>。
-                                    <strong>取值非法时返回 <code>400</code></strong>（不静默回退，否则调用方会误以为拿到了指定尺寸）；
-                                    该尺寸尚未生成时按 <code>请求尺寸 → md → 原图</code> 回退（绝不返回 404），
-                                    响应里的 <code>size</code> 字段如实回报<strong>实际生效</strong>的尺寸，回退也能被察觉。
-                                    图库或所选分类为空时返回 <code>404</code> 与 JSON 错误体（<code>message</code> 含中文引导，<code>error</code> 保持英文机器码）</td>
+                                    取值非法时返回 <code>400</code>（不静默回退）；该尺寸尚未生成时按
+                                    <code>请求尺寸 → md → 原图</code> 回退，<strong>绝不返回 404</strong>。
+                                    <code>url</code> 与宽高、格式、字节数始终描述同一张图。</td>
                             </tr>
                         </tbody>
                     </table>
+                    <p class="text-muted text-small">
+                        回退时响应里的 <code>size</code> 是实际生效的档位，据此能判断是否降级。
+                        图库或所选分类为空时返回 <code>404</code>：<code>error</code> 是英文机器码，<code>message</code> 给中文引导。
+                    </p>
 
                     <h3 class="mb-1">请求示例</h3>
                     <div class="copy-wrap">
@@ -243,7 +243,7 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
         <section id="rate-limits" class="section reveal">
             <h2 class="section-title">速率限制</h2>
             <div class="card">
-                <p class="mb-2">API 使用令牌桶算法实现速率限制，通过响应头返回实时配额信息：</p>
+                <p class="mb-2">限流默认关闭。开启后匿名请求按 IP、携带 Key 的请求按 Key 分别计数，配额信息随响应头返回：</p>
                 <table class="param-table mb-3">
                     <thead><tr><th>响应头</th><th>说明</th></tr></thead>
                     <tbody>
@@ -255,19 +255,16 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
                 </table>
                 <div class="rate-tier">
                     <div class="tier-card">
-                        <div class="tier-name">匿名用户（IP 限流）</div>
-                        <div class="tier-limit">60 <small>/ 分钟</small></div>
+                        <div class="tier-name">匿名请求（按 IP）</div>
+                        <div class="tier-limit">100 <small>/ 分钟（默认）</small></div>
                     </div>
                     <div class="tier-card">
-                        <div class="tier-name">API Key（默认配额）</div>
-                        <div class="tier-limit">60 <small>/ 分钟</small></div>
-                    </div>
-                    <div class="tier-card">
-                        <div class="tier-name">API Key（可自定义）</div>
-                        <div class="tier-limit">∞ <small>可配置</small></div>
+                        <div class="tier-name">携带 API Key（按 Key）</div>
+                        <div class="tier-limit">60 <small>/ 分钟（默认）</small></div>
                     </div>
                 </div>
-                <p class="text-muted mt-1"><small>超限时返回 HTTP 429 状态码，响应体包含 <code>retry_after</code> 字段提示等待时间。</small></p>
+                <p class="text-muted mt-1"><small>数字为默认值，本站实际配额以后台配置为准；每个 Key 的限额可在「API Key」页单独调整。</small></p>
+                <p class="text-muted"><small>超限返回 HTTP 429，响应体带 <code>retry_after</code> 提示等待秒数。</small></p>
             </div>
         </section>
     </main>

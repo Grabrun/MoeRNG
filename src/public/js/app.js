@@ -409,7 +409,7 @@ function initImageGrid() {
             fd.append('_csrf_token', getCsrfToken());
             const r = await fetch('/admin/images/requeue-failed', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
             const j = await parseJsonResponse(r);
-            if (!j || !j.success) { showToast('重试失败: ' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
+            if (!j || !j.success) { showToast('重试失败：' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
             if (j.requeued > 0) {
                 showToast('已重新入队 ' + j.requeued + ' 张，开始处理…', 'success', 5000);
                 const res = await runProcessQueue(function() {});
@@ -419,7 +419,7 @@ function initImageGrid() {
                 showToast('没有需要重试的失败项', 'success', 4000);
             }
         } catch (e) {
-            showToast('重试请求异常: ' + e.message, 'error', 8000);
+            showToast('重试请求异常：' + e.message, 'error', 8000);
         } finally {
             uploading = false;
         }
@@ -443,7 +443,7 @@ function initImageGrid() {
             showToast('缩略图补全完成：已补 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 8000);
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {
-            showToast('缩略图补全异常: ' + e.message, 'error', 10000);
+            showToast('缩略图补全异常：' + e.message, 'error', 10000);
         } finally {
             uploading = false;
             if (box) setTimeout(() => box.classList.add('hidden'), 1200);
@@ -453,16 +453,18 @@ function initImageGrid() {
     const backfillBtn = document.getElementById('backfill-hashes');
     // 两段式确认：window.confirm 可能被浏览器「阻止额外对话框」静默吞掉
     let backfillArmed = false, backfillArmTimer = null;
+    // 文案只在视图里定义，脚本记住初始值再还原 —— 改文案不必同步改这里
+    const backfillLabel = backfillBtn ? backfillBtn.textContent.trim() : '';
     backfillBtn?.addEventListener('click', async function() {
         if (uploading) { showToast('有上传任务进行中，请稍候', 'error', 4000); return; }
         if (!backfillArmed) {
             backfillArmed = true;
             backfillBtn.textContent = '再次点击确认回填';
-            backfillArmTimer = setTimeout(function() { backfillArmed = false; backfillBtn.textContent = '补全历史图片哈希'; }, 4000);
+            backfillArmTimer = setTimeout(function() { backfillArmed = false; backfillBtn.textContent = backfillLabel; }, 4000);
             return;
         }
         clearTimeout(backfillArmTimer); backfillArmed = false;
-        backfillBtn.textContent = '补全历史图片哈希';
+        backfillBtn.textContent = backfillLabel;
 
         const box = document.getElementById('backfill-progress');
         const fill = document.getElementById('backfill-fill');
@@ -487,7 +489,7 @@ function initImageGrid() {
             showToast(msg, res.failed > 0 ? 'error' : 'success', 8000);
             setTimeout(function() { window.location.reload(); }, 1500);
         } catch (e) {
-            showToast('回填请求异常: ' + e.message, 'error', 8000);
+            showToast('回填请求异常：' + e.message, 'error', 8000);
         } finally {
             uploading = false;
             backfillBtn.disabled = false;
@@ -734,7 +736,7 @@ function initApiKeys() {
 
     function showGeneratedKey(plainKey, name) {
         const modal = document.getElementById('newkey-modal');
-        if (!modal) { showToast('API Key: ' + plainKey, 'success'); return; }
+        if (!modal) { showToast('API Key（只显示一次）：' + plainKey, 'success', 15000); return; }
         document.getElementById('newkey-name').textContent = name || '';
         document.getElementById('newkey-value').textContent = plainKey;
         openModal('newkey-modal');
@@ -1165,7 +1167,7 @@ function initSortable() {
 
         fetch('/admin/images/sort', { method: 'POST', body: form })
             .then(r => parseJsonResponse(r, '保存排序'))
-            .then(d => { if (d.success) showToast('Sort order saved', 'success'); })
+            .then(d => { if (d.success) showToast('排序已保存', 'success'); })
             .catch(e => showToast(e.message, 'error', 6000));
     }
 }
@@ -1611,7 +1613,7 @@ function initOriginalConversion() {
             showToast('干跑完成：扫描 ' + res.scanned + ' 行，可转候选 ' + res.done + ' 张', 'success', 7000);
         } catch (e) {
             statEl.textContent = '检查失败：' + e.message;
-            showToast('干跑失败: ' + e.message, 'error', 8000);
+            showToast('干跑失败：' + e.message, 'error', 8000);
         } finally {
             checkBtn.disabled = false;
         }
@@ -1629,7 +1631,7 @@ function initOriginalConversion() {
             if (res.firstError) showToast(res.firstError, 'error', 9000);
         } catch (e) {
             statEl.textContent = '转换失败：' + e.message;
-            showToast('转换失败: ' + e.message, 'error', 9000);
+            showToast('转换失败：' + e.message, 'error', 9000);
         }
     });
 }
@@ -1665,7 +1667,7 @@ function initStorageCleanup() {
             showToast('干跑完成：扫描 ' + res.scanned + ' 个文件，待清理 ' + res.planned + ' 项', 'success', 7000);
         } catch (e) {
             statEl.textContent = '检查失败：' + e.message;
-            showToast('干跑失败: ' + e.message, 'error', 8000);
+            showToast('干跑失败：' + e.message, 'error', 8000);
         } finally {
             checkBtn.disabled = false;
         }
@@ -1682,7 +1684,7 @@ function initStorageCleanup() {
             if (res.firstError) showToast(res.firstError, 'error', 9000);
         } catch (e) {
             statEl.textContent = '清理失败：' + e.message;
-            showToast('清理失败: ' + e.message, 'error', 9000);
+            showToast('清理失败：' + e.message, 'error', 9000);
         }
     });
 }
@@ -1739,7 +1741,7 @@ async function runHealthCheck() {
         if (!j || !j.success) { healthResults.textContent = '检查失败。'; return; }
         renderHealth(j.checks);
     } catch (e) {
-        healthResults.textContent = '检查请求异常: ' + e.message;
+        healthResults.textContent = '检查请求异常：' + e.message;
     }
 }
 
@@ -1775,7 +1777,7 @@ healthFix?.addEventListener('click', async function() {
         showToast('修复完成：补全 ' + j.applied + ' 项，清理 ' + j.deleted_rows + ' 行遗留设置', 'success', 6000);
         await runHealthCheck();
     } catch (e) {
-        showToast('修复请求异常: ' + e.message, 'error', 8000);
+        showToast('修复请求异常：' + e.message, 'error', 8000);
     } finally {
         healthFix.disabled = false;
     }
@@ -1809,7 +1811,7 @@ healthBackfillRun?.addEventListener('click', async function() {
         showToast('哈希回填完成：已补 ' + res.updated + ' 张', res.failed > 0 ? 'error' : 'success', 6000);
         await runHealthCheck();
     } catch (err) {
-        showToast('回填请求异常: ' + err.message, 'error', 8000);
+        showToast('回填请求异常：' + err.message, 'error', 8000);
     } finally {
         healthBackfillRun.disabled = false;
         uploading = false;
@@ -1877,7 +1879,7 @@ function initQueuePage() {
                 res.failed ? 'error' : 'success', 6000);
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {
-            showToast('处理异常: ' + e.message, 'error', 8000);
+            showToast('处理异常：' + e.message, 'error', 8000);
         } finally {
             uploading = false;
             busy(startBtn, false);
@@ -1900,7 +1902,7 @@ function initQueuePage() {
             showToast('缩略图补全完成：已补 ' + res.done + ' 张' + (res.failed ? '，失败 ' + res.failed + ' 张' : ''), res.failed ? 'error' : 'success', 8000);
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {
-            showToast('缩略图补全异常: ' + e.message, 'error', 10000);
+            showToast('缩略图补全异常：' + e.message, 'error', 10000);
         } finally {
             uploading = false;
             busy(thumbBtn, false);
@@ -1978,10 +1980,10 @@ function initQueuePage() {
                 method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' },
             });
             const j = await parseJsonResponse(r, '单张重试');
-            if (!j || !j.success) { showToast('重试失败: ' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
+            if (!j || !j.success) { showToast('重试失败：' + ((j && j.error) || '未知错误'), 'error', 6000); return; }
             showToast('已重新入队 #' + id + '，开始处理…', 'success', 4000);
         } catch (e) {
-            showToast('重试请求异常: ' + e.message, 'error', 8000);
+            showToast('重试请求异常：' + e.message, 'error', 8000);
             uploading = false;
             btn.disabled = false;
             return;
@@ -2020,7 +2022,7 @@ function initQueuePage() {
             });
             const j = await parseJsonResponse(r, '清空队列');
             if (!j || !j.success) {
-                showToast('清空失败: ' + ((j && j.error) || '未知错误'), 'error', 6000);
+                showToast('清空失败：' + ((j && j.error) || '未知错误'), 'error', 6000);
                 return;
             }
             let msg = '已清空 ' + Number(j.deleted) + ' 条记录';
@@ -2029,7 +2031,7 @@ function initQueuePage() {
             showToast(msg, 'success', 9000);
             setTimeout(() => window.location.reload(), 1800);
         } catch (e) {
-            showToast('清空请求异常: ' + e.message, 'error', 8000);
+            showToast('清空请求异常：' + e.message, 'error', 8000);
         } finally {
             uploading = false;
             await refreshStats();
@@ -2083,7 +2085,7 @@ function initQueuePage() {
                 res.failed ? 'error' : 'success', 9000);
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {
-            showToast('重试失败项异常: ' + e.message, 'error', 10000);
+            showToast('重试失败项异常：' + e.message, 'error', 10000);
         } finally {
             uploading = false;
             busy(requeueBtn, false);
@@ -2290,7 +2292,7 @@ function initRandomDemo() {
         // 含 query 即视为临时签名链接（COS/OSS 用 q-sign-*，本地 /files 用 p=）
         const isSigned = url.includes('?') || url.includes('&');
         if (metaEl) {
-            metaEl.textContent = (isSigned ? '临时签名链接' : '永久链接') + (category ? ' · 分类: ' + category : '');
+            metaEl.textContent = (isSigned ? '临时签名链接' : '永久链接') + (category ? ' · 分类：' + category : '');
             metaEl.classList.remove('hidden');
         }
         const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

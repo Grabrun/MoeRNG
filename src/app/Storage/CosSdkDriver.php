@@ -89,7 +89,7 @@ class CosSdkDriver implements StorageInterface
                 fclose($stream);
             }
             throw new \RuntimeException(
-                '对象存储 (COS) 上传失败: ' . $e->getMessage(),
+                '对象存储 (COS) 上传失败：' . $e->getMessage(),
                 0,
                 $e
             );
@@ -159,7 +159,7 @@ class CosSdkDriver implements StorageInterface
             $bare = "https://{$host}/" . ltrim($remotePath, '/');
             if (!\App\Storage\S3Driver::isPubliclyReadable($bare)) {
                 error_log('[MoeRNG] COS 预签名失败且裸 URL 不可匿名读（不降级）: ' . $e->getMessage());
-                throw new \RuntimeException('COS 预签名失败，且该对象无法匿名访问: ' . $e->getMessage(), 0, $e);
+                throw new \RuntimeException('COS 预签名失败，且该对象无法匿名访问：' . $e->getMessage(), 0, $e);
             }
             error_log('[MoeRNG] COS 预签名失败，降级为公开读裸 URL: ' . $e->getMessage());
             return $bare;

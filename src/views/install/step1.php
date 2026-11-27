@@ -35,7 +35,7 @@
                     <span class="status-icon"><?= $check['status'] ? icon('check-circle', 18) : icon('x-circle', 18) ?></span>
                     <div class="info">
                         <div class="name"><?= h($check['name']) ?></div>
-                        <div class="detail">当前: <?= h($check['current']) ?> / 需要: <?= h($check['required']) ?></div>
+                        <div class="detail">当前 <?= h($check['current']) ?> ／ 需要 <?= h($check['required']) ?></div>
                     </div>
                 </div>
                 <?php endforeach; ?>

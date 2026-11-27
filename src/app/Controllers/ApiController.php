@@ -127,7 +127,7 @@ class ApiController extends Controller
                 'success' => false,
                 'error' => 'No images found',
                 'code' => 'NO_IMAGES_AVAILABLE',
-                'message' => '图库暂无可用图片'
+                'message' => '图库暂无图片'
                     . ($category ? '（分类 ' . htmlspecialchars($category, ENT_QUOTES, 'UTF-8') . ' 下暂无图片）' : '')
                     . '，请先在管理后台「图片管理」上传图片。',
             ], 404);

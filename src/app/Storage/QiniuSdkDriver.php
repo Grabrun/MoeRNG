@@ -68,7 +68,7 @@ class QiniuSdkDriver implements StorageInterface
         $uploader = new \Qiniu\Storage\UploadManager($this->config(), $this->reqOpt());
         $ret = $uploader->putFile($token, $remotePath, $localPath, null, $contentType);
         if (isset($ret[0]['error'])) {
-            throw new \RuntimeException('七牛上传失败: ' . (string) $ret[0]['error']);
+            throw new \RuntimeException('七牛上传失败：' . (string) $ret[0]['error']);
         }
         return $this->url($remotePath);
     }

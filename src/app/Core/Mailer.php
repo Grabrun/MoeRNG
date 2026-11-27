@@ -63,7 +63,7 @@ class Mailer
         $errstr = '';
         $fp = @fsockopen($remote, $port, $errno, $errstr, 10);
         if (!$fp) {
-            return "无法连接 SMTP 服务器: {$errstr} ({$errno})";
+            return "无法连接 SMTP 服务器：{$errstr} ({$errno})";
         }
         stream_set_timeout($fp, 15);
 
@@ -77,25 +77,25 @@ class Mailer
 
         if (!$cmd('EHLO moerng')) {
             fclose($fp);
-            return 'EHLO 失败: ' . end($log);
+            return 'EHLO 失败：' . end($log);
         }
         if ($user !== '') {
             if (!$cmd('AUTH LOGIN')) {
                 fclose($fp);
-                return 'AUTH LOGIN 失败: ' . end($log);
+                return 'AUTH LOGIN 失败：' . end($log);
             }
             if (!$cmd(base64_encode($user))) {
                 fclose($fp);
-                return 'AUTH 用户名失败: ' . end($log);
+                return 'AUTH 用户名失败：' . end($log);
             }
             if (!$cmd(base64_encode($pass))) {
                 fclose($fp);
-                return 'AUTH 密码失败: ' . end($log);
+                return 'AUTH 密码失败：' . end($log);
             }
         }
         if (!$cmd("MAIL FROM:<{$from}>")) {
             fclose($fp);
-            return 'MAIL FROM 失败: ' . end($log);
+            return 'MAIL FROM 失败：' . end($log);
         }
         if (!$cmd("RCPT TO:<{$to}>")) {
             fclose($fp);
@@ -103,7 +103,7 @@ class Mailer
         }
         if (!$cmd('DATA')) {
             fclose($fp);
-            return 'DATA 失败: ' . end($log);
+            return 'DATA 失败：' . end($log);
         }
 
         $headers = "From: =?UTF-8?B?" . base64_encode($fromName) . "?= <{$from}>\r\n"
@@ -117,7 +117,7 @@ class Mailer
         $resp = fgets($fp, 512);
         if (!str_starts_with((string) $resp, '2')) {
             fclose($fp);
-            return '邮件内容发送失败: ' . trim((string) $resp);
+            return '邮件内容发送失败：' . trim((string) $resp);
         }
         fwrite($fp, "QUIT\r\n");
         fclose($fp);

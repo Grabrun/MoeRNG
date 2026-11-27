@@ -72,7 +72,7 @@ admin_header('系统设置', 'page-settings');
 
 <div class="page-header">
     <h1>系统设置</h1>
-    <p>站点、安全、性能、邮件与备份配置（仅管理员可修改，所有变更记录到操作日志）</p>
+    <p>站点信息、安全、媒体、维护与备份。所有修改都记入操作日志。</p>
 </div>
 
 <div class="settings-toolbar">
@@ -101,7 +101,7 @@ admin_header('系统设置', 'page-settings');
             <div class="settings-group-body">
                 <?php if ($gdef['fields'] === []): ?>
                 <p class="text-secondary text-small py-2">
-                    该分组暂无可用设置项，敬请期待后续版本。
+                    这一组还没有可配置项。
                 </p>
                 <?php else: ?>
                 <div class="settings-grid">
@@ -144,7 +144,7 @@ admin_header('系统设置', 'page-settings');
                 <?= $csrf_field ?>
                 <button type="submit" class="btn btn-warning" data-confirm="立即执行一次完整备份（数据库 + 上传文件）？">立即备份</button>
             </form>
-            <small class="batch-summary">自动备份按周期在上方「备份与恢复」表单中配置，访问时自动触发检查。</small>
+            <small class="batch-summary">自动备份按上方配置的周期，在访问后台时触发检查。</small>
         </div>
 
         <?php if ($backups): ?>
@@ -172,7 +172,7 @@ admin_header('系统设置', 'page-settings');
         </table>
         </div>
         <?php else: ?>
-        <p class="batch-stat">暂无备份。点击「立即备份」生成第一份。</p>
+        <p class="batch-stat">还没有备份。点「立即备份」生成第一份。</p>
         <?php endif; ?>
     </div>
 
@@ -185,14 +185,14 @@ admin_header('系统设置', 'page-settings');
             <div class="batch-panel maint-body">
                 <div class="maint-item">
                     <h3>清理暂存残留</h3>
-                    <p class="batch-summary">扫描 <code>storage/incoming</code>，删除已无对应记录（在办行以外）的临时文件。干跑只列清单。</p>
+                    <p class="batch-summary">扫描 <code>storage/incoming</code>，删除已无对应记录的临时文件。干跑只列清单、不删。</p>
                     <details class="batch-help">
                         <summary>能力边界</summary>
                         <p>记录已被删除的孤立对象<strong>无法</strong>被本工具发现 —— 存储接口没有列举能力，需到对象存储控制台按前缀清理。
                         pending / processing / failed 行对应的文件会保留（可能正在被其它请求使用）。
                         「待清理 0 项」是真的看过：扫描数如实报告，不是没看。</p>
                     </details>
-                    <p class="batch-stat" id="cleanup-stat">尚未检查。</p>
+                    <p class="batch-stat" id="cleanup-stat">还没检查。点「干跑检查」先看清单。</p>
                     <div class="batch-actions">
                         <button type="button" class="btn btn-outline btn-sm" id="cleanup-check">干跑检查</button>
                         <button type="button" class="btn btn-danger btn-sm" id="cleanup-run" disabled
@@ -216,7 +216,7 @@ admin_header('系统设置', 'page-settings');
                         GIF / SVG / 读不到 EXIF 方向 / <strong>超出内存预算</strong>（解码与编码各占一块整幅画布，会打爆 memory_limit）的行会跳过并计数。
                         云端对象每行都要下载再上传，建议先干跑看数量再分批执行。</p>
                     </details>
-                    <p class="batch-stat" id="convert-stat">尚未检查。</p>
+                    <p class="batch-stat" id="convert-stat">还没检查。点「干跑检查」先看有多少张可转。</p>
                     <div class="batch-actions">
                         <button type="button" class="btn btn-outline btn-sm" id="convert-check">干跑检查</button>
                         <button type="button" class="btn btn-primary btn-sm" id="convert-run" disabled
@@ -238,7 +238,7 @@ admin_header('系统设置', 'page-settings');
 <section class="settings-group <?= $activeGroup !== 'health' ? 'hidden' : '' ?>" id="health" data-group="health">
     <div class="card mb-3 batch-panel">
         <h3>健康检查</h3>
-        <p class="setting-group-desc">覆盖部署自迁移字段/索引 · 遗留设置行 · 历史图片哈希（检查 + 一键修复）</p>
+        <p class="setting-group-desc">检查数据库结构、设置项与图片哈希索引；能修的项可一键修复。</p>
         <div class="settings-group-body batch-panel">
             <div class="batch-actions">
                 <button type="button" class="btn btn-outline btn-sm" id="health-run">运行检查</button>

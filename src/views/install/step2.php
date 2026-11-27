@@ -29,7 +29,7 @@
 
         <div class="card">
             <h2 class="mb-2">MySQL 数据库配置</h2>
-            <p class="text-muted mb-3">请输入 MySQL 8.0+ 数据库连接信息。请确保数据库已创建。</p>
+            <p class="text-muted mb-3">需要 MySQL 8.0+。数据库要先在服务器面板里建好，这一步只填连接信息。</p>
 
             <form method="POST" action="/install/step3">
                 <div class="form-group"><label>主机地址</label><input type="text" name="db_host" class="form-control" value="<?= h($db['host']) ?>" required></div>

@@ -3,7 +3,7 @@
 <div class="page-header flex-between">
     <div>
         <h1>操作日志</h1>
-        <p>管理员操作审计记录（设置变更 / 备份 / 缓存 / 登录）</p>
+        <p>设置变更、备份、缓存清理与登录等动作的审计记录。</p>
     </div>
     <a href="/admin/settings" class="btn btn-sm">返回系统设置</a>
 </div>
@@ -59,7 +59,7 @@
                     if (is_array($detail)) {
                         $parts = [];
                         if (isset($detail['group_label'])) $parts[] = $detail['group_label'];
-                        if (isset($detail['changed']) && is_array($detail['changed'])) $parts[] = '变更: ' . implode(', ', $detail['changed']);
+                        if (isset($detail['changed']) && is_array($detail['changed'])) $parts[] = '变更：' . implode(', ', $detail['changed']);
                         if (isset($detail['message'])) $parts[] = (string) $detail['message'];
                         echo h($parts !== [] ? implode(' · ', $parts) : json_encode($detail, JSON_UNESCAPED_UNICODE));
                     } else {
@@ -74,7 +74,7 @@
     </table>
     </div>
     <?php else: ?>
-    <p class="text-muted p-16 text-secondary">暂无操作日志记录。</p>
+    <p class="text-muted p-16 text-secondary">还没有操作记录。</p>
     <?php endif; ?>
 </div>
 

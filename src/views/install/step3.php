@@ -29,7 +29,7 @@
 
         <div class="card">
             <h2 class="mb-2">创建管理员账号</h2>
-            <p class="text-muted mb-3">设置用于登录后台管理面板的管理员账号</p>
+            <p class="text-muted mb-3">这个账号用来登录管理面板，请记好密码。</p>
 
             <form method="POST" action="/install/step4">
                 <div class="form-group"><label>邮箱 *</label><input type="email" name="email" class="form-control" required placeholder="admin@example.com"></div>
