@@ -4,8 +4,15 @@
     <main id="main-content">
     <div class="container">
         <section id="gallery" class="section reveal">
-            <h2 class="section-title">图库</h2>
-            <p class="text-muted mb-3">按分类浏览，每类随机展示 12 张，刷新换一批。</p>
+            <div class="gallery-head">
+                <div>
+                    <h2 class="section-title mb-1">图库</h2>
+                    <p class="text-muted mb-0">每个分类各 6 张：电脑端横图、移动端竖图。</p>
+                </div>
+                <?php if (!empty($sections)): ?>
+                <button type="button" class="btn btn-outline btn-sm" id="gallery-refresh"><?= icon('shuffle', 16) ?> 换一批</button>
+                <?php endif; ?>
+            </div>
 
             <?php if (empty($sections)): ?>
             <div class="empty-state">
@@ -14,27 +21,9 @@
                 <p class="text-muted">上传第一批图片后这里就有内容。入口在管理后台「图片管理」。</p>
             </div>
             <?php else: ?>
-            <?php foreach ($sections as $section): ?>
-            <div class="gallery-section">
-                <h3 class="gallery-cat-title"><?= h($section['name']) ?> <span class="gallery-cat-count"><?= count($section['images']) ?> 张</span></h3>
-                <div class="gallery-grid">
-                    <?php foreach ($section['images'] as $img): ?>
-                    <div class="gallery-card">
-                        <a href="<?= h($img->url()) ?>" target="_blank" rel="noopener" class="gallery-thumb" aria-label="查看原图：<?= h($img->original_name) ?>">
-                            <?php $ss = $img->srcset('sm,md'); ?>
-                            <img src="<?= h($img->displayUrl('sm')) ?>"
-                                 <?= $ss !== '' ? 'srcset="' . h($ss) . '" sizes="(max-width: 639px) 46vw, (max-width: 1023px) 30vw, 240px"' : '' ?>
-                                 alt="<?= h($img->original_name) ?>" loading="lazy" decoding="async">
-                        </a>
-                        <div class="gallery-meta">
-                            <span class="gallery-name" title="<?= h($img->original_name) ?>"><?= h(mb_strlen($img->original_name) > 18 ? mb_substr($img->original_name, 0, 18) . '…' : $img->original_name) ?></span>
-                            <button type="button" class="copy-btn copy-btn-inline" data-copy-text="<?= h($img->url()) ?>" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 14) ?></button>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
+            <div id="gallery-sections">
+                <?php require __DIR__ . '/partials/gallery_sections.php'; ?>
             </div>
-            <?php endforeach; ?>
             <?php endif; ?>
         </section>
     </main>

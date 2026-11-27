@@ -18,6 +18,7 @@ $router->get('/docs', [\App\Controllers\HomeController::class, 'docs']);
 $router->get('/tester', [\App\Controllers\HomeController::class, 'tester']);
 $router->get('/about', [\App\Controllers\HomeController::class, 'about']);
 $router->get('/gallery', [\App\Controllers\HomeController::class, 'gallery']);
+$router->get('/gallery/feed', [\App\Controllers\HomeController::class, 'galleryFeed']);
 $router->get('/files', [\App\Controllers\FileController::class, 'show']);
 
 $app->run();

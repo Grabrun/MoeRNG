@@ -75,20 +75,37 @@ class HomeController extends Controller
         ]);
     }
 
+    /** 图库每栏张数：电脑端、移动端各 6 张。 */
+    private const GALLERY_PER_SIDE = 6;
+
+    /**
+     * 按分类取两组图（电脑端横图 / 移动端竖图）。分类没有图时整段不出现。
+     *
+     * @return array<int, array{name: string, pc: array, pe: array}>
+     */
+    private function gallerySections(): array
+    {
+        $sections = [];
+        foreach ($this->safeCategories() as $cat) {
+            $batch = Image::galleryBatch((int) $cat->id, self::GALLERY_PER_SIDE);
+            if ($batch['pc'] || $batch['pe']) {
+                $sections[] = ['name' => (string) $cat->name, 'pc' => $batch['pc'], 'pe' => $batch['pe']];
+            }
+        }
+
+        $batch = Image::galleryBatch(null, self::GALLERY_PER_SIDE);
+        if ($batch['pc'] || $batch['pe']) {
+            $sections[] = ['name' => '未分类', 'pc' => $batch['pc'], 'pe' => $batch['pe']];
+        }
+
+        return $sections;
+    }
+
     public function gallery(Request $request): void
     {
         $sections = [];
         try {
-            foreach ($this->safeCategories() as $cat) {
-                $images = Image::randomBatch((int) $cat->id, 12);
-                if ($images) {
-                    $sections[] = ['name' => $cat->name, 'images' => $images];
-                }
-            }
-            $uncategorized = Image::randomBatch(null, 12);
-            if ($uncategorized) {
-                $sections[] = ['name' => '未分类', 'images' => $uncategorized];
-            }
+            $sections = $this->gallerySections();
         } catch (\Throwable $e) {
             // 图库降级为空态是产品决定；但必须留痕，否则故障看起来像「站点没图」。
             error_log('[MoeRNG] 图库渲染失败，已降级为空态：' . $e->getMessage());
@@ -99,6 +116,31 @@ class HomeController extends Controller
             'pageTitle' => '图库 - ' . Config::get('settings.site_name', 'MoeRNG'),
             'sections' => $sections,
         ]);
+    }
+
+    /** 「换一批」：返回与首屏同一份模板渲染的片段，避免 PHP / JS 两套卡片模板漂移。 */
+    public function galleryFeed(Request $request): void
+    {
+        try {
+            $sections = $this->gallerySections();
+        } catch (\Throwable $e) {
+            error_log('[MoeRNG] 图库刷新失败：' . $e->getMessage());
+            http_response_code(500);
+            header('Content-Type: text/plain; charset=utf-8');
+            header('Cache-Control: no-store');
+            echo '图库刷新失败，请稍后再试。';
+            return;
+        }
+
+        require_once dirname(__DIR__) . '/helpers.php';
+        $data = ['sections' => $sections];
+        extract($data);
+        ob_start();
+        require dirname(__DIR__, 2) . '/views/partials/gallery_sections.php';
+        $fragment = (string) ob_get_clean();
+
+        header('Cache-Control: no-store');
+        (new \App\Core\Response())->html($fragment);
     }
 
     public function about(Request $request): void

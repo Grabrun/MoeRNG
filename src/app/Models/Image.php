@@ -372,9 +372,7 @@ class Image extends Model
             $params = [];
         }
 
-        $dir = $device === 'pc'
-            ? ' AND width >= height AND height > 0'
-            : ($device === 'pe' ? ' AND height > width' : '');
+        $dir = self::orientationSql($device);
 
         $pdo = Database::getInstance();
 
@@ -404,8 +402,16 @@ class Image extends Model
         return null;
     }
 
+    /** 构图条件：pc=横图（含方图），pe=竖图，其余不过滤。与 random() 共用一处，避免两套口径。 */
+    private static function orientationSql(?string $device): string
+    {
+        if ($device === 'pc') return ' AND `width` >= `height` AND `height` > 0';
+        if ($device === 'pe') return ' AND `height` > `width`';
+        return '';
+    }
+
     /** 随机取某分类（null = 未分类）下的 N 张 active 图；COUNT + 随机窗口，避免 ORDER BY RAND() 的 filesort。 */
-    public static function randomBatch(?int $categoryId, int $limit = 12): array
+    public static function randomBatch(?int $categoryId, int $limit = 12, ?string $device = null): array
     {
         $limit = max(1, min(60, $limit));
 
@@ -417,6 +423,7 @@ class Image extends Model
             $where .= " AND `category_id` = ?";
             $params[] = $categoryId;
         }
+        $where .= self::orientationSql($device);
 
         $pdo = Database::getInstance();
 
@@ -458,6 +465,50 @@ class Image extends Model
         }
 
         return array_map(fn($row) => self::hydrate($row), $rows);
+    }
+
+    /**
+     * 图库分组：同一分类各取 $perSide 张横图与竖图。
+     *
+     * 先取 4 倍池子再按宽高分组，比两次独立随机少一次查库，也不会让同一张图在两栏各出现一次；
+     * 某一侧抽样不足时（分类里竖图稀少）才定向补一次，补不齐就少给，不跨方向凑数。
+     *
+     * @return array{pc: array<int, self>, pe: array<int, self>}
+     */
+    public static function galleryBatch(?int $categoryId, int $perSide = 6): array
+    {
+        $perSide = max(1, min(12, $perSide));
+
+        $sides = ['pc' => [], 'pe' => []];
+        foreach (self::randomBatch($categoryId, $perSide * 4) as $img) {
+            $sides[self::sideOf($img)][(int) $img->id] = $img;
+        }
+
+        foreach (['pc', 'pe'] as $side) {
+            if (count($sides[$side]) >= $perSide) continue;
+            foreach (self::randomBatch($categoryId, $perSide, $side) as $img) {
+                if (count($sides[$side]) >= $perSide) break;
+                $sides[$side][(int) $img->id] = $img;
+            }
+        }
+
+        // 补抽可能带进另一侧已有的图；竖图更稀缺，保留竖图让横图让位。
+        foreach (array_keys($sides['pc']) as $id) {
+            if (isset($sides['pe'][$id])) unset($sides['pc'][$id]);
+        }
+
+        return [
+            'pc' => array_slice(array_values($sides['pc']), 0, $perSide),
+            'pe' => array_slice(array_values($sides['pe']), 0, $perSide),
+        ];
+    }
+
+    /** 尺寸未知（历史行宽高为 0）归电脑端，保证图上得了墙而不是被藏起来。 */
+    private static function sideOf(self $img): string
+    {
+        $w = (int) ($img->width ?? 0);
+        $h = (int) ($img->height ?? 0);
+        return ($h > 0 && $h > $w) ? 'pe' : 'pc';
     }
 
     /** @var array<int, array<int, int>>|null 请求级邻接表缓存。 */

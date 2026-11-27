@@ -188,23 +188,52 @@ function initApiTester() {
     });
 }
 
+// 事件委托绑 document：图库「换一批」会整段替换卡片，逐元素绑定的处理器会随旧节点一起丢掉。
 function initCopyButtons() {
-    document.querySelectorAll('.copy-btn').forEach(btn => {
-        btn.addEventListener('click', async function() {
-            let text = '';
-            if (this.dataset.copyText !== undefined) {
-                text = this.dataset.copyText;
-            } else if (this.dataset.copy) {
-                const target = document.getElementById(this.dataset.copy);
-                if (target) text = target.textContent;
-            }
-            if (!text) return;
-            const ok = await copyText(text.trim());
-            const orig = this.innerHTML;
-            this.innerHTML = UX_ICON.check + (ok ? ' 已复制' : ' 复制失败');
-            this.classList.toggle('copied', ok);
-            setTimeout(() => { this.innerHTML = orig; this.classList.remove('copied'); }, 2000);
-        });
+    document.addEventListener('click', async function (e) {
+        const btn = e.target && e.target.closest ? e.target.closest('.copy-btn') : null;
+        if (!btn) return;
+        let text = '';
+        if (btn.dataset.copyText !== undefined) {
+            text = btn.dataset.copyText;
+        } else if (btn.dataset.copy) {
+            const target = document.getElementById(btn.dataset.copy);
+            if (target) text = target.textContent;
+        }
+        if (!text) return;
+        const ok = await copyText(text.trim());
+        const orig = btn.innerHTML;
+        btn.innerHTML = UX_ICON.check + (ok ? ' 已复制' : ' 复制失败');
+        btn.classList.toggle('copied', ok);
+        setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 2000);
+    });
+}
+
+function initGalleryRefresh() {
+    const btn = document.getElementById('gallery-refresh');
+    const host = document.getElementById('gallery-sections');
+    if (!btn || !host) return;
+
+    const label = btn.innerHTML;
+    btn.addEventListener('click', async function () {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        btn.textContent = '刷新中…';
+        try {
+            const resp = await fetch('/gallery/feed', {
+                cache: 'no-store',
+                headers: { 'X-Requested-With': 'fetch' }
+            });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const html = (await resp.text()).trim();
+            host.innerHTML = html || '<p class="text-muted">图库暂时没有可展示的图片。</p>';
+            showToast('已换一批', 'success', 1800);
+        } catch (e) {
+            showToast('刷新失败：' + (e && e.message ? e.message : e), 'error', 4000);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = label;
+        }
     });
 }
 
@@ -422,6 +451,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initThemeToggle();   // defined in helpers.js (loaded first)
     initApiTester();
     initCopyButtons();
+    initGalleryRefresh();
     initReveal();
     initRandomDemo();
     initStatCount();
