@@ -326,6 +326,7 @@ function initRandomDemo() {
     const metaEl = document.getElementById('rd-meta');
     const zoomBtn = document.getElementById('rd-zoom');
     const dlBtn = document.getElementById('rd-download');
+    const actions = document.getElementById('rd-actions');
     const lb = document.getElementById('rd-lightbox');
     const lbImg = document.getElementById('rd-lb-img');
     const lbClose = document.getElementById('rd-lb-close');
@@ -348,6 +349,7 @@ function initRandomDemo() {
         if (urlEl) urlEl.textContent = url;
         if (zoomBtn) zoomBtn.classList.remove('hidden');
         if (dlBtn) dlBtn.classList.remove('hidden');
+        if (actions) actions.classList.remove('hidden');
         // 含 query 即临时签名链接（COS/OSS 用 q-sign-*，本地 /files 用 p=）
         const isSigned = url.includes('?') || url.includes('&');
         if (metaEl) {
@@ -421,8 +423,9 @@ function initRandomDemo() {
             imgBox.src = '';
             imgBox.classList.add('hidden');
             if (placeholder) placeholder.style.display = '';
-            if (urlEl) urlEl.textContent = '加载失败：' + e.message;
-            showToast('随机图片加载失败', 'error');
+            // 没取到图就没有可复制/放大/下载的目标，整行收起，错误交给 toast
+            if (actions) actions.classList.add('hidden');
+            showToast('随机图片加载失败：' + e.message, 'error');
         } finally {
             btn.disabled = false;
             if (loading) loading.classList.add('hidden');

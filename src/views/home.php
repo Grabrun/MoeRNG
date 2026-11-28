@@ -51,7 +51,7 @@
                             <?php endforeach; ?>
                         </select>
                         <button class="btn btn-primary btn-sm rd-run-btn" id="rd-run"><?= icon('dice', 16) ?> 试试手气</button>
-                        <div class="rd-actions">
+                        <div class="rd-actions hidden" id="rd-actions">
                             <span class="rd-url" id="rd-url">-</span>
                             <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 16) ?></button>
                             <button type="button" class="btn btn-outline btn-sm hidden" id="rd-zoom" aria-label="查看大图" title="查看大图"><?= icon('eye', 16) ?></button>
