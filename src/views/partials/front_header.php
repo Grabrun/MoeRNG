@@ -75,10 +75,6 @@ $siteBase = rtrim((string) (\App\Core\Application::getInstance()?->baseUrl() ?? 
                 <?php foreach ($navItems as $key => [$href, $label]): ?>
                 <a href="<?= h($href) ?>" class="<?= $activePage === $key ? 'active' : '' ?>"><?= h($label) ?></a>
                 <?php endforeach; ?>
-                <?php if (!empty($githubUrl)): ?>
-                <a href="<?= h($githubUrl) ?>" target="_blank" rel="noopener nofollow">GitHub</a>
-                <?php endif; ?>
-                <a href="/admin" target="_blank" rel="noopener">管理面板</a>
             </nav>
         </details>
         <button type="button" class="theme-toggle theme-toggle-float" id="theme-toggle" aria-label="切换深浅主题" title="切换深浅主题">

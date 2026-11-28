@@ -209,6 +209,34 @@ function initCopyButtons() {
     });
 }
 
+function initDocsNav() {
+    const nav = document.querySelector('.docs-sidebar nav');
+    if (!nav) return;
+    const links = Array.from(nav.querySelectorAll('a[data-doc-target]'));
+    const panes = Array.from(document.querySelectorAll('.docs-content .doc-pane'));
+    if (!links.length || !panes.length) return;
+
+    function activate(target) {
+        const pane = document.getElementById(String(target).replace(/^#/, ''));
+        if (!pane || !pane.classList.contains('doc-pane')) return false;
+        links.forEach(l => l.classList.toggle('active', l.getAttribute('data-doc-target') === target));
+        panes.forEach(p => p.classList.toggle('active', p === pane));
+        return true;
+    }
+
+    links.forEach(link => {
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = link.getAttribute('data-doc-target');
+            if (!activate(target)) return;
+            if (history.replaceState) history.replaceState(null, '', target);
+        });
+    });
+
+    // 带 hash 直达（例如从首页「API 文档」跳 #endpoint-images）时同步激活对应段落
+    if (location.hash) activate(location.hash);
+}
+
 function initGalleryRefresh() {
     const btn = document.getElementById('gallery-refresh');
     const host = document.getElementById('gallery-sections');
@@ -451,6 +479,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initThemeToggle();   // defined in helpers.js (loaded first)
     initApiTester();
     initCopyButtons();
+    initDocsNav();
     initGalleryRefresh();
     initReveal();
     initRandomDemo();

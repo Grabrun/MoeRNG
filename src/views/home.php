@@ -50,11 +50,13 @@
                             <option value="<?= h($cat->getSlug()) ?>"><?= h($cat->name) ?></option>
                             <?php endforeach; ?>
                         </select>
-                        <button class="btn btn-primary btn-sm" id="rd-run"><?= icon('dice', 16) ?> 试试手气</button>
-                        <span class="rd-url" id="rd-url">-</span>
-                        <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 16) ?></button>
-                        <button type="button" class="btn btn-outline btn-sm hidden" id="rd-zoom" aria-label="查看大图" title="查看大图"><?= icon('eye', 16) ?></button>
-                        <button type="button" class="btn btn-outline btn-sm hidden" id="rd-download" aria-label="下载图片" title="下载图片"><?= icon('download', 16) ?></button>
+                        <button class="btn btn-primary btn-sm rd-run-btn" id="rd-run"><?= icon('dice', 16) ?> 试试手气</button>
+                        <div class="rd-actions">
+                            <span class="rd-url" id="rd-url">-</span>
+                            <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="rd-url" aria-label="复制图片链接" title="复制链接"><?= icon('copy', 16) ?></button>
+                            <button type="button" class="btn btn-outline btn-sm hidden" id="rd-zoom" aria-label="查看大图" title="查看大图"><?= icon('eye', 16) ?></button>
+                            <button type="button" class="btn btn-outline btn-sm hidden" id="rd-download" aria-label="下载图片" title="下载图片"><?= icon('download', 16) ?></button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -97,8 +99,9 @@
         </section>
     </main>
 
+    <div class="lb-overlay hidden" id="rd-lightbox" role="dialog" aria-modal="true" aria-label="图片大图预览">
+        <img id="rd-lb-img" src="" alt="大图预览">
+        <button type="button" class="lb-close" id="rd-lb-close" aria-label="关闭预览"><?= icon('x', 24) ?></button>
+    </div>
+
 <?php require __DIR__ . '/partials/front_footer.php'; ?>
-<div class="lb-overlay hidden" id="rd-lightbox" role="dialog" aria-modal="true" aria-label="图片大图预览">
-    <img id="rd-lb-img" src="" alt="大图预览">
-    <button type="button" class="lb-close" id="rd-lb-close" aria-label="关闭预览"><?= icon('x', 24) ?></button>
-</div>

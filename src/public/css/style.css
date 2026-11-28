@@ -754,8 +754,17 @@ pre code { background: none; color: var(--text); padding: 0; }
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     background: rgba(15,15,26,0.6); color: var(--primary);
 }
-.random-demo .rd-footer { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
-.random-demo .rd-footer .rd-url { flex: 1; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.random-demo .rd-footer { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+/* URL 与三个图标按钮成组：窄屏整组换行，按钮不会被挤出卡片 */
+.random-demo .rd-actions { display: flex; align-items: center; gap: 8px; flex: 1 1 180px; min-width: 0; }
+.random-demo .rd-footer .rd-url { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.random-demo .rd-run-btn { flex-shrink: 0; }
+/* 卡片内的复制按钮是行内控件，不能沿用 .copy-btn 的绝对定位（否则跑到卡片右上角） */
+.random-demo .rd-actions .copy-btn { position: static; }
+@media (max-width: 639px) {
+    .random-demo .rd-actions { flex-basis: 100%; }
+    .random-demo .rd-cat-select { flex: 1 1 auto; width: auto; min-width: 0; }
+}
 
 .stat-icon {
     display: flex; align-items: center; justify-content: center;
@@ -1168,6 +1177,18 @@ body.modal-open { overflow: hidden; }
     .docs-sidebar { position: static; border-left: none; border-bottom: 1px solid var(--border); padding: 0 0 10px; overflow-x: auto; }
     .docs-sidebar nav { flex-direction: row; gap: 8px; }
     .docs-sidebar a { white-space: nowrap; }
+}
+/* 窄屏参数表改堆叠：五列挤一行会把「说明」压成竖排单字 */
+@media (max-width: 639px) {
+    .param-table, .param-table tbody, .param-table tr, .param-table td { display: block; width: 100%; }
+    .param-table thead { display: none; }
+    .param-table tr {
+        border: 1px solid var(--border); border-radius: var(--radius-sm);
+        background: var(--bg-input); padding: 10px 12px; margin-bottom: 10px;
+    }
+    .param-table td { border: none; padding: 2px 0; font-size: 0.85rem; line-height: 1.65; }
+    .param-table td:first-child { font-weight: 600; margin-bottom: 2px; }
+    .param-table td[data-label]::before { content: attr(data-label) "："; color: var(--text-muted); }
 }
 
 .stats-note {

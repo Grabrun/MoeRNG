@@ -31,43 +31,41 @@
                         <tbody>
                             <tr>
                                 <td><code>category</code></td>
-                                <td>string</td>
-                                <td>否</td>
-                                <td>-</td>
-                                <td>分类标识（slug），指定后从该分类及子分类中随机返回</td>
+                                <td data-label="类型">string</td>
+                                <td data-label="必需">否</td>
+                                <td data-label="默认值">-</td>
+                                <td data-label="说明">分类 slug（含全部子分类）</td>
                             </tr>
                             <tr>
                                 <td><code>type</code></td>
-                                <td>string</td>
-                                <td>否</td>
-                                <td><code>json</code></td>
-                                <td>返回类型：<code>json</code> 返回结构化数据，<code>redirect</code> 302 重定向至图片</td>
+                                <td data-label="类型">string</td>
+                                <td data-label="必需">否</td>
+                                <td data-label="默认值"><code>json</code></td>
+                                <td data-label="说明"><code>json</code> 结构化 / <code>redirect</code> 302 跳转</td>
                             </tr>
                             <tr>
                                 <td><code>size</code></td>
-                                <td>string</td>
-                                <td>否</td>
-                                <td><code>original</code>（原图）</td>
-                                <td>取图尺寸：<code>sm</code>（320）/ <code>md</code>（640）/ <code>lg</code>（1280）/ <code>original</code>（原图）。
-                                    取值非法时返回 <code>400</code>（不静默回退）；该尺寸尚未生成时按
+                                <td data-label="类型">string</td>
+                                <td data-label="必需">否</td>
+                                <td data-label="默认值"><code>original</code>（原图）</td>
+                                <td data-label="说明"><code>sm</code> 320 / <code>md</code> 640 / <code>lg</code> 1280 / <code>original</code> 原图。
+                                    取值非法时返回 <code>400</code>；该尺寸未生成时按
                                     <code>请求尺寸 → md → 原图</code> 回退，<strong>绝不返回 404</strong>。
-                                    <code>url</code> 与宽高、格式、字节数始终描述同一张图。</td>
+                                    <code>size</code> 字段如实回报实际生效的档位，<code>url</code> 与宽高、字节数描述同一张图。</td>
                             </tr>
                             <tr>
                                 <td><code>device</code></td>
-                                <td>string</td>
-                                <td>否</td>
-                                <td>-</td>
-                                <td>按构图取图：<code>pc</code> 横图（含方图）、<code>pe</code> 竖图、
-                                    <code>any</code> 不限构图。
-                                    不传则按 UA 判断；无 UA 的请求不过滤，与旧行为一致。
-                                    该方向暂时没有图时回退到全部，不会 404。</td>
+                                <td data-label="类型">string</td>
+                                <td data-label="必需">否</td>
+                                <td data-label="默认值">-</td>
+                                <td data-label="说明"><code>pc</code> 横图（含方图）/ <code>pe</code> 竖图 / <code>any</code> 不限构图。
+                                    不传按 UA 判断，无 UA 的请求不过滤；该方向没有图时回退全部。</td>
                             </tr>
                         </tbody>
                     </table>
                     <p class="text-muted text-small">
-                        回退时响应里的 <code>size</code> 是实际生效的档位，据此能判断是否降级。
-                        图库或所选分类为空时返回 <code>404</code>：<code>error</code> 是英文机器码，<code>message</code> 给中文引导。
+                        图库或所选分类为空时返回 <code>404</code>：<code>error</code> 是英文机器码，
+                        <code>message</code> 给中文引导。
                     </p>
 
                     <h3 class="mb-1">请求示例</h3>
@@ -77,10 +75,7 @@
                     </div>
 
                     <h3 class="mb-1">JSON 响应示例</h3>
-                    <p class="text-muted text-small">
-                        不传 <code>size</code> 时返回原图（与既有调用方一致）：只有 <code>url</code> 一个地址字段。
-                    </p>
-                    <div class="copy-wrap">
+                                        <div class="copy-wrap">
                         <button type="button" class="copy-btn" data-copy-text='{
   "success": true,
   "data": {
@@ -110,7 +105,7 @@
                     </div>
 
                     <p class="text-muted text-small">
-                        传了 <code>size</code> 就换成那一张 —— <code>url</code>、宽高、格式、字节数全部跟着变：
+                        传 <code>size=sm</code> 时整组字段一起变：
                     </p>
                     <div class="copy-wrap">
                         <button type="button" class="copy-btn" data-copy-text='{
@@ -141,41 +136,39 @@
 }</code></pre>
                     </div>
                     <p class="text-muted text-small">
-                        缩略图的字节数在生成时实测入库，所以是精确值；<strong>更早的图片</strong>可能还没记录，
-                        此时 <code>file_size</code> 为 <code>null</code>（表示「未知」，不是 0）——
-                        到后台跑一次「补全缩略图」即可补齐。
+                        <code>file_size</code> 是生成时实测值；早期图片可能为 <code>null</code>（未知，不是 0），
+                        后台「补全缩略图」可补齐。
                     </p>
 
                     <h3 class="mb-1">缩略图示例</h3>
                     <div class="copy-wrap">
-                        <button type="button" class="copy-btn" data-copy-text='# 只要 URL（JSON），取 320px 缩略图
+                        <button type="button" class="copy-btn" data-copy-text='# JSON，取 320px 缩略图
 curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?size=sm"
 
-# 直接把缩略图当图片用（HTTP 302 跳到缩略图直链）
+# 302 直接跳到缩略图
 curl -L -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?type=redirect&size=sm"
 
-# 列表页推荐：一次取一批，用 size 指定要哪种尺寸（比逐张调 random 省配额）
+# 批量取列表，比逐张调 random 省配额
 curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/images?limit=20&size=sm"'>复制</button>
-                        <pre><code># 只要 URL（JSON），取 320px 缩略图
+                        <pre><code># JSON，取 320px 缩略图
 curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?size=sm"
 
-# 直接把缩略图当图片用（HTTP 302 跳到缩略图直链）
+# 302 直接跳到缩略图
 curl -L -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/random?type=redirect&size=sm"
 
-# 列表页推荐：一次取一批，用 size 指定要哪种尺寸（比逐张调 random 省配额）
+# 批量取列表，比逐张调 random 省配额
 curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domain.com') ?>/api/v1/images?limit=20&size=sm"</code></pre>
                     </div>
 
                     <h3 class="mb-1">返回 URL 的时效性</h3>
                     <p class="text-muted text-small">
-                        响应里的 <code>url</code> 是<strong>带签名的直链</strong>，
-                        按存储实例的 <code>signed_ttl</code> 生效（默认 300 秒，云端为预签名、本地为 <code>/files</code> 短时签名）。
-                        请勿把返回的 URL 长期存库或嵌到第三方页面 —— 过期后会失效，重新请求本接口即可。
-                        需要长期稳定的直链，请给存储实例配置 CDN 域名。
+                        <code>url</code> 是<strong>带签名的直链</strong>，按存储实例的 <code>signed_ttl</code> 生效
+                        （默认 300 秒；云端预签名，本地为 <code>/files</code> 短时签名）。
+                        请勿长期存库或嵌到第三方页面，过期后重新请求即可；需要稳定直链请配 CDN 域名。
                     </p>
                     <p class="text-muted text-small">
-                        另外：<code>/random</code> 的响应带 <code>Cache-Control: no-store</code>。这不是保守设置而是<strong>功能性要求</strong> ——
-                        该接口的 URL 固定、语义却是「每次换一张」，一旦被缓存，随机性会在缓存期内整体失效。
+                        <code>/random</code> 的响应带 <code>Cache-Control: no-store</code>：URL 固定但语义是「每次换一张」，
+                        一旦被缓存，随机性会在缓存期内失效。
                     </p>
 
                     <h3 class="mb-1">重定向模式</h3>
@@ -199,10 +192,10 @@ curl -H "X-API-Key: mr_your_api_key_here" "<?= h($baseUrl ?: 'https://your-domai
                     <table class="param-table">
                         <thead><tr><th>参数</th><th>类型</th><th>默认值</th><th>说明</th></tr></thead>
                         <tbody>
-                            <tr><td><code>page</code></td><td>int</td><td>1</td><td>页码</td></tr>
-                            <tr><td><code>limit</code></td><td>int</td><td>20</td><td>每页数量（最大100）</td></tr>
-                            <tr><td><code>category</code></td><td>string</td><td>-</td><td>分类过滤（含子分类）；slug 不存在时返回 404</td></tr>
-                            <tr><td><code>size</code></td><td>string</td><td>original</td><td>返回哪一档图片：<code>original</code> / <code>lg</code> / <code>md</code> / <code>sm</code>；非法值返回 400</td></tr>
+                            <tr><td><code>page</code></td><td data-label="类型">int</td><td data-label="默认值">1</td><td data-label="说明">页码</td></tr>
+                            <tr><td><code>limit</code></td><td data-label="类型">int</td><td data-label="默认值">20</td><td data-label="说明">每页数量（最大100）</td></tr>
+                            <tr><td><code>category</code></td><td data-label="类型">string</td><td data-label="默认值">-</td><td data-label="说明">分类过滤（含子分类）；slug 不存在时返回 404</td></tr>
+                            <tr><td><code>size</code></td><td data-label="类型">string</td><td data-label="默认值">original</td><td data-label="说明">返回哪一档图片：<code>original</code> / <code>lg</code> / <code>md</code> / <code>sm</code>；非法值返回 400</td></tr>
                         </tbody>
                     </table>
                 </div>
